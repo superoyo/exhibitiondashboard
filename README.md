@@ -55,9 +55,10 @@ uvicorn app.main:app --reload                 # เปิด http://localhost:80
 2. Railway → **New Project → Deploy from GitHub repo**
 3. เพิ่ม **PostgreSQL** plugin (Railway inject `DATABASE_URL` ให้อัตโนมัติ)
 4. **Service `web`**:
-   - Start Command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-   - **Pre-deploy Command** (Settings → Deploy): `alembic upgrade head`
-     (รัน migration อัตโนมัติทุกครั้งที่ deploy — วิธีที่ Railway แนะนำ)
+   - Start Command (มีอยู่ใน `railway.json` แล้ว ไม่ต้องตั้งเอง):
+     `alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+     → migration รันอัตโนมัติตอน **deploy** (ตอนนี้มี DB + ตัวแปรครบ)
+   - ⚠️ **ห้าม**ใส่ `alembic upgrade head` ใน **Build Command** — ตอน build ยังไม่มี DB/`DATABASE_URL` จะ fail ทันที (ปล่อย Build Command ว่างไว้ ให้ Nixpacks จัดการ)
 5. รัน seed ครั้งแรก (Railway shell หรือ one-off command): `python scripts/seed_kols.py`
 6. **Service `cron-scrape`** (จาก repo เดียวกัน) →
    - Start Command: `python -m app.scrape`

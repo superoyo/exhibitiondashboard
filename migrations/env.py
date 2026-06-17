@@ -14,6 +14,14 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Inject the runtime DB URL (from DATABASE_URL env var).
+# This must run at DEPLOY time, not build time — Railway's build stage has no
+# database and no DATABASE_URL. If you see this error during "build", move the
+# migration out of any Build Command into the start/Pre-deploy command.
+if not app_config.DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL is empty. Run migrations at deploy time (start command / "
+        "Pre-deploy Command), and make sure the Postgres plugin is linked to this service."
+    )
 config.set_main_option("sqlalchemy.url", app_config.DATABASE_URL)
 
 target_metadata = Base.metadata
