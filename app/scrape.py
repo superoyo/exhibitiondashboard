@@ -51,6 +51,16 @@ def run_daily_scrape(run_date: dt.date | None = None) -> dict:
     run_date = run_date or _today()
     oldest = oldest_date_for(run_date)
 
+    # Make sure the KOL master list reflects config/kols.json before scraping —
+    # this makes a manual /api/scrape/run self-sufficient even if the startup
+    # seed never ran (e.g. a custom Railway start command).
+    try:
+        from app.seed import seed_from_config
+
+        seed_from_config()
+    except Exception as exc:  # noqa: BLE001 — seeding must not abort the scrape
+        log.warning("Seed before scrape failed (continuing with existing KOLs): %s", exc)
+
     with session_scope() as session:
         usernames = [
             k.username for k in session.scalars(select(Kol).where(Kol.active.is_(True))).all()
