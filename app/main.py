@@ -12,8 +12,23 @@ from app.api.routes import router as api_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
+log = logging.getLogger("main")
+
 app = FastAPI(title="KOL TikTok Tracker", version="1.0.0")
 app.include_router(api_router)
+
+
+@app.on_event("startup")
+def _seed_on_startup() -> None:
+    """Best-effort seed of the KOL master list on boot. Never blocks startup —
+    if it fails (e.g. DB not ready), the web still serves and logs the error."""
+    try:
+        from app.seed import seed_from_config
+
+        n = seed_from_config()
+        log.info("Startup seed complete: %d KOLs.", n)
+    except Exception as exc:  # noqa: BLE001 — seeding must never crash the web
+        log.warning("Startup seed skipped (%s). Run scripts/seed_kols.py manually.", exc)
 
 FRONTEND_DIR = pathlib.Path(__file__).resolve().parent.parent / "frontend"
 INDEX = FRONTEND_DIR / "index.html"
