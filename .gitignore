@@ -1,0 +1,25 @@
+# Secrets — NEVER commit
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Local dev DB (pgserver data dir)
+.pgdata/
+
+# OS / editor / local tooling
+.DS_Store
+.idea/
+.vscode/
+.claude/
+
+# Logs / scratch
+*.log
+scratch/

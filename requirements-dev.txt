@@ -1,0 +1,5 @@
+# Local development / verification only — NOT used in production (Railway uses a real Postgres plugin)
+-r requirements.txt
+
+# Embedded Postgres that bundles its own server binaries (no system install / docker needed)
+pgserver==0.1.4

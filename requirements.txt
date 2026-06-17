@@ -1,0 +1,8 @@
+# Production dependencies (Railway runs Python 3.11)
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+SQLAlchemy==2.0.36
+alembic==1.14.0
+psycopg2-binary==2.9.11
+httpx==0.28.1
+python-dotenv==1.0.1

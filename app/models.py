@@ -1,0 +1,117 @@
+"""SQLAlchemy ORM models — time-series schema (see brief section 8).
+
+Note: the brief's logical column "group" is stored as `content_group`
+because GROUP is a reserved SQL word; the JSON/API layer still exposes it
+as "group".
+"""
+from __future__ import annotations
+
+import datetime as dt
+from typing import List, Optional
+
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class Kol(Base):
+    __tablename__ = "kols"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    display: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_group: Mapped[str] = mapped_column("content_group", String(64), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    posts: Mapped[List["Post"]] = relationship(back_populates="kol")
+    dailies: Mapped[List["KolDaily"]] = relationship(back_populates="kol")
+
+
+class ScrapeRun(Base):
+    """One row per scrape attempt — audit + idempotency anchor."""
+    __tablename__ = "scrape_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_date: Mapped[dt.date] = mapped_column(Date, nullable=False, index=True)
+    apify_run_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)  # running/success/failed
+    posts_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_usd: Mapped[Optional[float]] = mapped_column(Numeric(10, 4), nullable=True)
+    started_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    finished_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class Post(Base):
+    """One row per TikTok video. Metrics live in post_metrics (time-series)."""
+    __tablename__ = "posts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kol_id: Mapped[int] = mapped_column(ForeignKey("kols.id"), nullable=False, index=True)
+    video_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    posted_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_slideshow: Mapped[bool] = mapped_column(Boolean, default=False)
+    first_seen: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    last_scraped: Mapped[dt.date] = mapped_column(Date, nullable=False)
+
+    kol: Mapped["Kol"] = relationship(back_populates="posts")
+    metrics: Mapped[List["PostMetric"]] = relationship(back_populates="post")
+
+
+class PostMetric(Base):
+    """Metric snapshot of a post at a given scrape_date."""
+    __tablename__ = "post_metrics"
+    __table_args__ = (UniqueConstraint("post_id", "scrape_date", name="uq_post_metric_day"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    post_id: Mapped[int] = mapped_column(ForeignKey("posts.id"), nullable=False, index=True)
+    scrape_date: Mapped[dt.date] = mapped_column(Date, nullable=False, index=True)
+    views: Mapped[int] = mapped_column(BigInteger, default=0)
+    likes: Mapped[int] = mapped_column(BigInteger, default=0)
+    comments: Mapped[int] = mapped_column(BigInteger, default=0)
+    shares: Mapped[int] = mapped_column(BigInteger, default=0)
+    saves: Mapped[int] = mapped_column(BigInteger, default=0)
+
+    post: Mapped["Post"] = relationship(back_populates="metrics")
+
+
+class KolDaily(Base):
+    """Per-KOL per-day rollup of the trailing 7-day window — fast trend reads."""
+    __tablename__ = "kol_daily"
+    __table_args__ = (UniqueConstraint("kol_id", "scrape_date", name="uq_kol_daily_day"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kol_id: Mapped[int] = mapped_column(ForeignKey("kols.id"), nullable=False, index=True)
+    scrape_date: Mapped[dt.date] = mapped_column(Date, nullable=False, index=True)
+    followers: Mapped[int] = mapped_column(BigInteger, default=0)
+    posts_7d: Mapped[int] = mapped_column(Integer, default=0)
+    views_7d: Mapped[int] = mapped_column(BigInteger, default=0)
+    likes_7d: Mapped[int] = mapped_column(BigInteger, default=0)
+    comments_7d: Mapped[int] = mapped_column(BigInteger, default=0)
+    shares_7d: Mapped[int] = mapped_column(BigInteger, default=0)
+    saves_7d: Mapped[int] = mapped_column(BigInteger, default=0)
+    engagement_rate: Mapped[Optional[float]] = mapped_column(Numeric(8, 5), nullable=True)
+
+    kol: Mapped["Kol"] = relationship(back_populates="dailies")

@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="th" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KOL TikTok Tracker — Sahagroup Fair 2026</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root { --bg:#0b0f17; --card:#141a24; --line:#222b38; --muted:#8b97a8; --text:#e6ecf3; }
+    html,body{ background:var(--bg); color:var(--text); font-family:'Noto Sans Thai',system-ui,sans-serif; }
+    .card{ background:var(--card); border:1px solid var(--line); border-radius:14px; }
+    .chip{ border:1px solid var(--line); border-radius:999px; padding:.35rem .9rem; font-size:.8rem; cursor:pointer; white-space:nowrap; }
+    .chip.active{ color:#fff; border-color:transparent; }
+    .up{ color:#34d399; } .down{ color:#f87171; } .flat{ color:var(--muted); }
+    ::-webkit-scrollbar{ height:8px; width:8px; } ::-webkit-scrollbar-thumb{ background:#2a3442; border-radius:8px; }
+    table th{ cursor:pointer; user-select:none; }
+    a{ color:#93c5fd; }
+  </style>
+</head>
+<body class="min-h-screen">
+  <div class="max-w-7xl mx-auto px-3 sm:px-5 py-4">
+
+    <!-- Header -->
+    <header class="flex flex-wrap items-center justify-between gap-2 mb-4">
+      <div>
+        <h1 class="text-lg sm:text-2xl font-bold">📊 KOL TikTok Tracker</h1>
+        <p class="text-xs sm:text-sm" style="color:var(--muted)">Sahagroup Fair 2026 · Nano–Micro 41 KOL</p>
+      </div>
+      <div class="text-right text-xs sm:text-sm" style="color:var(--muted)">
+        <div id="dataAsOf">กำลังโหลด…</div>
+        <div id="lastRun" class="mt-0.5"></div>
+      </div>
+    </header>
+
+    <!-- ===== OVERVIEW ===== -->
+    <div id="view-overview">
+      <!-- Filters -->
+      <div class="card p-3 mb-4 flex flex-wrap items-center gap-2">
+        <div id="groupChips" class="flex flex-wrap gap-2"></div>
+        <div class="flex-1"></div>
+        <input id="search" placeholder="🔍 ค้นหา KOL…" class="bg-transparent border rounded-lg px-3 py-1.5 text-sm w-full sm:w-48" style="border-color:var(--line)" />
+        <select id="dateSel" class="bg-transparent border rounded-lg px-3 py-1.5 text-sm" style="border-color:var(--line); background:var(--card)"></select>
+      </div>
+
+      <!-- KPI cards -->
+      <div id="kpis" class="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-4"></div>
+
+      <!-- Charts -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
+        <div class="card p-3">
+          <div class="flex items-center justify-between mb-1">
+            <h3 class="text-sm font-semibold">แนวโน้มรายวัน (7-day rolling)</h3>
+            <select id="trendMetric" class="bg-transparent border rounded px-2 py-1 text-xs" style="border-color:var(--line); background:var(--card)">
+              <option value="views">Views</option>
+              <option value="engagement">Engagement</option>
+              <option value="followers">Followers</option>
+            </select>
+          </div>
+          <div id="chartTrend" style="height:260px"></div>
+        </div>
+        <div class="card p-3">
+          <h3 class="text-sm font-semibold mb-1">สัดส่วน Views ตามกลุ่ม</h3>
+          <div id="chartDonut" style="height:260px"></div>
+        </div>
+        <div class="card p-3">
+          <h3 class="text-sm font-semibold mb-1">Top 10 KOL by Views</h3>
+          <div id="chartTop" style="height:300px"></div>
+        </div>
+        <div class="card p-3">
+          <h3 class="text-sm font-semibold mb-1">Followers vs Views (log scale)</h3>
+          <div id="chartScatter" style="height:300px"></div>
+        </div>
+      </div>
+
+      <!-- Summary table -->
+      <div class="card p-3">
+        <h3 class="text-sm font-semibold mb-2">สรุปรายคน <span id="rowCount" style="color:var(--muted)"></span></h3>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs sm:text-sm" id="tbl">
+            <thead style="color:var(--muted)">
+              <tr class="text-left border-b" style="border-color:var(--line)">
+                <th class="py-2 pr-2" data-k="display">KOL</th>
+                <th class="py-2 px-2" data-k="group">กลุ่ม</th>
+                <th class="py-2 px-2 text-right" data-k="followers">Followers</th>
+                <th class="py-2 px-2 text-right" data-k="posts_7d">โพสต์</th>
+                <th class="py-2 px-2 text-right" data-k="views_7d">Views</th>
+                <th class="py-2 px-2 text-right" data-k="delta_views_pct">Δ Views</th>
+                <th class="py-2 px-2 text-right" data-k="engagement_rate">ER</th>
+              </tr>
+            </thead>
+            <tbody id="tblBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== KOL DETAIL ===== -->
+    <div id="view-detail" class="hidden">
+      <button onclick="location.hash=''" class="chip mb-3" style="border-color:var(--line)">← กลับหน้าหลัก</button>
+      <div class="card p-4 mb-4">
+        <h2 id="dName" class="text-xl font-bold"></h2>
+        <p id="dMeta" style="color:var(--muted)" class="text-sm"></p>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
+        <div class="card p-3"><h3 class="text-sm font-semibold mb-1">Followers & Views</h3><div id="dTrend" style="height:280px"></div></div>
+        <div class="card p-3"><h3 class="text-sm font-semibold mb-1">Engagement Rate</h3><div id="dER" style="height:280px"></div></div>
+      </div>
+      <div class="card p-3">
+        <h3 class="text-sm font-semibold mb-2">โพสต์ล่าสุด</h3>
+        <div id="dPosts" class="overflow-x-auto"></div>
+      </div>
+    </div>
+
+    <footer class="text-center text-xs mt-6" style="color:var(--muted)">
+      ตัวเลขเป็น snapshot ณ เวลาที่ดึงข้อมูล · auto-scrape ทุกเช้า 05:00 น. (เวลาไทย)
+    </footer>
+  </div>
+
+<script>
+const GROUP_COLORS = { "Fashion":"#6366f1","Food":"#f59e0b","Beauty":"#ec4899","Household Items":"#10b981" };
+const GROUPS = ["All","Fashion","Food","Beauty","Household Items"];
+const fmt = n => n==null ? "–" : Intl.NumberFormat("en",{notation:Math.abs(n)>=10000?"compact":"standard",maximumFractionDigits:1}).format(n);
+const pct = n => n==null ? "" : (n>0?"▲":n<0?"▼":"") + Math.abs(n).toFixed(1) + "%";
+const cls = n => n==null?"flat":n>0?"up":n<0?"down":"flat";
+const AX = { axisLine:{lineStyle:{color:"#2a3442"}}, axisLabel:{color:"#8b97a8"}, splitLine:{lineStyle:{color:"#1a2230"}} };
+
+let state = { group:"All", search:"", date:"latest", data:null, charts:{} };
+
+function chart(id){ const el=document.getElementById(id); let c=echarts.getInstanceByDom(el)||echarts.init(el,null,{renderer:"canvas"}); return c; }
+window.addEventListener("resize",()=>Object.values(state.charts).forEach(c=>c&&c.resize()));
+
+// ---------- routing ----------
+function route(){
+  const h = location.hash;
+  if(h.startsWith("#/kol/")){ showDetail(decodeURIComponent(h.slice(6))); }
+  else { document.getElementById("view-detail").classList.add("hidden"); document.getElementById("view-overview").classList.remove("hidden"); }
+}
+window.addEventListener("hashchange", route);
+
+// ---------- header / health ----------
+async function loadHealth(){
+  try{
+    const h = await (await fetch("/api/health")).json();
+    document.getElementById("dataAsOf").textContent = h.latest_scrape_date ? ("ข้อมูล ณ "+h.latest_scrape_date) : "ยังไม่มีข้อมูล";
+    if(h.last_run){
+      const r=h.last_run, ok=r.status==="success";
+      document.getElementById("lastRun").innerHTML = `รันล่าสุด: <span class="${ok?'up':'down'}">${r.status}</span>` + (r.cost_usd!=null?` · $${r.cost_usd}`:"");
+    }
+  }catch(e){}
+}
+
+// ---------- overview ----------
+function buildChips(){
+  const wrap=document.getElementById("groupChips"); wrap.innerHTML="";
+  GROUPS.forEach(g=>{
+    const c=document.createElement("span");
+    const color = g==="All" ? "#64748b" : GROUP_COLORS[g];
+    c.className="chip"+(state.group===g?" active":"");
+    c.textContent=g; c.style.background = state.group===g?color:"transparent";
+    c.onclick=()=>{ state.group=g; buildChips(); render(); loadTrend(); };
+    wrap.appendChild(c);
+  });
+}
+
+async function loadSummary(){
+  const q = new URLSearchParams({date:state.date, group:state.group});
+  state.data = await (await fetch("/api/summary?"+q)).json();
+  // date selector
+  const sel=document.getElementById("dateSel");
+  if(state.data.available_dates && sel.options.length!==state.data.available_dates.length){
+    sel.innerHTML = state.data.available_dates.map(d=>`<option value="${d}">${d}</option>`).join("");
+    sel.value = state.data.date;
+  }
+  render(); loadTrend();
+}
+
+function kFiltered(){
+  let ks = (state.data?.kols)||[];
+  if(state.search) ks = ks.filter(k=>(k.display+k.username).toLowerCase().includes(state.search.toLowerCase()));
+  return ks;
+}
+
+function render(){
+  if(!state.data){ return; }
+  renderKPIs(); renderTable(); renderDonut(); renderTop(); renderScatter();
+}
+
+function renderKPIs(){
+  const k = state.data.kpis||{};
+  const cards = [
+    ["Total Views",k.total_views],
+    ["Total Engagement",k.total_engagement],
+    ["Avg ER",k.avg_engagement_rate,true],
+    ["จำนวนโพสต์",k.total_posts],
+    ["KOL Active",k.active_kols],
+    ["Followers รวม",k.total_followers],
+  ];
+  document.getElementById("kpis").innerHTML = cards.map(([label,obj,isRate])=>{
+    if(!obj) return "";
+    const v = isRate ? ((obj.value*100).toFixed(2)+"%") : fmt(obj.value);
+    const d = obj.delta_pct;
+    return `<div class="card p-3">
+      <div class="text-xs" style="color:var(--muted)">${label}</div>
+      <div class="text-lg sm:text-2xl font-bold mt-1">${v}</div>
+      <div class="text-xs mt-0.5 ${cls(d)}">${d==null?'<span class="flat">— เทียบเมื่อวาน</span>':pct(d)+' เทียบเมื่อวาน'}</div>
+    </div>`;
+  }).join("");
+}
+
+let sortK="views_7d", sortDir=-1;
+function renderTable(){
+  let ks=[...kFiltered()];
+  ks.sort((a,b)=>{ let x=a[sortK],y=b[sortK]; if(typeof x==="string"){return (x>y?1:-1)*sortDir;} return ((x??-1)-(y??-1))*sortDir; });
+  document.getElementById("rowCount").textContent=`(${ks.length})`;
+  document.getElementById("tblBody").innerHTML = ks.map(k=>`
+    <tr class="border-b hover:bg-white/5" style="border-color:var(--line)">
+      <td class="py-2 pr-2"><a href="#/kol/${encodeURIComponent(k.username)}" class="font-medium">${k.display}</a><div class="text-xs" style="color:var(--muted)">@${k.username}</div></td>
+      <td class="py-2 px-2"><span class="chip" style="border-color:transparent;background:${GROUP_COLORS[k.group]||'#475569'}22;color:${GROUP_COLORS[k.group]||'#cbd5e1'}">${k.group}</span></td>
+      <td class="py-2 px-2 text-right">${fmt(k.followers)}</td>
+      <td class="py-2 px-2 text-right">${k.posts_7d}</td>
+      <td class="py-2 px-2 text-right font-semibold">${fmt(k.views_7d)}</td>
+      <td class="py-2 px-2 text-right ${cls(k.delta_views_pct)}">${k.delta_views_pct==null?'–':pct(k.delta_views_pct)}</td>
+      <td class="py-2 px-2 text-right">${k.engagement_rate==null?'–':(k.engagement_rate*100).toFixed(2)+'%'}</td>
+    </tr>`).join("");
+}
+document.querySelectorAll("#tbl th").forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(sortK===k)sortDir*=-1; else{sortK=k;sortDir=-1;} renderTable(); });
+
+function renderDonut(){
+  const by={}; kFiltered().forEach(k=>by[k.group]=(by[k.group]||0)+k.views_7d);
+  const data=Object.entries(by).map(([g,v])=>({name:g,value:v,itemStyle:{color:GROUP_COLORS[g]||"#64748b"}}));
+  const c=chart("chartDonut"); state.charts.donut=c;
+  c.setOption({ tooltip:{trigger:"item",formatter:p=>`${p.name}<br>${fmt(p.value)} (${p.percent}%)`},
+    series:[{type:"pie",radius:["45%","72%"],label:{color:"#e6ecf3",fontSize:11},data}] },true);
+}
+
+function renderTop(){
+  const ks=[...kFiltered()].sort((a,b)=>b.views_7d-a.views_7d).slice(0,10).reverse();
+  const c=chart("chartTop"); state.charts.top=c;
+  c.setOption({ grid:{left:90,right:20,top:10,bottom:20}, tooltip:{trigger:"axis",axisPointer:{type:"shadow"},valueFormatter:fmt},
+    xAxis:{type:"value",...AX}, yAxis:{type:"category",data:ks.map(k=>k.display),...AX,axisLabel:{color:"#8b97a8",width:80,overflow:"truncate"}},
+    series:[{type:"bar",data:ks.map(k=>({value:k.views_7d,itemStyle:{color:GROUP_COLORS[k.group]||"#64748b",borderRadius:[0,4,4,0]}}))}] },true);
+}
+
+function renderScatter(){
+  const c=chart("chartScatter"); state.charts.scatter=c;
+  const data=kFiltered().filter(k=>k.followers>0).map(k=>({value:[k.followers,Math.max(k.views_7d,1)],name:k.display,itemStyle:{color:GROUP_COLORS[k.group]||"#64748b"}}));
+  c.setOption({ grid:{left:55,right:20,top:10,bottom:40},
+    tooltip:{formatter:p=>`${p.data.name}<br>Followers: ${fmt(p.value[0])}<br>Views: ${fmt(p.value[1])}`},
+    xAxis:{type:"log",name:"Followers",nameLocation:"middle",nameGap:25,...AX},
+    yAxis:{type:"log",name:"Views",...AX},
+    series:[{type:"scatter",symbolSize:9,data}] },true);
+}
+
+async function loadTrend(){
+  const metric=document.getElementById("trendMetric").value;
+  const q=new URLSearchParams({metric, group:state.group, days:30});
+  const t=await (await fetch("/api/trend?"+q)).json();
+  const c=chart("chartTrend"); state.charts.trend=c;
+  const color = metric==="engagement"?"#34d399":metric==="followers"?"#f59e0b":"#60a5fa";
+  c.setOption({ grid:{left:55,right:20,top:15,bottom:25}, tooltip:{trigger:"axis",valueFormatter:fmt},
+    xAxis:{type:"category",data:t.series.map(p=>p.date),...AX},
+    yAxis:{type:"value",...AX},
+    series:[{type:"line",smooth:true,showSymbol:t.series.length<15,data:t.series.map(p=>p.value),
+      lineStyle:{color,width:2}, itemStyle:{color},
+      areaStyle:{color:{type:"linear",x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:color+"55"},{offset:1,color:color+"05"}]}}}] },true);
+}
+document.getElementById("trendMetric").onchange=loadTrend;
+document.getElementById("search").oninput=e=>{ state.search=e.target.value; render(); };
+document.getElementById("dateSel").onchange=e=>{ state.date=e.target.value; loadSummary(); };
+
+// ---------- detail ----------
+async function showDetail(username){
+  document.getElementById("view-overview").classList.add("hidden");
+  const v=document.getElementById("view-detail"); v.classList.remove("hidden");
+  const d=await (await fetch("/api/kols/"+encodeURIComponent(username))).json();
+  if(d.detail){ document.getElementById("dName").textContent="ไม่พบ KOL"; return; }
+  document.getElementById("dName").textContent=d.display;
+  document.getElementById("dMeta").innerHTML=`@${d.username} · <span style="color:${GROUP_COLORS[d.group]}">${d.group}</span>`;
+
+  const dates=d.trend.map(x=>x.date);
+  const c1=chart("dTrend"); state.charts.dTrend=c1;
+  c1.setOption({ tooltip:{trigger:"axis",valueFormatter:fmt}, legend:{textStyle:{color:"#8b97a8"},top:0},
+    grid:{left:55,right:55,top:30,bottom:25}, xAxis:{type:"category",data:dates,...AX},
+    yAxis:[{type:"value",...AX},{type:"value",...AX}],
+    series:[
+      {name:"Followers",type:"line",smooth:true,yAxisIndex:1,data:d.trend.map(x=>x.followers),lineStyle:{color:"#f59e0b"},itemStyle:{color:"#f59e0b"}},
+      {name:"Views (7d)",type:"line",smooth:true,data:d.trend.map(x=>x.views_7d),lineStyle:{color:"#60a5fa"},itemStyle:{color:"#60a5fa"}},
+    ]},true);
+
+  const c2=chart("dER"); state.charts.dER=c2;
+  c2.setOption({ tooltip:{trigger:"axis",valueFormatter:v=>v==null?"–":(v*100).toFixed(2)+"%"},
+    grid:{left:55,right:20,top:15,bottom:25}, xAxis:{type:"category",data:dates,...AX}, yAxis:{type:"value",...AX,axisLabel:{color:"#8b97a8",formatter:v=>(v*100).toFixed(1)+"%"}},
+    series:[{type:"line",smooth:true,data:d.trend.map(x=>x.engagement_rate),lineStyle:{color:"#ec4899"},itemStyle:{color:"#ec4899"},areaStyle:{color:"#ec489922"}}]},true);
+
+  document.getElementById("dPosts").innerHTML = d.posts.length? `<table class="w-full text-xs sm:text-sm"><thead style="color:var(--muted)"><tr class="text-left border-b" style="border-color:var(--line)">
+    <th class="py-2 pr-2">โพสต์</th><th class="py-2 px-2 text-right">Views</th><th class="py-2 px-2 text-right">Likes</th><th class="py-2 px-2 text-right">Comments</th><th class="py-2 px-2 text-right">Shares</th></tr></thead><tbody>`+
+    d.posts.map(p=>`<tr class="border-b" style="border-color:var(--line)"><td class="py-2 pr-2"><a href="${p.url}" target="_blank" rel="noopener">${(p.posted_at||'').slice(0,10)} ${p.is_pinned?'📌':''}${p.is_slideshow?'🖼️':'🎬'}</a></td>
+      <td class="py-2 px-2 text-right font-semibold">${fmt(p.views)}</td><td class="py-2 px-2 text-right">${fmt(p.likes)}</td><td class="py-2 px-2 text-right">${fmt(p.comments)}</td><td class="py-2 px-2 text-right">${fmt(p.shares)}</td></tr>`).join("")+
+    `</tbody></table>` : '<p style="color:var(--muted)" class="text-sm">ไม่มีโพสต์ใน 7 วันล่าสุด</p>';
+  window.scrollTo(0,0);
+}
+
+// ---------- init ----------
+(async function init(){
+  buildChips();
+  await loadHealth();
+  await loadSummary();
+  route();
+})();
+</script>
+</body>
+</html>
