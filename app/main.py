@@ -45,32 +45,34 @@ def version():
 FRONTEND_DIR = pathlib.Path(__file__).resolve().parent.parent / "frontend"
 INDEX = FRONTEND_DIR / "index.html"
 REPORT = FRONTEND_DIR / "report.html"
+KOLS_PAGE = FRONTEND_DIR / "kols.html"
+
+# HTML pages must always revalidate — otherwise browsers serve a stale shell
+# after a deploy (e.g. the old report before the dynamic rewrite).
+_NO_CACHE = {"Cache-Control": "no-cache, must-revalidate", "Pragma": "no-cache"}
+
+
+def _page(path: pathlib.Path):
+    if path.exists():
+        return FileResponse(path, headers=_NO_CACHE)
+    return JSONResponse({"error": f"{path.name} not found"}, status_code=404)
 
 
 @app.get("/")
 def index():
-    if INDEX.exists():
-        return FileResponse(INDEX)
-    return JSONResponse({"error": "frontend/index.html not found"}, status_code=404)
+    return _page(INDEX)
 
 
 @app.get("/report")
 def report():
-    """Standalone PAO Super Perfume 2026 campaign report (self-contained snapshot)."""
-    if REPORT.exists():
-        return FileResponse(REPORT)
-    return JSONResponse({"error": "frontend/report.html not found"}, status_code=404)
-
-
-KOLS_PAGE = FRONTEND_DIR / "kols.html"
+    """Dynamic PAO Super Perfume 2026 campaign report (data via /api/report/data)."""
+    return _page(REPORT)
 
 
 @app.get("/kols")
 def kols_page():
     """KOL roster editor (Tracker + Report) — open, no auth."""
-    if KOLS_PAGE.exists():
-        return FileResponse(KOLS_PAGE)
-    return JSONResponse({"error": "frontend/kols.html not found"}, status_code=404)
+    return _page(KOLS_PAGE)
 
 
 # Serve any other static assets placed in frontend/ (kept minimal; SPA is one file).
