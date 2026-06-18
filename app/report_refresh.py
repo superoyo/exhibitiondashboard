@@ -91,12 +91,10 @@ def refresh_report() -> dict:
             kols = session.scalars(
                 select(ReportKol).where(ReportKol.active.is_(True))
             ).all()
-            # (username, post_url, video_id) for active rows that have a link
-            roster = [(k.username.strip().lower(), k.url, video_id_of(k.url)) for k in kols]
-        usernames = [u for u, _, _ in roster]
-        urls = [url for _, url, vid in roster if url and vid]
-        vid_to_user = {vid: u for u, _, vid in roster if vid}
-        REFRESH_STATE["kol_count"] = len(usernames)
+            roster = [(k.username.strip().lower(), k.url) for k in kols]
+        usernames = {u for u, _ in roster}
+        urls = [url for _, url in roster if url]
+        REFRESH_STATE["kol_count"] = len(roster)
 
         if not urls:
             REFRESH_STATE.update(
@@ -109,19 +107,18 @@ def refresh_report() -> dict:
         items, meta = run_scrape_posts(urls)
         posts, profile = _parse_report_items(items)
 
+        # Match scraped posts to the roster by USERNAME (robust to short links
+        # like vt.tiktok.com that carry no /video/ id). One post per KOL.
+        by_user: Dict[str, Dict] = {}
+        for p in posts:
+            u = p["username"]
+            if u in usernames and (u not in by_user or p["views"] > by_user[u]["views"]):
+                by_user[u] = p
+
         with session_scope() as session:
-            # Replace the snapshot for the refreshed usernames.
             session.execute(delete(ReportPost).where(ReportPost.username.in_(usernames)))
-            seen = set()
-            for p in posts:
-                vid = p["video_id"]
-                owner = vid_to_user.get(vid)
-                if not owner or vid in seen:
-                    continue  # only keep posts that match a roster link
-                seen.add(vid)
-                p["username"] = owner  # canonical username from the roster
+            for p in by_user.values():
                 session.add(ReportPost(**p))
-            # Update followers + fill display from nickName when still blank.
             for k in session.scalars(select(ReportKol).where(ReportKol.username.in_(usernames))).all():
                 pr = profile.get(k.username.lower())
                 if pr:
@@ -130,8 +127,9 @@ def refresh_report() -> dict:
                     if pr["nick"] and (not k.display or k.display == k.username):
                         k.display = pr["nick"]
 
-        missing = len(urls) - len(seen)
-        msg = f"อัปเดตแล้ว {len(seen)}/{len(urls)} โพสต์"
+        seen = set(by_user)
+        missing = len(usernames) - len(seen)
+        msg = f"อัปเดตแล้ว {len(seen)}/{len(usernames)} โพสต์"
         if missing > 0:
             msg += f" (ดึงไม่ได้ {missing} — ลิงก์อาจผิด/โพสต์ถูกลบ)"
         REFRESH_STATE.update(

@@ -200,20 +200,21 @@ for _name, _model, _url in (("tracker", Kol, False), ("report", ReportKol, True)
 @router.get("/report/data")
 def report_data(session: Session = Depends(db_dependency)):
     """Records for the dynamic /report page — each active report KOL joined to
-    the scraped metrics of its specific campaign post (matched by video id)."""
-    from app.report_refresh import video_id_of
-
+    the scraped metrics of its campaign post (matched by username)."""
     roster = session.scalars(
         select(ReportKol).where(ReportKol.active.is_(True)).order_by(ReportKol.content_group)
     ).all()
-    posts_by_vid = {p.video_id: p for p in session.scalars(select(ReportPost)).all()}
+    posts_by_user: dict = {}
+    for p in session.scalars(select(ReportPost)).all():
+        u = p.username.lower()
+        if u not in posts_by_user or p.views > posts_by_user[u].views:
+            posts_by_user[u] = p
 
     records = []
     for k in roster:
-        vid = video_id_of(k.url)
-        p = posts_by_vid.get(vid) if vid else None
+        p = posts_by_user.get(k.username.lower())
         if not p:
-            continue  # no scraped data for this post yet — skip from the report
+            continue  # no scraped data for this KOL yet — skip from the report
         records.append({
             "username": k.username,
             "nickname": k.display,
