@@ -59,8 +59,31 @@ class ReportKol(Base):
     display: Mapped[str] = mapped_column(String(255), nullable=False)
     content_group: Mapped[str] = mapped_column("content_group", String(64), nullable=False)
     url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    followers: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ReportPost(Base):
+    """Latest scraped posts for the report roster (refreshed via the Refresh
+    Data button). Holds the trailing-window snapshot per video, replaced on
+    each refresh for the refreshed usernames."""
+    __tablename__ = "report_posts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    video_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cover_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    posted_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    views: Mapped[int] = mapped_column(BigInteger, default=0)
+    likes: Mapped[int] = mapped_column(BigInteger, default=0)
+    comments: Mapped[int] = mapped_column(BigInteger, default=0)
+    shares: Mapped[int] = mapped_column(BigInteger, default=0)
+    saves: Mapped[int] = mapped_column(BigInteger, default=0)
+    scraped_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 

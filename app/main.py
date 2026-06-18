@@ -23,18 +23,23 @@ def _seed_on_startup() -> None:
     """Best-effort seed of the KOL master list on boot. Never blocks startup —
     if it fails (e.g. DB not ready), the web still serves and logs the error."""
     try:
-        from app.seed import seed_if_empty, seed_report_kols_if_empty
+        from app.seed import (
+            seed_if_empty,
+            seed_report_kols_if_empty,
+            seed_report_posts_if_empty,
+        )
 
         n = seed_if_empty()
         r = seed_report_kols_if_empty()
-        log.info("Startup bootstrap complete: %d tracker KOLs, %d report KOLs.", n, r)
+        rp = seed_report_posts_if_empty()
+        log.info("Startup bootstrap: %d tracker KOLs, %d report KOLs, %d report posts.", n, r, rp)
     except Exception as exc:  # noqa: BLE001 — seeding must never crash the web
         log.warning("Startup seed skipped (%s). Run scripts/seed_kols.py manually.", exc)
 
 @app.get("/api/version")
 def version():
     """Build marker — lets us confirm which commit Railway is actually running."""
-    return {"build": "kol-editor-v1"}
+    return {"build": "report-refresh-v1"}
 
 
 FRONTEND_DIR = pathlib.Path(__file__).resolve().parent.parent / "frontend"

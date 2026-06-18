@@ -7,12 +7,13 @@ from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import config, queries
 from app.db import db_dependency
-from app.models import Kol, ReportKol
+from app.models import Kol, ReportKol, ReportPost
+from app.report_refresh import REFRESH_STATE, refresh_report
 from app.scrape import run_daily_scrape
 
 log = logging.getLogger("api")
@@ -187,3 +188,63 @@ for _name, _model, _url in (("tracker", Kol, False), ("report", ReportKol, True)
     router.add_api_route(f"/roster/{_name}", _add, methods=["POST"])
     router.add_api_route(f"/roster/{_name}/{{item_id}}", _update, methods=["PATCH"])
     router.add_api_route(f"/roster/{_name}/{{item_id}}", _delete, methods=["DELETE"])
+
+
+# ----------------------------------------------------------------------------
+# Report data + Refresh Data button (scrape 7-day window for active report KOLs)
+# ----------------------------------------------------------------------------
+
+@router.get("/report/data")
+def report_data(session: Session = Depends(db_dependency)):
+    """Records for the dynamic /report page — active report KOLs joined with
+    their latest scraped posts."""
+    roster = {
+        k.username.lower(): k
+        for k in session.scalars(select(ReportKol).where(ReportKol.active.is_(True))).all()
+    }
+    records = []
+    if roster:
+        posts = session.scalars(
+            select(ReportPost).where(ReportPost.username.in_(list(roster.keys())))
+        ).all()
+        for p in posts:
+            k = roster.get(p.username.lower())
+            if not k:
+                continue
+            records.append({
+                "username": p.username,
+                "nickname": k.display,
+                "category": k.content_group,
+                "followers": k.followers,
+                "views": p.views,
+                "likes": p.likes,
+                "comments": p.comments,
+                "shares": p.shares,
+                "saves": p.saves,
+                "posted": p.posted_at.date().isoformat() if p.posted_at else "",
+                "url": p.url or "",
+                "thumb": p.cover_url or "",
+            })
+    last = session.scalar(select(func.max(ReportPost.scraped_at)))
+    return {
+        "records": records,
+        "refreshed_at": last.isoformat() if last else None,
+        "roster_count": len(roster),
+        "post_count": len(records),
+    }
+
+
+@router.post("/report/refresh")
+def report_refresh_trigger(background: BackgroundTasks):
+    """Kick off a 7-day Apify scrape for the active report roster (open, no auth).
+    Runs in the background; poll /api/report/refresh/status."""
+    if REFRESH_STATE.get("status") == "running":
+        raise HTTPException(status_code=409, detail="กำลังดึงข้อมูลอยู่แล้ว รอให้เสร็จก่อน")
+    REFRESH_STATE.update(status="running", message="เริ่มงาน…", posts=0)
+    background.add_task(refresh_report)
+    return {"status": "started"}
+
+
+@router.get("/report/refresh/status")
+def report_refresh_status():
+    return REFRESH_STATE
