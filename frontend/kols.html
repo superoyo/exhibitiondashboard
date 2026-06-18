@@ -63,6 +63,9 @@
         <input id="addGroup" class="inp" placeholder="กลุ่ม" list="groupList" />
         <button id="addBtn" class="btn btn-primary">เพิ่ม</button>
       </div>
+      <div id="addUrlWrap" class="mt-2" style="display:none">
+        <input id="addUrl" class="inp" placeholder="🔗 ลิงก์โพสต์ TikTok ของแคมเปญ — เช่น https://www.tiktok.com/@user/video/123…" />
+      </div>
       <datalist id="groupList"></datalist>
     </div>
 
@@ -73,10 +76,8 @@
       </div>
       <div class="overflow-x-auto">
         <table>
-          <thead><tr>
-            <th>#</th><th>@username</th><th>ชื่อแสดง</th><th>กลุ่ม</th><th>สถานะ</th><th class="text-right">จัดการ</th>
-          </tr></thead>
-          <tbody id="rows"><tr><td colspan="6" style="color:var(--muted)">กำลังโหลด…</td></tr></tbody>
+          <thead id="thead"></thead>
+          <tbody id="rows"><tr><td style="color:var(--muted)">กำลังโหลด…</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -104,19 +105,26 @@ function groupCell(val){
   const opts = GROUPS[roster].map(g=>`<option value="${g}">`).join("");
   return `<input class="inp f-group" value="${val||""}" list="groupList">`;
 }
+function esc(s){return (s||"").replace(/"/g,'&quot;');}
 async function load(){
+  const isReport = roster==="report";
   $("#groupList").innerHTML = GROUPS[roster].map(g=>`<option value="${g}">`).join("");
   $("#addGroup").value = GROUPS[roster][0] || "";
-  $("#rows").innerHTML = `<tr><td colspan="6" style="color:var(--muted)">กำลังโหลด…</td></tr>`;
+  $("#addUrlWrap").style.display = isReport ? "block" : "none";
+  $("#thead").innerHTML = `<tr>
+    <th>#</th><th>@username</th><th>ชื่อแสดง</th><th>กลุ่ม</th>${isReport?'<th>🔗 ลิงก์โพสต์</th>':''}<th>สถานะ</th><th class="text-right">จัดการ</th></tr>`;
+  const cols = isReport ? 7 : 6;
+  $("#rows").innerHTML = `<tr><td colspan="${cols}" style="color:var(--muted)">กำลังโหลด…</td></tr>`;
   try{
     const {kols} = await api("GET","");
-    if(!kols.length){ $("#rows").innerHTML = `<tr><td colspan="6" style="color:var(--muted)">ยังไม่มี KOL — เพิ่มด้านบน</td></tr>`; }
+    if(!kols.length){ $("#rows").innerHTML = `<tr><td colspan="${cols}" style="color:var(--muted)">ยังไม่มี KOL — เพิ่มด้านบน</td></tr>`; }
     else $("#rows").innerHTML = kols.map((k,i)=>`
       <tr data-id="${k.id}">
         <td style="color:var(--muted)">${i+1}</td>
         <td class="font-medium">@${k.username}</td>
-        <td><input class="inp f-display" value="${(k.display||"").replace(/"/g,'&quot;')}"></td>
+        <td><input class="inp f-display" value="${esc(k.display)}"></td>
         <td>${groupCell(k.group)}</td>
+        ${isReport?`<td><div class="flex items-center gap-1"><input class="inp f-url" style="min-width:230px" value="${esc(k.url)}" placeholder="วางลิงก์โพสต์ TikTok"><a href="${k.url||'#'}" target="_blank" title="เปิดโพสต์" class="btn" style="text-decoration:none">↗</a></div></td>`:''}
         <td><label class="flex items-center gap-1 text-xs"><input type="checkbox" class="f-active" ${k.active?"checked":""}> <span class="pill" style="background:${COLORS[k.group]||'#94a3b8'};color:#fff">${k.active?'active':'ปิด'}</span></label></td>
         <td class="text-right whitespace-nowrap">
           <button class="btn btn-primary act-save">บันทึก</button>
@@ -124,7 +132,7 @@ async function load(){
         </td>
       </tr>`).join("");
     $("#countLbl").textContent = `รายชื่อ KOL (${kols.length})`;
-  }catch(e){ $("#rows").innerHTML = `<tr><td colspan="6" style="color:#dc2626">โหลดไม่สำเร็จ: ${e.message}</td></tr>`; }
+  }catch(e){ $("#rows").innerHTML = `<tr><td colspan="${cols}" style="color:#dc2626">โหลดไม่สำเร็จ: ${e.message}</td></tr>`; }
 }
 // events (delegation)
 $("#rows").addEventListener("click", async (ev)=>{
@@ -132,11 +140,14 @@ $("#rows").addEventListener("click", async (ev)=>{
   const id = tr.dataset.id;
   if(ev.target.classList.contains("act-save")){
     try{
-      await api("PATCH","/"+id, {
+      const body = {
         display: tr.querySelector(".f-display").value,
         group: tr.querySelector(".f-group").value,
         active: tr.querySelector(".f-active").checked,
-      });
+      };
+      const urlEl = tr.querySelector(".f-url");
+      if(urlEl) body.url = urlEl.value.trim();
+      await api("PATCH","/"+id, body);
       toast("บันทึกแล้ว"); load();
     }catch(e){ toast(e.message,false); }
   }
@@ -149,8 +160,10 @@ $("#addBtn").onclick = async ()=>{
   const username = $("#addUser").value.trim();
   if(!username){ toast("ใส่ username ก่อน",false); return; }
   try{
-    await api("POST","", {username, display:$("#addDisplay").value.trim(), group:$("#addGroup").value.trim()||GROUPS[roster][0]});
-    $("#addUser").value=""; $("#addDisplay").value="";
+    const body = {username, display:$("#addDisplay").value.trim(), group:$("#addGroup").value.trim()||GROUPS[roster][0]};
+    if(roster==="report") body.url = $("#addUrl").value.trim();
+    await api("POST","", body);
+    $("#addUser").value=""; $("#addDisplay").value=""; $("#addUrl").value="";
     toast("เพิ่มแล้ว"); load();
   }catch(e){ toast(e.message,false); }
 };
@@ -159,9 +172,9 @@ document.querySelectorAll(".seg").forEach(b=>b.onclick=()=>{
   document.querySelectorAll(".seg").forEach(x=>x.classList.remove("seg-active"));
   b.classList.add("seg-active");
   roster = b.dataset.roster;
-  $("#note").textContent = roster==="tracker"
+  $("#note").innerHTML = roster==="tracker"
     ? "หน้านี้คุม KOL ที่ระบบ scrape จริง — แก้แล้วมีผลกับรอบ scrape ถัดไปและ dashboard /"
-    : "Roster ของรายงาน PAO — แก้รายชื่อ/กลุ่มได้ ตัวเลขสถิติในรายงานเป็น snapshot จะอัปเดตเมื่อ re-scrape + rebuild";
+    : "📌 ใส่/แก้ <b>ลิงก์โพสต์ TikTok ของแคมเปญ</b> ให้ครบ แล้วไปหน้า <a href='/report'>PAO Report</a> กดปุ่ม <b>Refresh Data</b> เพื่อดึงสถิติของโพสต์เหล่านี้ (ติ๊ก active = รวมในรายงาน)";
   load();
 });
 // init

@@ -109,6 +109,7 @@ class KolIn(BaseModel):
     username: str
     display: Optional[str] = None
     group: str
+    url: Optional[str] = None
 
 
 class KolPatch(BaseModel):
@@ -150,6 +151,8 @@ def _roster_endpoints(model, with_url: bool):
             content_group=body.group.strip(),
             active=True,
         )
+        if with_url and body.url:
+            k.url = body.url.strip()
         session.add(k)
         session.commit()
         session.refresh(k)
@@ -196,35 +199,35 @@ for _name, _model, _url in (("tracker", Kol, False), ("report", ReportKol, True)
 
 @router.get("/report/data")
 def report_data(session: Session = Depends(db_dependency)):
-    """Records for the dynamic /report page — active report KOLs joined with
-    their latest scraped posts."""
-    roster = {
-        k.username.lower(): k
-        for k in session.scalars(select(ReportKol).where(ReportKol.active.is_(True))).all()
-    }
+    """Records for the dynamic /report page — each active report KOL joined to
+    the scraped metrics of its specific campaign post (matched by video id)."""
+    from app.report_refresh import video_id_of
+
+    roster = session.scalars(
+        select(ReportKol).where(ReportKol.active.is_(True)).order_by(ReportKol.content_group)
+    ).all()
+    posts_by_vid = {p.video_id: p for p in session.scalars(select(ReportPost)).all()}
+
     records = []
-    if roster:
-        posts = session.scalars(
-            select(ReportPost).where(ReportPost.username.in_(list(roster.keys())))
-        ).all()
-        for p in posts:
-            k = roster.get(p.username.lower())
-            if not k:
-                continue
-            records.append({
-                "username": p.username,
-                "nickname": k.display,
-                "category": k.content_group,
-                "followers": k.followers,
-                "views": p.views,
-                "likes": p.likes,
-                "comments": p.comments,
-                "shares": p.shares,
-                "saves": p.saves,
-                "posted": p.posted_at.date().isoformat() if p.posted_at else "",
-                "url": p.url or "",
-                "thumb": p.cover_url or "",
-            })
+    for k in roster:
+        vid = video_id_of(k.url)
+        p = posts_by_vid.get(vid) if vid else None
+        if not p:
+            continue  # no scraped data for this post yet — skip from the report
+        records.append({
+            "username": k.username,
+            "nickname": k.display,
+            "category": k.content_group,
+            "followers": k.followers,
+            "views": p.views,
+            "likes": p.likes,
+            "comments": p.comments,
+            "shares": p.shares,
+            "saves": p.saves,
+            "posted": p.posted_at.date().isoformat() if p.posted_at else "",
+            "url": k.url or p.url or "",
+            "thumb": p.cover_url or "",
+        })
     last = session.scalar(select(func.max(ReportPost.scraped_at)))
     return {
         "records": records,

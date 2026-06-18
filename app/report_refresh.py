@@ -14,12 +14,19 @@ import httpx
 from sqlalchemy import delete, select
 
 from app import config
-from app.apify_client import ApifyError, oldest_date_for, run_scrape
+from app.apify_client import ApifyError, run_scrape_posts
 from app.aggregate import _parse_posted_at, _to_int
 from app.db import session_scope
 from app.models import ReportKol, ReportPost
 
 log = logging.getLogger("report_refresh")
+
+
+def video_id_of(url: Optional[str]) -> str:
+    """Extract the TikTok video id from a post URL ('.../video/<id>?...')."""
+    if not url or "/video/" not in url:
+        return ""
+    return url.rstrip("/").split("/video/")[-1].split("?")[0].strip()
 
 # Single-worker in-memory progress for the UI to poll.
 REFRESH_STATE: Dict[str, Any] = {
@@ -84,28 +91,35 @@ def refresh_report() -> dict:
             kols = session.scalars(
                 select(ReportKol).where(ReportKol.active.is_(True))
             ).all()
-            usernames = [k.username.strip().lower() for k in kols]
+            # (username, post_url, video_id) for active rows that have a link
+            roster = [(k.username.strip().lower(), k.url, video_id_of(k.url)) for k in kols]
+        usernames = [u for u, _, _ in roster]
+        urls = [url for _, url, vid in roster if url and vid]
+        vid_to_user = {vid: u for u, _, vid in roster if vid}
         REFRESH_STATE["kol_count"] = len(usernames)
 
-        if not usernames:
-            REFRESH_STATE.update(status="failed", message="ไม่มี KOL ที่ติ๊ก active ในรายงาน",
-                                 finished_at=dt.datetime.now(config.TZ).isoformat())
-            return {"status": "skipped", "reason": "no active report KOLs"}
+        if not urls:
+            REFRESH_STATE.update(
+                status="failed",
+                message="ไม่มีลิงก์โพสต์ใน KOL ที่ติ๊ก active — ใส่ลิงก์โพสต์ในหน้าแก้ไข KOL ก่อน",
+                finished_at=dt.datetime.now(config.TZ).isoformat())
+            return {"status": "skipped", "reason": "no post URLs"}
 
-        oldest = oldest_date_for(_today(), config.LOOKBACK_DAYS)
-        log.info("Report refresh: %d KOLs, oldest=%s", len(usernames), oldest)
-
-        items, meta = run_scrape(usernames, oldest)
+        log.info("Report refresh: scraping %d post URLs", len(urls))
+        items, meta = run_scrape_posts(urls)
         posts, profile = _parse_report_items(items)
 
         with session_scope() as session:
-            # Replace posts for the refreshed usernames (current 7-day snapshot).
+            # Replace the snapshot for the refreshed usernames.
             session.execute(delete(ReportPost).where(ReportPost.username.in_(usernames)))
             seen = set()
             for p in posts:
-                if p["username"] not in usernames or p["video_id"] in seen:
-                    continue
-                seen.add(p["video_id"])
+                vid = p["video_id"]
+                owner = vid_to_user.get(vid)
+                if not owner or vid in seen:
+                    continue  # only keep posts that match a roster link
+                seen.add(vid)
+                p["username"] = owner  # canonical username from the roster
                 session.add(ReportPost(**p))
             # Update followers + fill display from nickName when still blank.
             for k in session.scalars(select(ReportKol).where(ReportKol.username.in_(usernames))).all():
@@ -116,13 +130,16 @@ def refresh_report() -> dict:
                     if pr["nick"] and (not k.display or k.display == k.username):
                         k.display = pr["nick"]
 
+        missing = len(urls) - len(seen)
+        msg = f"อัปเดตแล้ว {len(seen)}/{len(urls)} โพสต์"
+        if missing > 0:
+            msg += f" (ดึงไม่ได้ {missing} — ลิงก์อาจผิด/โพสต์ถูกลบ)"
         REFRESH_STATE.update(
-            status="success",
-            message=f"อัปเดตแล้ว {len(seen)} โพสต์ จาก {len(usernames)} KOL",
+            status="success", message=msg,
             finished_at=dt.datetime.now(config.TZ).isoformat(),
             posts=len(seen), cost_usd=meta.get("cost_usd"),
         )
-        log.info("Report refresh done: %d posts, cost=%s", len(seen), meta.get("cost_usd"))
+        log.info("Report refresh done: %d/%d posts, cost=%s", len(seen), len(urls), meta.get("cost_usd"))
         return {"status": "success", "posts": len(seen), "cost_usd": meta.get("cost_usd")}
 
     except (ApifyError, httpx.HTTPError) as exc:

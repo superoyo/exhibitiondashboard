@@ -51,13 +51,46 @@ def run_scrape(
     poll_interval: float = 10.0,
     timeout_s: float = 300.0,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """Run the actor and return (items, run_meta).
+    """Scrape KOL PROFILES (trailing window) — used by the live tracker."""
+    return _execute(_build_input(usernames, oldest_date),
+                    poll_interval=poll_interval, timeout_s=timeout_s)
+
+
+def _build_post_input(post_urls: List[str]) -> Dict[str, Any]:
+    """Actor input to scrape SPECIFIC posts by URL (campaign report mode)."""
+    return {
+        "postURLs": post_urls,
+        "shouldDownloadVideos": False,
+        "shouldDownloadCovers": False,
+        "shouldDownloadSubtitles": False,
+        "shouldDownloadSlideshowImages": False,
+        "shouldDownloadAvatars": False,
+    }
+
+
+def run_scrape_posts(
+    post_urls: List[str],
+    *,
+    poll_interval: float = 10.0,
+    timeout_s: float = 300.0,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Scrape SPECIFIC posts by URL — used by the campaign report refresh."""
+    return _execute(_build_post_input(post_urls),
+                    poll_interval=poll_interval, timeout_s=timeout_s)
+
+
+def _execute(
+    payload: Dict[str, Any],
+    *,
+    poll_interval: float = 10.0,
+    timeout_s: float = 300.0,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Run the actor with the given input and return (items, run_meta).
 
     run_meta contains: apify_run_id, status, cost_usd, dataset_id.
     Raises ApifyError on a failed/aborted/timed-out run or polling timeout.
     """
     token = config.require("APIFY_TOKEN", config.APIFY_TOKEN)
-    payload = _build_input(usernames, oldest_date)
 
     with httpx.Client(timeout=60.0) as client:
         # Step 1 — start run
