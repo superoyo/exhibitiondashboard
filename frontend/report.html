@@ -44,7 +44,7 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 <div id="empty" class="card p-8 text-center" style="display:none">
 <div class="text-4xl mb-2">📭</div>
 <div class="font-semibold mb-1">ยังไม่มีข้อมูลในรายงาน</div>
-<div class="text-sm mb-4" style="color:var(--muted)">กดปุ่ม <b>Refresh Data</b> เพื่อดึงข้อมูล 7 วันล่าสุดของ KOL ที่ติ๊ก active</div>
+<div class="text-sm mb-4" style="color:var(--muted)">กดปุ่ม <b>Refresh Data</b> เพื่อดึงสถิติจากลิงก์โพสต์แคมเปญของ KOL ที่ติ๊ก active</div>
 </div>
 
 <div id="content" style="display:none">
@@ -78,7 +78,7 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 <th class="pr-3 text-right" data-k="shares">🔁 Share</th><th class="pr-3 text-right" data-k="saves">🔖 Save</th>
 <th class="pr-3 text-right" data-k="er">ER%</th><th class="pr-3" data-k="posted">โพสต์เมื่อ</th><th>ลิงก์</th></tr></thead><tbody id="tb"></tbody></table></div>
 </div>
-<footer class="text-xs mt-5" style="color:var(--muted)">ER = engagement(like+cmt+share+save)/views · ข้อมูลดึง 7 วันล่าสุดจาก TikTok ผ่าน Apify (เฉพาะ KOL ที่ active) · กด Refresh Data เพื่ออัปเดต</footer>
+<footer class="text-xs mt-5" style="color:var(--muted)">ER = engagement(like+cmt+share+save)/views · ข้อมูลดึงจากลิงก์โพสต์แคมเปญผ่าน Apify (เฉพาะ KOL ที่ active) · กด Refresh Data เพื่ออัปเดต</footer>
 </div>
 </div>
 
@@ -200,7 +200,7 @@ async function poll(){
  }catch(e){ btn.disabled=false; btn.innerHTML='🔄 Refresh Data'; }
 }
 btn.onclick=async()=>{
- if(!confirm('ดึงข้อมูลใหม่จาก TikTok ย้อนหลัง 7 วัน เฉพาะ KOL ที่ติ๊ก active ในหน้าแก้ไข KOL?\n(ใช้เครดิต Apify · อาจใช้เวลา ~1 นาที)')) return;
+ if(!confirm('ดึงสถิติล่าสุดจากลิงก์โพสต์แคมเปญ เฉพาะ KOL ที่ติ๊ก active ในหน้าแก้ไข KOL?\n(ใช้เครดิต Apify · อาจใช้เวลา ~1 นาที)')) return;
  btn.disabled=true; btn.innerHTML='<span class="spin"></span>เริ่ม…';
  try{
   const r=await fetch('/api/report/refresh',{method:'POST'});
