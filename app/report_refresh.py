@@ -14,7 +14,7 @@ import httpx
 from sqlalchemy import delete, select
 
 from app import config
-from app.apify_client import ApifyError, run_scrape_posts
+from app.apify_client import ApifyError, run_scrape_fb, run_scrape_posts
 from app.aggregate import _parse_posted_at, _to_int
 from app.db import session_scope
 from app.models import ReportKol, ReportPost
@@ -27,6 +27,37 @@ def video_id_of(url: Optional[str]) -> str:
     if not url or "/video/" not in url:
         return ""
     return url.rstrip("/").split("/video/")[-1].split("?")[0].strip()
+
+
+def is_fb(url: Optional[str]) -> bool:
+    u = (url or "").lower()
+    return "facebook.com" in u or "fb.watch" in u
+
+
+def _parse_fb_items(items):
+    """Parse Facebook actor items → (posts, profile). FB has no views/saves;
+    engagement = likes + comments + shares. Matched to the roster by pageName."""
+    posts, profile = [], {}
+    for it in items:
+        page = (it.get("pageName") or "").strip().lower()
+        if not page:
+            continue
+        user = it.get("user") or {}
+        profile[page] = {"followers": 0, "nick": user.get("name") or it.get("pageName")}
+        pid = str(it.get("postId") or "")
+        posts.append({
+            "username": page,
+            "video_id": ("fb_" + pid)[:64] if pid else ("fb_" + page)[:64],
+            "url": it.get("facebookUrl") or it.get("url"),
+            "cover_url": user.get("profilePic"),
+            "posted_at": _parse_posted_at(it.get("time")),
+            "views": _to_int(it.get("viewsCount") or it.get("videoViewCount") or 0),
+            "likes": _to_int(it.get("likes")),
+            "comments": _to_int(it.get("comments")),
+            "shares": _to_int(it.get("shares")),
+            "saves": 0,
+        })
+    return posts, profile
 
 # Single-worker in-memory progress for the UI to poll.
 REFRESH_STATE: Dict[str, Any] = {
@@ -103,9 +134,23 @@ def refresh_report() -> dict:
                 finished_at=dt.datetime.now(config.TZ).isoformat())
             return {"status": "skipped", "reason": "no post URLs"}
 
-        log.info("Report refresh: scraping %d post URLs", len(urls))
-        items, meta = run_scrape_posts(urls)
-        posts, profile = _parse_report_items(items)
+        tt_urls = [u for u in urls if not is_fb(u)]
+        fb_urls = [u for u in urls if is_fb(u)]
+        log.info("Report refresh: %d TikTok + %d Facebook URLs", len(tt_urls), len(fb_urls))
+
+        posts, profile, cost = [], {}, 0.0
+        if tt_urls:
+            items, meta = run_scrape_posts(tt_urls)
+            p, pr = _parse_report_items(items)
+            posts += p; profile.update(pr)
+            if meta.get("cost_usd"):
+                cost += meta["cost_usd"]
+        if fb_urls:
+            items, meta = run_scrape_fb(fb_urls)
+            p, pr = _parse_fb_items(items)
+            posts += p; profile.update(pr)
+            if meta.get("cost_usd"):
+                cost += meta["cost_usd"]
 
         # Match scraped posts to the roster by USERNAME (robust to short links
         # like vt.tiktok.com that carry no /video/ id). One post per KOL.
@@ -135,10 +180,10 @@ def refresh_report() -> dict:
         REFRESH_STATE.update(
             status="success", message=msg,
             finished_at=dt.datetime.now(config.TZ).isoformat(),
-            posts=len(seen), cost_usd=meta.get("cost_usd"),
+            posts=len(seen), cost_usd=round(cost, 4) if cost else None,
         )
-        log.info("Report refresh done: %d/%d posts, cost=%s", len(seen), len(urls), meta.get("cost_usd"))
-        return {"status": "success", "posts": len(seen), "cost_usd": meta.get("cost_usd")}
+        log.info("Report refresh done: %d/%d posts, cost=%s", len(seen), len(usernames), cost)
+        return {"status": "success", "posts": len(seen), "cost_usd": round(cost, 4) if cost else None}
 
     except (ApifyError, httpx.HTTPError) as exc:
         log.error("Report refresh failed: %s", exc)

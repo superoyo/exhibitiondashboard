@@ -79,9 +79,22 @@ def run_scrape_posts(
                     poll_interval=poll_interval, timeout_s=timeout_s)
 
 
+def run_scrape_fb(
+    post_urls: List[str],
+    *,
+    poll_interval: float = 8.0,
+    timeout_s: float = 300.0,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Scrape specific Facebook posts by URL (campaign report — FB pages)."""
+    payload = {"startUrls": [{"url": u} for u in post_urls], "resultsLimit": 1}
+    return _execute(payload, actor_id=config.FB_ACTOR_ID,
+                    poll_interval=poll_interval, timeout_s=timeout_s)
+
+
 def _execute(
     payload: Dict[str, Any],
     *,
+    actor_id: str = config.APIFY_ACTOR_ID,
     poll_interval: float = 10.0,
     timeout_s: float = 300.0,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
@@ -95,7 +108,7 @@ def _execute(
     with httpx.Client(timeout=60.0) as client:
         # Step 1 — start run
         start = client.post(
-            f"{BASE}/acts/{config.APIFY_ACTOR_ID}/runs",
+            f"{BASE}/acts/{actor_id}/runs",
             params={"token": token},
             json=payload,
         )

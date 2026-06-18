@@ -35,6 +35,7 @@ TZ = ZoneInfo(TZ_NAME)
 
 # Apify actor + tuning knobs (kept here so they are easy to find / change).
 APIFY_ACTOR_ID: str = "clockworks~tiktok-scraper"
+FB_ACTOR_ID: str = "apify~facebook-posts-scraper"  # campaign report Facebook posts
 RESULTS_PER_PAGE: int = 20
 LOOKBACK_DAYS: int = 7  # oldestPostDateUnified = today - LOOKBACK_DAYS
 
