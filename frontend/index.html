@@ -18,10 +18,22 @@
     ::-webkit-scrollbar{ height:8px; width:8px; } ::-webkit-scrollbar-thumb{ background:#cbd5e1; border-radius:8px; }
     table th{ cursor:pointer; user-select:none; }
     a{ color:#2563eb; }
+    .nav{ display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; margin-bottom:1rem; }
+    .nav-brand{ font-weight:700; font-size:.95rem; margin-right:.6rem; }
+    .navtab{ padding:.4rem .9rem; border-radius:999px; font-size:.85rem; font-weight:600; color:#475569; text-decoration:none; border:1px solid var(--line); background:#fff; }
+    .navtab:hover{ background:#eef2f7; }
+    .navtab-active{ background:#0f172a; color:#fff; border-color:#0f172a; }
   </style>
 </head>
 <body class="min-h-screen">
   <div class="max-w-7xl mx-auto px-3 sm:px-5 py-4">
+
+    <!-- Nav -->
+    <nav class="nav">
+      <span class="nav-brand">📊 Sahagroup KOL Hub</span>
+      <a href="/" class="navtab navtab-active">KOL Tracker</a>
+      <a href="/report" class="navtab">PAO Report</a>
+    </nav>
 
     <!-- Header -->
     <header class="flex flex-wrap items-center justify-between gap-2 mb-4">
