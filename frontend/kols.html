@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>แก้ไขรายชื่อ KOL — Sahagroup KOL Hub</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root { --bg:#f4f6fa; --card:#fff; --line:#e5e7eb; --muted:#64748b; --text:#0f172a; }
+    html,body{ background:var(--bg); color:var(--text); font-family:'Noto Sans Thai',system-ui,sans-serif; }
+    .card{ background:var(--card); border:1px solid var(--line); border-radius:14px; box-shadow:0 1px 3px rgba(15,23,42,.05); }
+    a{ color:#2563eb; }
+    .nav{ display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; margin-bottom:1rem; }
+    .nav-brand{ font-weight:700; font-size:.95rem; margin-right:.6rem; }
+    .navtab{ padding:.4rem .9rem; border-radius:999px; font-size:.85rem; font-weight:600; color:#475569; text-decoration:none; border:1px solid var(--line); background:#fff; }
+    .navtab:hover{ background:#eef2f7; }
+    .navtab-active{ background:#0f172a; color:#fff; border-color:#0f172a; }
+    .seg{ padding:.4rem 1rem; border-radius:999px; font-size:.9rem; font-weight:600; border:1px solid var(--line); background:#fff; cursor:pointer; }
+    .seg-active{ background:#0f172a; color:#fff; border-color:#0f172a; }
+    .inp{ border:1px solid var(--line); border-radius:8px; padding:.35rem .6rem; font-size:.85rem; width:100%; background:#fff; }
+    .btn{ border-radius:8px; padding:.4rem .8rem; font-size:.82rem; font-weight:600; cursor:pointer; border:1px solid var(--line); background:#fff; }
+    .btn-primary{ background:#0f172a; color:#fff; border-color:#0f172a; }
+    .btn-danger{ color:#dc2626; border-color:#fecaca; background:#fff; }
+    .btn:hover{ filter:brightness(.97); }
+    table{ width:100%; border-collapse:collapse; }
+    th,td{ padding:.5rem .5rem; text-align:left; font-size:.85rem; border-bottom:1px solid var(--line); vertical-align:middle; }
+    th{ color:var(--muted); font-weight:600; white-space:nowrap; }
+    .pill{ padding:.1rem .55rem; border-radius:999px; font-size:.7rem; font-weight:600; }
+    #toast{ position:fixed; right:1rem; bottom:1rem; z-index:50; display:none; }
+  </style>
+</head>
+<body class="min-h-screen">
+  <div class="max-w-6xl mx-auto px-3 sm:px-5 py-4">
+
+    <!-- Nav -->
+    <nav class="nav">
+      <span class="nav-brand">📊 Sahagroup KOL Hub</span>
+      <a href="/" class="navtab">KOL Tracker</a>
+      <a href="/report" class="navtab">PAO Report</a>
+      <a href="/kols" class="navtab navtab-active">แก้ไข KOL</a>
+    </nav>
+
+    <header class="mb-4">
+      <h1 class="text-xl sm:text-2xl font-bold">✏️ แก้ไขรายชื่อ KOL</h1>
+      <p class="text-sm" style="color:var(--muted)">เพิ่ม / แก้ไข / ปิด-เปิด / ลบ KOL ของแต่ละ dashboard · บันทึกลงฐานข้อมูลทันที</p>
+    </header>
+
+    <!-- roster switch -->
+    <div class="flex gap-2 mb-4">
+      <button class="seg seg-active" data-roster="tracker">KOL Tracker <span class="opacity-70">(scrape จริง)</span></button>
+      <button class="seg" data-roster="report">PAO Report</button>
+    </div>
+
+    <p id="note" class="text-xs mb-3" style="color:var(--muted)"></p>
+
+    <!-- add form -->
+    <div class="card p-3 mb-4">
+      <div class="text-sm font-semibold mb-2">➕ เพิ่ม KOL ใหม่</div>
+      <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
+        <input id="addUser" class="inp" placeholder="username (ไม่ต้องใส่ @)" />
+        <input id="addDisplay" class="inp" placeholder="ชื่อแสดง (เว้นว่าง = username)" />
+        <input id="addGroup" class="inp" placeholder="กลุ่ม" list="groupList" />
+        <button id="addBtn" class="btn btn-primary">เพิ่ม</button>
+      </div>
+      <datalist id="groupList"></datalist>
+    </div>
+
+    <div class="card p-3">
+      <div class="flex items-center justify-between mb-2">
+        <div class="text-sm font-semibold" id="countLbl">รายชื่อ KOL</div>
+        <button id="reload" class="btn">↻ โหลดใหม่</button>
+      </div>
+      <div class="overflow-x-auto">
+        <table>
+          <thead><tr>
+            <th>#</th><th>@username</th><th>ชื่อแสดง</th><th>กลุ่ม</th><th>สถานะ</th><th class="text-right">จัดการ</th>
+          </tr></thead>
+          <tbody id="rows"><tr><td colspan="6" style="color:var(--muted)">กำลังโหลด…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="card px-4 py-2 text-sm"></div>
+
+<script>
+const GROUPS = {
+  tracker: ["Fashion","Food","Beauty","Household Items"],
+  report:  ["Entertain","Micro Local","คู่รัก"],
+};
+const COLORS = {Fashion:"#6366f1",Food:"#f59e0b",Beauty:"#ec4899","Household Items":"#10b981",Entertain:"#6366f1","Micro Local":"#10b981","คู่รัก":"#ec4899"};
+let roster = "tracker";
+
+const $ = s => document.querySelector(s);
+function toast(msg, ok=true){ const t=$("#toast"); t.textContent=(ok?"✅ ":"⚠️ ")+msg; t.style.display="block"; t.style.borderColor=ok?"#bbf7d0":"#fecaca"; clearTimeout(t._t); t._t=setTimeout(()=>t.style.display="none",2600); }
+async function api(method, path, body){
+  const r = await fetch("/api/roster/"+roster+path, {method, headers:{"Content-Type":"application/json"}, body: body?JSON.stringify(body):undefined});
+  const data = await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(data.detail || ("HTTP "+r.status));
+  return data;
+}
+function groupCell(val){
+  const opts = GROUPS[roster].map(g=>`<option value="${g}">`).join("");
+  return `<input class="inp f-group" value="${val||""}" list="groupList">`;
+}
+async function load(){
+  $("#groupList").innerHTML = GROUPS[roster].map(g=>`<option value="${g}">`).join("");
+  $("#addGroup").value = GROUPS[roster][0] || "";
+  $("#rows").innerHTML = `<tr><td colspan="6" style="color:var(--muted)">กำลังโหลด…</td></tr>`;
+  try{
+    const {kols} = await api("GET","");
+    if(!kols.length){ $("#rows").innerHTML = `<tr><td colspan="6" style="color:var(--muted)">ยังไม่มี KOL — เพิ่มด้านบน</td></tr>`; }
+    else $("#rows").innerHTML = kols.map((k,i)=>`
+      <tr data-id="${k.id}">
+        <td style="color:var(--muted)">${i+1}</td>
+        <td class="font-medium">@${k.username}</td>
+        <td><input class="inp f-display" value="${(k.display||"").replace(/"/g,'&quot;')}"></td>
+        <td>${groupCell(k.group)}</td>
+        <td><label class="flex items-center gap-1 text-xs"><input type="checkbox" class="f-active" ${k.active?"checked":""}> <span class="pill" style="background:${COLORS[k.group]||'#94a3b8'};color:#fff">${k.active?'active':'ปิด'}</span></label></td>
+        <td class="text-right whitespace-nowrap">
+          <button class="btn btn-primary act-save">บันทึก</button>
+          <button class="btn btn-danger act-del">ลบ</button>
+        </td>
+      </tr>`).join("");
+    $("#countLbl").textContent = `รายชื่อ KOL (${kols.length})`;
+  }catch(e){ $("#rows").innerHTML = `<tr><td colspan="6" style="color:#dc2626">โหลดไม่สำเร็จ: ${e.message}</td></tr>`; }
+}
+// events (delegation)
+$("#rows").addEventListener("click", async (ev)=>{
+  const tr = ev.target.closest("tr"); if(!tr) return;
+  const id = tr.dataset.id;
+  if(ev.target.classList.contains("act-save")){
+    try{
+      await api("PATCH","/"+id, {
+        display: tr.querySelector(".f-display").value,
+        group: tr.querySelector(".f-group").value,
+        active: tr.querySelector(".f-active").checked,
+      });
+      toast("บันทึกแล้ว"); load();
+    }catch(e){ toast(e.message,false); }
+  }
+  if(ev.target.classList.contains("act-del")){
+    if(!confirm("ลบ KOL นี้?")) return;
+    try{ await api("DELETE","/"+id); toast("ลบแล้ว"); load(); }catch(e){ toast(e.message,false); }
+  }
+});
+$("#addBtn").onclick = async ()=>{
+  const username = $("#addUser").value.trim();
+  if(!username){ toast("ใส่ username ก่อน",false); return; }
+  try{
+    await api("POST","", {username, display:$("#addDisplay").value.trim(), group:$("#addGroup").value.trim()||GROUPS[roster][0]});
+    $("#addUser").value=""; $("#addDisplay").value="";
+    toast("เพิ่มแล้ว"); load();
+  }catch(e){ toast(e.message,false); }
+};
+$("#reload").onclick = load;
+document.querySelectorAll(".seg").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll(".seg").forEach(x=>x.classList.remove("seg-active"));
+  b.classList.add("seg-active");
+  roster = b.dataset.roster;
+  $("#note").textContent = roster==="tracker"
+    ? "หน้านี้คุม KOL ที่ระบบ scrape จริง — แก้แล้วมีผลกับรอบ scrape ถัดไปและ dashboard /"
+    : "Roster ของรายงาน PAO — แก้รายชื่อ/กลุ่มได้ ตัวเลขสถิติในรายงานเป็น snapshot จะอัปเดตเมื่อ re-scrape + rebuild";
+  load();
+});
+// init
+$("#note").textContent = "หน้านี้คุม KOL ที่ระบบ scrape จริง — แก้แล้วมีผลกับรอบ scrape ถัดไปและ dashboard /";
+load();
+</script>
+</body>
+</html>

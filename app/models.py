@@ -45,6 +45,26 @@ class Kol(Base):
     dailies: Mapped[List["KolDaily"]] = relationship(back_populates="kol")
 
 
+class ReportKol(Base):
+    """Roster of KOLs for a static campaign report (e.g. PAO Super Perfume).
+
+    Editable via the /kols admin page. Independent of the live `kols` table —
+    the report's metrics are a snapshot; this table just stores the roster
+    (who was in the campaign) so names/groups can be curated.
+    """
+    __tablename__ = "report_kols"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    display: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_group: Mapped[str] = mapped_column("content_group", String(64), nullable=False)
+    url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class ScrapeRun(Base):
     """One row per scrape attempt — audit + idempotency anchor."""
     __tablename__ = "scrape_runs"

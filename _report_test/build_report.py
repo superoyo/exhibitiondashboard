@@ -40,6 +40,7 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 <span class="nav-brand">📊 Sahagroup KOL Hub</span>
 <a href="/" class="navtab">KOL Tracker</a>
 <a href="/report" class="navtab navtab-active">PAO Report</a>
+<a href="/kols" class="navtab">แก้ไข KOL</a>
 </nav>
 <header class="mb-5">
 <h1 class="text-xl sm:text-3xl font-bold">🧴 PAO Super Perfume 2026 — Campaign Report</h1>

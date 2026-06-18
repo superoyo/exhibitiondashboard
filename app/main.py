@@ -23,17 +23,18 @@ def _seed_on_startup() -> None:
     """Best-effort seed of the KOL master list on boot. Never blocks startup —
     if it fails (e.g. DB not ready), the web still serves and logs the error."""
     try:
-        from app.seed import seed_from_config
+        from app.seed import seed_if_empty, seed_report_kols_if_empty
 
-        n = seed_from_config()
-        log.info("Startup seed complete: %d KOLs.", n)
+        n = seed_if_empty()
+        r = seed_report_kols_if_empty()
+        log.info("Startup bootstrap complete: %d tracker KOLs, %d report KOLs.", n, r)
     except Exception as exc:  # noqa: BLE001 — seeding must never crash the web
         log.warning("Startup seed skipped (%s). Run scripts/seed_kols.py manually.", exc)
 
 @app.get("/api/version")
 def version():
     """Build marker — lets us confirm which commit Railway is actually running."""
-    return {"build": "seed-v3-autodeploy-probe"}
+    return {"build": "kol-editor-v1"}
 
 
 FRONTEND_DIR = pathlib.Path(__file__).resolve().parent.parent / "frontend"
@@ -54,6 +55,17 @@ def report():
     if REPORT.exists():
         return FileResponse(REPORT)
     return JSONResponse({"error": "frontend/report.html not found"}, status_code=404)
+
+
+KOLS_PAGE = FRONTEND_DIR / "kols.html"
+
+
+@app.get("/kols")
+def kols_page():
+    """KOL roster editor (Tracker + Report) — open, no auth."""
+    if KOLS_PAGE.exists():
+        return FileResponse(KOLS_PAGE)
+    return JSONResponse({"error": "frontend/kols.html not found"}, status_code=404)
 
 
 # Serve any other static assets placed in frontend/ (kept minimal; SPA is one file).
