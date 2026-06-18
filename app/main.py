@@ -38,6 +38,7 @@ def version():
 
 FRONTEND_DIR = pathlib.Path(__file__).resolve().parent.parent / "frontend"
 INDEX = FRONTEND_DIR / "index.html"
+REPORT = FRONTEND_DIR / "report.html"
 
 
 @app.get("/")
@@ -45,6 +46,14 @@ def index():
     if INDEX.exists():
         return FileResponse(INDEX)
     return JSONResponse({"error": "frontend/index.html not found"}, status_code=404)
+
+
+@app.get("/report")
+def report():
+    """Standalone PAO Super Perfume 2026 campaign report (self-contained snapshot)."""
+    if REPORT.exists():
+        return FileResponse(REPORT)
+    return JSONResponse({"error": "frontend/report.html not found"}, status_code=404)
 
 
 # Serve any other static assets placed in frontend/ (kept minimal; SPA is one file).
