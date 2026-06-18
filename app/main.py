@@ -30,6 +30,12 @@ def _seed_on_startup() -> None:
     except Exception as exc:  # noqa: BLE001 — seeding must never crash the web
         log.warning("Startup seed skipped (%s). Run scripts/seed_kols.py manually.", exc)
 
+@app.get("/api/version")
+def version():
+    """Build marker — lets us confirm which commit Railway is actually running."""
+    return {"build": "seed-v3-autodeploy-probe"}
+
+
 FRONTEND_DIR = pathlib.Path(__file__).resolve().parent.parent / "frontend"
 INDEX = FRONTEND_DIR / "index.html"
 
