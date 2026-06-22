@@ -39,13 +39,14 @@ def _seed_on_startup() -> None:
 @app.get("/api/version")
 def version():
     """Build marker — lets us confirm which commit Railway is actually running."""
-    return {"build": "report-facebook-v4"}
+    return {"build": "token-page-v5"}
 
 
 FRONTEND_DIR = pathlib.Path(__file__).resolve().parent.parent / "frontend"
 INDEX = FRONTEND_DIR / "index.html"
 REPORT = FRONTEND_DIR / "report.html"
 KOLS_PAGE = FRONTEND_DIR / "kols.html"
+TOKEN_PAGE = FRONTEND_DIR / "token.html"
 
 # HTML pages must always revalidate — otherwise browsers serve a stale shell
 # after a deploy (e.g. the old report before the dynamic rewrite).
@@ -73,6 +74,12 @@ def report():
 def kols_page():
     """KOL roster editor (Tracker + Report) — open, no auth."""
     return _page(KOLS_PAGE)
+
+
+@app.get("/token")
+def token_page():
+    """Apify token viewer/editor — open, no auth."""
+    return _page(TOKEN_PAGE)
 
 
 # Serve any other static assets placed in frontend/ (kept minimal; SPA is one file).

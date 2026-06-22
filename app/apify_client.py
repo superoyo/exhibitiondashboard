@@ -103,7 +103,9 @@ def _execute(
     run_meta contains: apify_run_id, status, cost_usd, dataset_id.
     Raises ApifyError on a failed/aborted/timed-out run or polling timeout.
     """
-    token = config.require("APIFY_TOKEN", config.APIFY_TOKEN)
+    from app.settings import get_apify_token
+
+    token = config.require("APIFY_TOKEN", get_apify_token())
 
     with httpx.Client(timeout=60.0) as client:
         # Step 1 — start run

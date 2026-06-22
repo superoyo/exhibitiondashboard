@@ -88,6 +88,18 @@ class ReportPost(Base):
     )
 
 
+class AppSetting(Base):
+    """Tiny key/value store for runtime-editable settings (e.g. apify_token),
+    so an expired Apify key can be swapped from the web UI without a redeploy."""
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class ScrapeRun(Base):
     """One row per scrape attempt — audit + idempotency anchor."""
     __tablename__ = "scrape_runs"

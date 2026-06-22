@@ -252,3 +252,50 @@ def report_refresh_trigger(background: BackgroundTasks):
 @router.get("/report/refresh/status")
 def report_refresh_status():
     return REFRESH_STATE
+
+
+# ----------------------------------------------------------------------------
+# Apify token management (open, no auth) — view masked + edit
+# ----------------------------------------------------------------------------
+
+class TokenIn(BaseModel):
+    token: str
+
+
+@router.get("/token")
+def token_get():
+    from app.settings import apify_token_source, get_apify_token, mask_token
+
+    tok = get_apify_token()
+    return {"masked": mask_token(tok), "source": apify_token_source(), "is_set": bool(tok)}
+
+
+@router.post("/token")
+def token_set(body: TokenIn):
+    from app.settings import APIFY_TOKEN_KEY, mask_token, set_setting
+
+    tok = (body.token or "").strip()
+    if len(tok) < 10:
+        raise HTTPException(400, "Token สั้นเกินไป ดูเหมือนไม่ถูกต้อง")
+    set_setting(APIFY_TOKEN_KEY, tok)
+    return {"status": "saved", "masked": mask_token(tok), "source": "database"}
+
+
+@router.post("/token/test")
+def token_test():
+    """Validate the current token against Apify (cheap user endpoint)."""
+    import httpx as _httpx
+
+    from app.settings import get_apify_token
+
+    tok = get_apify_token()
+    if not tok:
+        raise HTTPException(400, "ยังไม่มี token")
+    try:
+        r = _httpx.get("https://api.apify.com/v2/users/me", params={"token": tok}, timeout=20)
+        if r.status_code == 200:
+            data = r.json().get("data", {})
+            return {"ok": True, "username": data.get("username"), "plan": (data.get("plan") or {}).get("id")}
+        return {"ok": False, "status": r.status_code, "detail": "token ใช้ไม่ได้ (อาจหมดอายุ)"}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "detail": str(exc)[:120]}

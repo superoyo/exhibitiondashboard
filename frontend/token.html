@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Apify Token — Sahagroup KOL Hub</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root { --bg:#f4f6fa; --card:#fff; --line:#e5e7eb; --muted:#64748b; --text:#0f172a; }
+    html,body{ background:var(--bg); color:var(--text); font-family:'Noto Sans Thai',system-ui,sans-serif; }
+    .card{ background:var(--card); border:1px solid var(--line); border-radius:14px; box-shadow:0 1px 3px rgba(15,23,42,.05); }
+    a{ color:#2563eb; }
+    .nav{ display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; margin-bottom:1rem; }
+    .nav-brand{ font-weight:700; font-size:.95rem; margin-right:.6rem; }
+    .navtab{ padding:.4rem .9rem; border-radius:999px; font-size:.85rem; font-weight:600; color:#475569; text-decoration:none; border:1px solid var(--line); background:#fff; }
+    .navtab:hover{ background:#eef2f7; }
+    .navtab-active{ background:#0f172a; color:#fff; border-color:#0f172a; }
+    .inp{ border:1px solid var(--line); border-radius:8px; padding:.5rem .7rem; font-size:.9rem; width:100%; background:#fff; font-family:monospace; }
+    .btn{ border-radius:8px; padding:.5rem .9rem; font-size:.85rem; font-weight:600; cursor:pointer; border:1px solid var(--line); background:#fff; }
+    .btn-primary{ background:#0f172a; color:#fff; border-color:#0f172a; }
+    .mono{ font-family:monospace; }
+  </style>
+</head>
+<body class="min-h-screen">
+  <div class="max-w-3xl mx-auto px-3 sm:px-5 py-4">
+    <nav class="nav">
+      <span class="nav-brand">📊 Sahagroup KOL Hub</span>
+      <a href="/" class="navtab">Sahagroup</a>
+      <a href="/report" class="navtab">PAO Report</a>
+      <a href="/kols" class="navtab">แก้ไข KOL</a>
+      <a href="/token" class="navtab navtab-active">Apify Token</a>
+    </nav>
+
+    <header class="mb-4">
+      <h1 class="text-xl sm:text-2xl font-bold">🔑 Apify Token</h1>
+      <p class="text-sm" style="color:var(--muted)">Token ที่เว็บใช้ดึงข้อมูลจาก TikTok/Facebook · เปลี่ยนได้เมื่อ key หมดอายุ</p>
+    </header>
+
+    <div class="card p-4 mb-4" style="background:#fff7ed;border-color:#fed7aa">
+      <div class="text-sm" style="color:#9a3412">⚠️ หน้านี้ <b>เปิด public ไม่มีรหัส</b> — ใครมีลิงก์ก็ดู/เปลี่ยน token ได้ Token ถูกซ่อนไว้ (โชว์แค่บางส่วน) แต่ถ้าต้องการความปลอดภัยมากขึ้นแจ้งผมเพิ่มรหัสล็อกได้</div>
+    </div>
+
+    <div class="card p-4 mb-4">
+      <div class="text-xs mb-1" style="color:var(--muted)">Token ปัจจุบัน</div>
+      <div class="flex items-center gap-3 flex-wrap">
+        <div id="masked" class="mono text-lg font-semibold">…</div>
+        <span id="source" class="text-xs px-2 py-1 rounded-full" style="background:#eef2f7;color:#475569"></span>
+        <button id="testBtn" class="btn">ทดสอบ token</button>
+        <span id="testResult" class="text-sm"></span>
+      </div>
+    </div>
+
+    <div class="card p-4">
+      <div class="text-sm font-semibold mb-2">เปลี่ยน Token</div>
+      <p class="text-xs mb-2" style="color:var(--muted)">วาง Apify API token ตัวใหม่ (เอาจาก <a href="https://console.apify.com/account/integrations" target="_blank">console.apify.com → Integrations</a>) แล้วกดบันทึก — มีผลกับการดึงข้อมูลทันที ไม่ต้อง deploy</p>
+      <textarea id="newTok" class="inp" rows="2" placeholder="apify_api_..."></textarea>
+      <div class="mt-3 flex gap-2">
+        <button id="saveBtn" class="btn btn-primary">บันทึก Token</button>
+        <span id="saveMsg" class="text-sm self-center"></span>
+      </div>
+    </div>
+  </div>
+
+<script>
+const $=s=>document.querySelector(s);
+async function load(){
+  const d=await (await fetch("/api/token")).json();
+  $("#masked").textContent = d.is_set ? d.masked : "(ยังไม่ได้ตั้ง)";
+  $("#source").textContent = d.source==="database" ? "จาก: หน้านี้ (DB)" : "จาก: ค่าเริ่มต้น (env)";
+}
+$("#testBtn").onclick=async()=>{
+  $("#testResult").textContent="กำลังทดสอบ…"; $("#testResult").style.color="#64748b";
+  try{
+    const d=await (await fetch("/api/token/test",{method:"POST"})).json();
+    if(d.ok){ $("#testResult").textContent=`✅ ใช้ได้ (user: ${d.username||'-'}${d.plan?', plan: '+d.plan:''})`; $("#testResult").style.color="#059669"; }
+    else { $("#testResult").textContent=`❌ ${d.detail||'ใช้ไม่ได้'}`; $("#testResult").style.color="#dc2626"; }
+  }catch(e){ $("#testResult").textContent="❌ ทดสอบไม่สำเร็จ"; $("#testResult").style.color="#dc2626"; }
+};
+$("#saveBtn").onclick=async()=>{
+  const token=$("#newTok").value.trim();
+  if(!token){ $("#saveMsg").textContent="วาง token ก่อน"; $("#saveMsg").style.color="#dc2626"; return; }
+  if(!confirm("เปลี่ยน Apify token เป็นตัวใหม่? มีผลกับการดึงข้อมูลทันที")) return;
+  try{
+    const r=await fetch("/api/token",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token})});
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.detail||"error");
+    $("#newTok").value=""; $("#saveMsg").textContent="✅ บันทึกแล้ว"; $("#saveMsg").style.color="#059669";
+    load();
+  }catch(e){ $("#saveMsg").textContent="❌ "+e.message; $("#saveMsg").style.color="#dc2626"; }
+};
+load();
+</script>
+</body>
+</html>
