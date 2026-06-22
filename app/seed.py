@@ -23,6 +23,7 @@ _CFG_DIR = pathlib.Path(__file__).resolve().parent.parent / "config"
 CONFIG = _CFG_DIR / "kols.json"
 REPORT_CONFIG = _CFG_DIR / "report_kols.json"
 REPORT_POSTS_CONFIG = _CFG_DIR / "report_posts.json"
+SAHAGROUP_CONFIG = _CFG_DIR / "sahagroup_kols.json"
 
 
 def seed_from_config(config_path: pathlib.Path = CONFIG) -> int:
@@ -80,15 +81,17 @@ def seed_if_empty(config_path: pathlib.Path = CONFIG) -> int:
     return seed_from_config(config_path)
 
 
-def seed_report_kols_if_empty(config_path: pathlib.Path = REPORT_CONFIG) -> int:
-    """Bootstrap the report_kols roster from config ONLY when empty."""
+def _seed_report_roster(config_path: pathlib.Path, campaign: str) -> int:
+    """Bootstrap a report roster for one campaign ONLY when that campaign is empty."""
     with session_scope() as session:
-        count = session.scalar(select(func.count()).select_from(ReportKol)) or 0
+        count = session.scalar(
+            select(func.count()).select_from(ReportKol).where(ReportKol.campaign == campaign)
+        ) or 0
         if count > 0:
-            log.info("report_kols already has %d rows — skipping bootstrap.", count)
+            log.info("report_kols[%s] already has %d rows — skipping.", campaign, count)
             return count
         if not config_path.exists():
-            log.warning("report roster config missing: %s", config_path)
+            log.warning("roster config missing: %s", config_path)
             return 0
         data = json.loads(config_path.read_text(encoding="utf-8"))
         for row in data:
@@ -97,12 +100,24 @@ def seed_report_kols_if_empty(config_path: pathlib.Path = REPORT_CONFIG) -> int:
                 username=username,
                 display=row.get("display", username),
                 content_group=row["group"],
-                url=row.get("url"),
+                subgroup=row.get("subgroup"),
+                campaign=campaign,
+                url=row.get("url") or None,
                 followers=row.get("followers", 0),
                 active=True,
             ))
-    log.info("Seeded %d report KOLs from %s.", len(data), config_path.name)
+    log.info("Seeded %d report KOLs (%s) from %s.", len(data), campaign, config_path.name)
     return len(data)
+
+
+def seed_report_kols_if_empty(config_path: pathlib.Path = REPORT_CONFIG) -> int:
+    """Bootstrap the PAO report roster."""
+    return _seed_report_roster(config_path, "pao")
+
+
+def seed_sahagroup_if_empty(config_path: pathlib.Path = SAHAGROUP_CONFIG) -> int:
+    """Bootstrap the Sahagroup report roster (49 KOLs, no post links yet)."""
+    return _seed_report_roster(config_path, "sahagroup")
 
 
 def seed_report_posts_if_empty(config_path: pathlib.Path = REPORT_POSTS_CONFIG) -> int:
@@ -129,6 +144,7 @@ def seed_report_posts_if_empty(config_path: pathlib.Path = REPORT_POSTS_CONFIG) 
                 except ValueError:
                     posted_dt = None
             session.add(ReportPost(
+                campaign="pao",
                 username=row["username"].lower(),
                 video_id=row["video_id"],
                 url=row.get("url"),

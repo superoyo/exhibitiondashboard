@@ -60,15 +60,22 @@ def _parse_fb_items(items):
     return posts, profile
 
 # Single-worker in-memory progress for the UI to poll.
-REFRESH_STATE: Dict[str, Any] = {
-    "status": "idle",          # idle | running | success | failed
-    "message": "",
-    "started_at": None,
-    "finished_at": None,
-    "kol_count": 0,
-    "posts": 0,
-    "cost_usd": None,
-}
+def _new_state() -> Dict[str, Any]:
+    return {"status": "idle", "message": "", "started_at": None,
+            "finished_at": None, "kol_count": 0, "posts": 0, "cost_usd": None}
+
+
+# Per-campaign in-memory progress (single worker). 'pao' kept as the default
+# key so the legacy no-arg endpoints keep working.
+REFRESH_STATES: Dict[str, Dict[str, Any]] = {"pao": _new_state(), "sahagroup": _new_state()}
+
+
+def state_for(campaign: str) -> Dict[str, Any]:
+    return REFRESH_STATES.setdefault(campaign, _new_state())
+
+
+# Backwards-compatible alias (PAO).
+REFRESH_STATE = REFRESH_STATES["pao"]
 
 
 def _today() -> dt.date:
@@ -107,36 +114,33 @@ def _parse_report_items(items: List[Dict[str, Any]]):
     return posts, profile
 
 
-def refresh_report() -> dict:
-    """Scrape active report KOLs (7-day window) and replace their posts.
-
-    Never raises — records the outcome in REFRESH_STATE.
-    """
-    REFRESH_STATE.update(
-        status="running", message="กำลังดึงข้อมูลจาก Apify…",
-        started_at=dt.datetime.now(config.TZ).isoformat(), finished_at=None,
-        posts=0, cost_usd=None,
-    )
+def refresh_report(campaign: str = "pao") -> dict:
+    """Scrape the active roster of one campaign by post URL and replace its
+    posts. Never raises — records the outcome in state_for(campaign)."""
+    st = state_for(campaign)
+    st.update(status="running", message="กำลังดึงข้อมูลจาก Apify…",
+              started_at=dt.datetime.now(config.TZ).isoformat(), finished_at=None,
+              posts=0, cost_usd=None)
     try:
         with session_scope() as session:
             kols = session.scalars(
-                select(ReportKol).where(ReportKol.active.is_(True))
+                select(ReportKol).where(
+                    ReportKol.active.is_(True), ReportKol.campaign == campaign)
             ).all()
             roster = [(k.username.strip().lower(), k.url) for k in kols]
         usernames = {u for u, _ in roster}
         urls = [url for _, url in roster if url]
-        REFRESH_STATE["kol_count"] = len(roster)
+        st["kol_count"] = len(roster)
 
         if not urls:
-            REFRESH_STATE.update(
-                status="failed",
-                message="ไม่มีลิงก์โพสต์ใน KOL ที่ติ๊ก active — ใส่ลิงก์โพสต์ในหน้าแก้ไข KOL ก่อน",
-                finished_at=dt.datetime.now(config.TZ).isoformat())
+            st.update(status="failed",
+                      message="ยังไม่มีลิงก์โพสต์ใน KOL ที่ติ๊ก active — ใส่ลิงก์ในหน้าแก้ไข KOL ก่อน",
+                      finished_at=dt.datetime.now(config.TZ).isoformat())
             return {"status": "skipped", "reason": "no post URLs"}
 
         tt_urls = [u for u in urls if not is_fb(u)]
         fb_urls = [u for u in urls if is_fb(u)]
-        log.info("Report refresh: %d TikTok + %d Facebook URLs", len(tt_urls), len(fb_urls))
+        log.info("Refresh[%s]: %d TikTok + %d Facebook URLs", campaign, len(tt_urls), len(fb_urls))
 
         posts, profile, cost = [], {}, 0.0
         if tt_urls:
@@ -152,8 +156,6 @@ def refresh_report() -> dict:
             if meta.get("cost_usd"):
                 cost += meta["cost_usd"]
 
-        # Match scraped posts to the roster by USERNAME (robust to short links
-        # like vt.tiktok.com that carry no /video/ id). One post per KOL.
         by_user: Dict[str, Dict] = {}
         for p in posts:
             u = p["username"]
@@ -161,10 +163,12 @@ def refresh_report() -> dict:
                 by_user[u] = p
 
         with session_scope() as session:
-            session.execute(delete(ReportPost).where(ReportPost.username.in_(usernames)))
+            session.execute(delete(ReportPost).where(
+                ReportPost.campaign == campaign, ReportPost.username.in_(usernames)))
             for p in by_user.values():
-                session.add(ReportPost(**p))
-            for k in session.scalars(select(ReportKol).where(ReportKol.username.in_(usernames))).all():
+                session.add(ReportPost(campaign=campaign, **p))
+            for k in session.scalars(select(ReportKol).where(
+                    ReportKol.campaign == campaign, ReportKol.username.in_(usernames))).all():
                 pr = profile.get(k.username.lower())
                 if pr:
                     if pr["followers"]:
@@ -177,21 +181,19 @@ def refresh_report() -> dict:
         msg = f"อัปเดตแล้ว {len(seen)}/{len(usernames)} โพสต์"
         if missing > 0:
             msg += f" (ดึงไม่ได้ {missing} — ลิงก์อาจผิด/โพสต์ถูกลบ)"
-        REFRESH_STATE.update(
-            status="success", message=msg,
-            finished_at=dt.datetime.now(config.TZ).isoformat(),
-            posts=len(seen), cost_usd=round(cost, 4) if cost else None,
-        )
-        log.info("Report refresh done: %d/%d posts, cost=%s", len(seen), len(usernames), cost)
+        st.update(status="success", message=msg,
+                  finished_at=dt.datetime.now(config.TZ).isoformat(),
+                  posts=len(seen), cost_usd=round(cost, 4) if cost else None)
+        log.info("Refresh[%s] done: %d/%d posts, cost=%s", campaign, len(seen), len(usernames), cost)
         return {"status": "success", "posts": len(seen), "cost_usd": round(cost, 4) if cost else None}
 
     except (ApifyError, httpx.HTTPError) as exc:
-        log.error("Report refresh failed: %s", exc)
-        REFRESH_STATE.update(status="failed", message=f"ดึงข้อมูลล้มเหลว: {exc}",
-                             finished_at=dt.datetime.now(config.TZ).isoformat())
+        log.error("Refresh[%s] failed: %s", campaign, exc)
+        st.update(status="failed", message=f"ดึงข้อมูลล้มเหลว: {exc}",
+                  finished_at=dt.datetime.now(config.TZ).isoformat())
         return {"status": "failed", "error": str(exc)}
     except Exception as exc:  # noqa: BLE001
-        log.exception("Report refresh crashed")
-        REFRESH_STATE.update(status="failed", message=f"ผิดพลาด: {exc}",
-                             finished_at=dt.datetime.now(config.TZ).isoformat())
+        log.exception("Refresh[%s] crashed", campaign)
+        st.update(status="failed", message=f"ผิดพลาด: {exc}",
+                  finished_at=dt.datetime.now(config.TZ).isoformat())
         return {"status": "failed", "error": str(exc)}

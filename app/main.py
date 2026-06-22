@@ -27,19 +27,21 @@ def _seed_on_startup() -> None:
             seed_if_empty,
             seed_report_kols_if_empty,
             seed_report_posts_if_empty,
+            seed_sahagroup_if_empty,
         )
 
         n = seed_if_empty()
         r = seed_report_kols_if_empty()
         rp = seed_report_posts_if_empty()
-        log.info("Startup bootstrap: %d tracker KOLs, %d report KOLs, %d report posts.", n, r, rp)
+        sg = seed_sahagroup_if_empty()
+        log.info("Startup bootstrap: %d tracker, %d PAO KOLs, %d PAO posts, %d Sahagroup KOLs.", n, r, rp, sg)
     except Exception as exc:  # noqa: BLE001 — seeding must never crash the web
         log.warning("Startup seed skipped (%s). Run scripts/seed_kols.py manually.", exc)
 
 @app.get("/api/version")
 def version():
     """Build marker — lets us confirm which commit Railway is actually running."""
-    return {"build": "token-page-v5"}
+    return {"build": "sahagroup-report-v6"}
 
 
 FRONTEND_DIR = pathlib.Path(__file__).resolve().parent.parent / "frontend"
@@ -61,13 +63,20 @@ def _page(path: pathlib.Path):
 
 @app.get("/")
 def index():
-    return _page(INDEX)
+    """Sahagroup Fair campaign report (PAO-pattern, campaign=sahagroup)."""
+    return _page(REPORT)
 
 
 @app.get("/report")
 def report():
-    """Dynamic PAO Super Perfume 2026 campaign report (data via /api/report/data)."""
+    """PAO Super Perfume campaign report (campaign=pao)."""
     return _page(REPORT)
+
+
+@app.get("/tracker")
+def legacy_tracker():
+    """Old live KOL tracker dashboard (kept reachable)."""
+    return _page(INDEX)
 
 
 @app.get("/kols")

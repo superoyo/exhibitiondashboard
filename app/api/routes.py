@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app import config, queries
 from app.db import db_dependency
 from app.models import Kol, ReportKol, ReportPost
-from app.report_refresh import REFRESH_STATE, refresh_report
+from app.report_refresh import refresh_report, state_for
 from app.scrape import run_daily_scrape
 
 log = logging.getLogger("api")
@@ -109,12 +109,14 @@ class KolIn(BaseModel):
     username: str
     display: Optional[str] = None
     group: str
+    subgroup: Optional[str] = None
     url: Optional[str] = None
 
 
 class KolPatch(BaseModel):
     display: Optional[str] = None
     group: Optional[str] = None
+    subgroup: Optional[str] = None
     active: Optional[bool] = None
     url: Optional[str] = None
 
@@ -129,21 +131,30 @@ def _serialize(k) -> dict:
     }
     if hasattr(k, "url"):
         out["url"] = k.url
+    if hasattr(k, "subgroup"):
+        out["subgroup"] = k.subgroup
     return out
 
 
-def _roster_endpoints(model, with_url: bool):
-    """Build a list/add/update/delete handler set bound to one ORM model."""
+def _roster_endpoints(model, is_report: bool):
+    """Build a list/add/update/delete handler set bound to one ORM model.
+    Report rosters are scoped by ?campaign= (default 'pao')."""
 
-    def list_all(session: Session = Depends(db_dependency)):
-        rows = session.scalars(select(model).order_by(model.content_group, model.username)).all()
+    def list_all(campaign: str = "pao", session: Session = Depends(db_dependency)):
+        q = select(model)
+        if is_report:
+            q = q.where(model.campaign == campaign)
+        rows = session.scalars(q.order_by(model.content_group, model.username)).all()
         return {"kols": [_serialize(k) for k in rows]}
 
-    def add(body: KolIn, session: Session = Depends(db_dependency)):
-        username = (body.username or "").strip().lstrip("@")
+    def add(body: KolIn, campaign: str = "pao", session: Session = Depends(db_dependency)):
+        username = (body.username or "").strip().lstrip("@").lower()
         if not username:
             raise HTTPException(400, "username ห้ามว่าง")
-        if session.scalar(select(model).where(model.username == username)):
+        dup = select(model).where(model.username == username)
+        if is_report:
+            dup = dup.where(model.campaign == campaign)
+        if session.scalar(dup):
             raise HTTPException(409, f"มี @{username} อยู่แล้ว")
         k = model(
             username=username,
@@ -151,8 +162,12 @@ def _roster_endpoints(model, with_url: bool):
             content_group=body.group.strip(),
             active=True,
         )
-        if with_url and body.url:
-            k.url = body.url.strip()
+        if is_report:
+            k.campaign = campaign
+            if body.subgroup is not None:
+                k.subgroup = body.subgroup.strip() or None
+            if body.url:
+                k.url = body.url.strip()
         session.add(k)
         session.commit()
         session.refresh(k)
@@ -168,7 +183,9 @@ def _roster_endpoints(model, with_url: bool):
             k.content_group = body.group.strip()
         if body.active is not None:
             k.active = body.active
-        if with_url and body.url is not None:
+        if is_report and body.subgroup is not None:
+            k.subgroup = body.subgroup.strip() or None
+        if is_report and body.url is not None:
             k.url = body.url.strip()
         session.commit()
         session.refresh(k)
@@ -185,8 +202,8 @@ def _roster_endpoints(model, with_url: bool):
     return list_all, add, update, delete
 
 
-for _name, _model, _url in (("tracker", Kol, False), ("report", ReportKol, True)):
-    _list, _add, _update, _delete = _roster_endpoints(_model, _url)
+for _name, _model, _isrep in (("tracker", Kol, False), ("report", ReportKol, True)):
+    _list, _add, _update, _delete = _roster_endpoints(_model, _isrep)
     router.add_api_route(f"/roster/{_name}", _list, methods=["GET"])
     router.add_api_route(f"/roster/{_name}", _add, methods=["POST"])
     router.add_api_route(f"/roster/{_name}/{{item_id}}", _update, methods=["PATCH"])
@@ -198,60 +215,69 @@ for _name, _model, _url in (("tracker", Kol, False), ("report", ReportKol, True)
 # ----------------------------------------------------------------------------
 
 @router.get("/report/data")
-def report_data(session: Session = Depends(db_dependency)):
-    """Records for the dynamic /report page — each active report KOL joined to
-    the scraped metrics of its campaign post (matched by username)."""
+def report_data(campaign: str = "pao", session: Session = Depends(db_dependency)):
+    """Records for the dynamic report page of one campaign. Includes ALL active
+    roster rows (stats 0 if not scraped yet) so the structure shows before links
+    are added. `category` = subgroup when present, else the big group; `biggroup`
+    is the top-level group (for 2-level grouping)."""
     roster = session.scalars(
-        select(ReportKol).where(ReportKol.active.is_(True)).order_by(ReportKol.content_group)
+        select(ReportKol)
+        .where(ReportKol.active.is_(True), ReportKol.campaign == campaign)
+        .order_by(ReportKol.content_group, ReportKol.subgroup)
     ).all()
     posts_by_user: dict = {}
-    for p in session.scalars(select(ReportPost)).all():
+    for p in session.scalars(select(ReportPost).where(ReportPost.campaign == campaign)).all():
         u = p.username.lower()
         if u not in posts_by_user or p.views > posts_by_user[u].views:
             posts_by_user[u] = p
 
     records = []
+    scraped = 0
     for k in roster:
         p = posts_by_user.get(k.username.lower())
-        if not p:
-            continue  # no scraped data for this KOL yet — skip from the report
+        if p:
+            scraped += 1
         records.append({
             "username": k.username,
             "nickname": k.display,
-            "category": k.content_group,
+            "category": k.subgroup or k.content_group,
+            "biggroup": k.content_group,
             "followers": k.followers,
-            "views": p.views,
-            "likes": p.likes,
-            "comments": p.comments,
-            "shares": p.shares,
-            "saves": p.saves,
-            "posted": p.posted_at.date().isoformat() if p.posted_at else "",
-            "url": k.url or p.url or "",
-            "thumb": p.cover_url or "",
+            "views": p.views if p else 0,
+            "likes": p.likes if p else 0,
+            "comments": p.comments if p else 0,
+            "shares": p.shares if p else 0,
+            "saves": p.saves if p else 0,
+            "posted": (p.posted_at.date().isoformat() if p and p.posted_at else ""),
+            "url": k.url or (p.url if p else "") or "",
+            "thumb": (p.cover_url if p else "") or "",
+            "has_data": bool(p),
         })
-    last = session.scalar(select(func.max(ReportPost.scraped_at)))
+    last = session.scalar(
+        select(func.max(ReportPost.scraped_at)).where(ReportPost.campaign == campaign)
+    )
     return {
         "records": records,
         "refreshed_at": last.isoformat() if last else None,
         "roster_count": len(roster),
-        "post_count": len(records),
+        "post_count": scraped,
     }
 
 
 @router.post("/report/refresh")
-def report_refresh_trigger(background: BackgroundTasks):
-    """Kick off a 7-day Apify scrape for the active report roster (open, no auth).
-    Runs in the background; poll /api/report/refresh/status."""
-    if REFRESH_STATE.get("status") == "running":
+def report_refresh_trigger(background: BackgroundTasks, campaign: str = "pao"):
+    """Kick off an Apify scrape for the active roster of one campaign."""
+    st = state_for(campaign)
+    if st.get("status") == "running":
         raise HTTPException(status_code=409, detail="กำลังดึงข้อมูลอยู่แล้ว รอให้เสร็จก่อน")
-    REFRESH_STATE.update(status="running", message="เริ่มงาน…", posts=0)
-    background.add_task(refresh_report)
-    return {"status": "started"}
+    st.update(status="running", message="เริ่มงาน…", posts=0)
+    background.add_task(refresh_report, campaign)
+    return {"status": "started", "campaign": campaign}
 
 
 @router.get("/report/refresh/status")
-def report_refresh_status():
-    return REFRESH_STATE
+def report_refresh_status(campaign: str = "pao"):
+    return state_for(campaign)
 
 
 # ----------------------------------------------------------------------------

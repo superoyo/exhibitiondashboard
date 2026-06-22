@@ -55,15 +55,18 @@ class ReportKol(Base):
     __tablename__ = "report_kols"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    username: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     display: Mapped[str] = mapped_column(String(255), nullable=False)
     content_group: Mapped[str] = mapped_column("content_group", String(64), nullable=False)
+    subgroup: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    campaign: Mapped[str] = mapped_column(String(32), nullable=False, default="pao", index=True)
     url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     followers: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    __table_args__ = (UniqueConstraint("campaign", "username", name="uq_report_kols_campaign_username"),)
 
 
 class ReportPost(Base):
@@ -73,6 +76,7 @@ class ReportPost(Base):
     __tablename__ = "report_posts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    campaign: Mapped[str] = mapped_column(String(32), nullable=False, default="pao", index=True)
     username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     video_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

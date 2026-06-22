@@ -26,15 +26,15 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 <div class="max-w-7xl mx-auto px-3 sm:px-5 py-5">
 <nav class="nav">
 <span class="nav-brand">📊 Sahagroup KOL Hub</span>
-<a href="/" class="navtab">Sahagroup</a>
-<a href="/report" class="navtab navtab-active">PAO Report</a>
+<a href="/" class="navtab" data-nav="/">Sahagroup</a>
+<a href="/report" class="navtab" data-nav="/report">PAO Report</a>
 <a href="/kols" class="navtab">แก้ไข KOL</a>
 <a href="/token" class="navtab">Apify Token</a>
 </nav>
 <header class="mb-4 flex flex-wrap items-start justify-between gap-3">
 <div>
-<h1 class="text-xl sm:text-3xl font-bold">🧴 PAO Super Perfume 2026 — Campaign Report</h1>
-<p class="text-sm" style="color:var(--muted)">สรุปผล KOL/Influencer TikTok · ข้อมูลจริงจาก TikTok ผ่าน Apify</p>
+<h1 id="repTitle" class="text-xl sm:text-3xl font-bold">Campaign Report</h1>
+<p id="repSub" class="text-sm" style="color:var(--muted)">ข้อมูลจริงจาก TikTok/Facebook ผ่าน Apify</p>
 </div>
 <div class="text-right">
 <button id="refreshBtn" class="btn-refresh">🔄 Refresh Data</button>
@@ -44,11 +44,12 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 
 <div id="empty" class="card p-8 text-center" style="display:none">
 <div class="text-4xl mb-2">📭</div>
-<div class="font-semibold mb-1">ยังไม่มีข้อมูลในรายงาน</div>
-<div class="text-sm mb-4" style="color:var(--muted)">กดปุ่ม <b>Refresh Data</b> เพื่อดึงสถิติจากลิงก์โพสต์แคมเปญของ KOL ที่ติ๊ก active</div>
+<div class="font-semibold mb-1">ยังไม่มีรายชื่อ KOL ในแคมเปญนี้</div>
+<div class="text-sm mb-4" style="color:var(--muted)">เพิ่มรายชื่อ/ลิงก์โพสต์ในหน้า <a href="/kols">แก้ไข KOL</a> แล้วกด Refresh Data</div>
 </div>
 
 <div id="content" style="display:none">
+<div id="bigFilter" class="flex flex-wrap gap-2 mb-4"></div>
 <div id="kpis" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4"></div>
 
 <h2 class="text-sm font-semibold mb-2" style="color:var(--muted)">รายละเอียด Engagement (like + comment + share + save)</h2>
@@ -173,26 +174,54 @@ function render(DATA){
 }
 
 // ---- data load + refresh ----
+// campaign inferred from path: '/' = Sahagroup, '/report' = PAO
+const CAMPAIGN = location.pathname.replace(/\/$/,'') === '/report' ? 'pao' : 'sahagroup';
+const META = {
+ pao:{title:'🧴 PAO Super Perfume 2026 — Campaign Report', sub:'สรุปผล KOL/Influencer · ข้อมูลจริงจาก TikTok/Facebook ผ่าน Apify'},
+ sahagroup:{title:'🛍️ Sahagroup Fair 2026 — Campaign Report', sub:'Mega KOL + Micro-Nano KOL · ข้อมูลจริงจาก TikTok ผ่าน Apify'},
+};
+document.getElementById('repTitle').textContent=META[CAMPAIGN].title;
+document.getElementById('repSub').textContent=META[CAMPAIGN].sub;
+// nav active for this page
+{const navHref = CAMPAIGN==='pao' ? '/report' : '/';
+ const a=document.querySelector(`.navtab[data-nav="${navHref}"]`); if(a)a.classList.add('navtab-active');}
+
 const btn=document.getElementById('refreshBtn');
 function setInfo(t){document.getElementById('refreshInfo').innerHTML=t;}
+let ALL=[], bigFilter='ทั้งหมด';
+function applyAndRender(){
+ const data = bigFilter==='ทั้งหมด' ? ALL : ALL.filter(r=>r.biggroup===bigFilter);
+ render(data);
+}
+function setupBigFilter(){
+ const el=document.getElementById('bigFilter');
+ const bigs=[...new Set(ALL.map(r=>r.biggroup).filter(Boolean))];
+ const twoLevel = bigs.length>1 && ALL.some(r=>r.biggroup && r.biggroup!==r.category);
+ if(!twoLevel){ el.innerHTML=''; bigFilter='ทั้งหมด'; return; }
+ const opts=['ทั้งหมด',...bigs];
+ el.innerHTML='<span class="text-sm font-semibold self-center mr-1" style="color:var(--muted)">กลุ่มใหญ่:</span>'+
+  opts.map(g=>`<button class="seg bigseg" data-v="${g}" style="${g===bigFilter?'background:#0f172a;color:#fff;border-color:#0f172a':''}">${g}</button>`).join('');
+ el.querySelectorAll('.bigseg').forEach(b=>b.onclick=()=>{bigFilter=b.dataset.v;setupBigFilter();applyAndRender();});
+}
 async function loadData(){
  try{
-  const d=await (await fetch('/api/report/data')).json();
+  const d=await (await fetch(`/api/report/data?campaign=${CAMPAIGN}`)).json();
   if(!d.records || !d.records.length){
    document.getElementById('empty').style.display='block';
    document.getElementById('content').style.display='none';
   }else{
    document.getElementById('empty').style.display='none';
    document.getElementById('content').style.display='block';
-   render(d.records);
+   ALL=d.records; if(!ALL.some(r=>r.biggroup===bigFilter)&&bigFilter!=='ทั้งหมด')bigFilter='ทั้งหมด';
+   setupBigFilter(); applyAndRender();
   }
   const when=d.refreshed_at?new Date(d.refreshed_at).toLocaleString('th-TH'):'—';
-  setInfo(`อัปเดตล่าสุด: ${when} · ${d.post_count||0} โพสต์ / ${d.roster_count||0} KOL`);
+  setInfo(`อัปเดตล่าสุด: ${when} · ${d.post_count||0}/${d.roster_count||0} โพสต์มีข้อมูล`);
  }catch(e){ setInfo('โหลดข้อมูลไม่สำเร็จ: '+e.message); }
 }
 async function poll(){
  try{
-  const s=await (await fetch('/api/report/refresh/status')).json();
+  const s=await (await fetch(`/api/report/refresh/status?campaign=${CAMPAIGN}`)).json();
   if(s.status==='running'){ btn.disabled=true; btn.innerHTML='<span class="spin"></span>กำลังดึง…'; setInfo(s.message||'กำลังดึงข้อมูล…'); setTimeout(poll,3000); }
   else { btn.disabled=false; btn.innerHTML='🔄 Refresh Data';
     if(s.status==='success'){ setInfo('✅ '+(s.message||'อัปเดตแล้ว')+(s.cost_usd?` · $${s.cost_usd}`:'')); loadData(); }
@@ -204,11 +233,11 @@ btn.onclick=async()=>{
  if(!confirm('ดึงสถิติล่าสุดจากลิงก์โพสต์แคมเปญ เฉพาะ KOL ที่ติ๊ก active ในหน้าแก้ไข KOL?\n(ใช้เครดิต Apify · อาจใช้เวลา ~1 นาที)')) return;
  btn.disabled=true; btn.innerHTML='<span class="spin"></span>เริ่ม…';
  try{
-  const r=await fetch('/api/report/refresh',{method:'POST'});
+  const r=await fetch(`/api/report/refresh?campaign=${CAMPAIGN}`,{method:'POST'});
   if(r.status===409){ alert('กำลังดึงข้อมูลอยู่แล้ว'); }
   poll();
  }catch(e){ btn.disabled=false; btn.innerHTML='🔄 Refresh Data'; setInfo('เริ่มงานไม่สำเร็จ'); }
 };
 loadData();
-fetch('/api/report/refresh/status').then(r=>r.json()).then(s=>{if(s.status==='running')poll();}).catch(()=>{});
+fetch(`/api/report/refresh/status?campaign=${CAMPAIGN}`).then(r=>r.json()).then(s=>{if(s.status==='running')poll();}).catch(()=>{});
 </script></body></html>
