@@ -256,12 +256,23 @@ def report_data(campaign: str = "pao", session: Session = Depends(db_dependency)
     last = session.scalar(
         select(func.max(ReportPost.scraped_at)).where(ReportPost.campaign == campaign)
     )
+    from app.settings import get_cost
+    cost = get_cost(campaign)
     return {
         "records": records,
         "refreshed_at": last.isoformat() if last else None,
         "roster_count": len(roster),
         "post_count": scraped,
+        "cost_total": cost["total"],
+        "cost_count": cost["count"],
     }
+
+
+@router.post("/report/cost/reset")
+def report_cost_reset(campaign: str = "pao"):
+    from app.settings import reset_cost
+    reset_cost(campaign)
+    return {"status": "reset", "campaign": campaign}
 
 
 @router.post("/report/refresh")

@@ -39,6 +39,7 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 <div class="text-right">
 <button id="refreshBtn" class="btn-refresh">🔄 Refresh Data</button>
 <div id="refreshInfo" class="text-xs mt-1" style="color:var(--muted)"></div>
+<div id="costInfo" class="text-xs mt-1"></div>
 </div>
 </header>
 
@@ -217,6 +218,11 @@ async function loadData(){
   }
   const when=d.refreshed_at?new Date(d.refreshed_at).toLocaleString('th-TH'):'—';
   setInfo(`อัปเดตล่าสุด: ${when} · ${d.post_count||0}/${d.roster_count||0} โพสต์มีข้อมูล`);
+  const ct=d.cost_total||0, cc=d.cost_count||0;
+  const ci=document.getElementById('costInfo');
+  ci.innerHTML = `💸 ค่าใช้จ่ายสะสม: <b style="color:#dc2626">$${ct.toFixed(3)}</b> · ${cc} ครั้ง · <a href="#" id="resetCost" style="color:var(--muted)">รีเซ็ต</a>`;
+  const rc=document.getElementById('resetCost');
+  if(rc) rc.onclick=async(e)=>{e.preventDefault(); if(!confirm('รีเซ็ตยอดค่าใช้จ่ายสะสมของแคมเปญนี้เป็น $0?'))return; await fetch(`/api/report/cost/reset?campaign=${CAMPAIGN}`,{method:'POST'}); loadData();};
  }catch(e){ setInfo('โหลดข้อมูลไม่สำเร็จ: '+e.message); }
 }
 async function poll(){

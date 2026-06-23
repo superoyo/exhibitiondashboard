@@ -181,6 +181,11 @@ def refresh_report(campaign: str = "pao") -> dict:
         msg = f"อัปเดตแล้ว {len(seen)}/{len(usernames)} โพสต์"
         if missing > 0:
             msg += f" (ดึงไม่ได้ {missing} — ลิงก์อาจผิด/โพสต์ถูกลบ)"
+        try:
+            from app.settings import add_cost
+            add_cost(campaign, cost)
+        except Exception as exc:  # noqa: BLE001 — cost tracking must not break refresh
+            log.warning("add_cost failed: %s", exc)
         st.update(status="success", message=msg,
                   finished_at=dt.datetime.now(config.TZ).isoformat(),
                   posts=len(seen), cost_usd=round(cost, 4) if cost else None)

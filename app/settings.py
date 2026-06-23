@@ -6,9 +6,8 @@ DB override is set.
 """
 from __future__ import annotations
 
+import json
 import logging
-
-from sqlalchemy import select
 
 from app import config
 from app.db import session_scope
@@ -55,3 +54,35 @@ def mask_token(tok: str) -> str:
     if len(tok) <= 10:
         return tok[:2] + "•" * 6
     return f"{tok[:6]}{'•' * 8}{tok[-4:]}"
+
+
+# ---- cumulative Apify spend per campaign (from real run cost) ----------------
+
+def _cost_key(campaign: str) -> str:
+    return f"refresh_cost:{campaign}"
+
+
+def get_cost(campaign: str) -> dict:
+    raw = get_setting(_cost_key(campaign))
+    if raw:
+        try:
+            d = json.loads(raw)
+            return {"total": float(d.get("total", 0)), "count": int(d.get("count", 0)),
+                    "last": d.get("last")}
+        except Exception:  # noqa: BLE001
+            pass
+    return {"total": 0.0, "count": 0, "last": None}
+
+
+def add_cost(campaign: str, cost: float | None) -> dict:
+    """Accumulate one refresh run's Apify cost. cost may be None (counted as 0)."""
+    c = get_cost(campaign)
+    c["total"] = round(c["total"] + (cost or 0.0), 4)
+    c["count"] += 1
+    c["last"] = cost
+    set_setting(_cost_key(campaign), json.dumps(c))
+    return c
+
+
+def reset_cost(campaign: str) -> None:
+    set_setting(_cost_key(campaign), json.dumps({"total": 0.0, "count": 0, "last": None}))
