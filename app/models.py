@@ -81,6 +81,7 @@ class ReportPost(Base):
     video_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     cover_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    avatar_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     posted_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     views: Mapped[int] = mapped_column(BigInteger, default=0)
     likes: Mapped[int] = mapped_column(BigInteger, default=0)

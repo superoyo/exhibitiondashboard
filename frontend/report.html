@@ -159,7 +159,7 @@ function render(DATA){
  function table(){const d=[...E];d.sort((a,b)=>{let x=a[sortK],y=b[sortK];if(typeof x==='string'){return asc?(''+x).localeCompare(y):(''+y).localeCompare(x)}return asc?x-y:y-x});
   document.getElementById('tb').innerHTML=d.map(r=>`<tr class="border-b hover:bg-black/5" style="border-color:var(--line)">
   <td class="py-2 pr-3"><span class="chip" style="background:${CATC(r.category)}">${r.category}</span></td>
-  <td class="pr-3 font-medium">@${r.username||''}</td><td class="pr-3 text-right">${fmt(r.followers)}</td>
+  <td class="pr-3 font-medium"><span style="display:inline-flex;align-items:center;gap:6px">${r.avatar?`<img src="${r.avatar}" referrerpolicy="no-referrer" loading="lazy" style="width:22px;height:22px;border-radius:50%;object-fit:cover;flex:none;background:#e2e8f0" onerror="this.style.display='none'">`:''}@${r.username||''}</span></td><td class="pr-3 text-right">${fmt(r.followers)}</td>
   <td class="pr-3 text-right font-semibold">${(r.views||0).toLocaleString()}</td><td class="pr-3 text-right">${(r.likes||0).toLocaleString()}</td>
   <td class="pr-3 text-right">${(r.comments||0).toLocaleString()}</td><td class="pr-3 text-right">${(r.shares||0).toLocaleString()}</td>
   <td class="pr-3 text-right">${(r.saves||0).toLocaleString()}</td><td class="pr-3 text-right">${r.er.toFixed(2)}%</td>

@@ -251,6 +251,7 @@ def report_data(campaign: str = "pao", session: Session = Depends(db_dependency)
             "posted": (p.posted_at.date().isoformat() if p and p.posted_at else ""),
             "url": k.url or (p.url if p else "") or "",
             "thumb": (p.cover_url if p else "") or "",
+            "avatar": (p.avatar_url if p else "") or "",
             "has_data": bool(p),
         })
     last = session.scalar(
