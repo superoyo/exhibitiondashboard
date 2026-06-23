@@ -127,8 +127,13 @@ function render(DATA){
     <div class="absolute inset-x-0 bottom-0 px-3 py-2 text-white text-sm font-semibold" style="background:linear-gradient(transparent,rgba(0,0,0,.7))">▶ ดูคลิปจริง</div>
    </a>
    <div class="p-3">
-    <div class="font-bold text-lg leading-tight">@${r.username}</div>
-    <div class="text-xs truncate" style="color:var(--muted)">${r.nickname||''}</div>
+    <div style="display:flex;align-items:center;gap:8px">
+     ${r.avatar?`<img src="${r.avatar}" referrerpolicy="no-referrer" loading="lazy" style="width:42px;height:42px;border-radius:50%;object-fit:cover;flex:none;background:#e2e8f0;border:2px solid ${CATC(r.category)}" onerror="this.style.display='none'">`:''}
+     <div style="min-width:0">
+      <div class="font-bold text-lg leading-tight truncate">@${r.username}</div>
+      <div class="text-xs truncate" style="color:var(--muted)">${r.nickname||''}</div>
+     </div>
+    </div>
     <div class="mt-2 text-2xl font-extrabold" style="color:${CATC(r.category)}">${m[2](r[tpMetric])}</div>
     <div class="text-xs" style="color:var(--muted)">${m[1]}</div>
     <div class="grid grid-cols-3 gap-y-1 mt-3 text-xs" style="color:#334155">
@@ -159,7 +164,7 @@ function render(DATA){
  function table(){const d=[...E];d.sort((a,b)=>{let x=a[sortK],y=b[sortK];if(typeof x==='string'){return asc?(''+x).localeCompare(y):(''+y).localeCompare(x)}return asc?x-y:y-x});
   document.getElementById('tb').innerHTML=d.map(r=>`<tr class="border-b hover:bg-black/5" style="border-color:var(--line)">
   <td class="py-2 pr-3"><span class="chip" style="background:${CATC(r.category)}">${r.category}</span></td>
-  <td class="pr-3 font-medium"><span style="display:inline-flex;align-items:center;gap:6px">${r.avatar?`<img src="${r.avatar}" referrerpolicy="no-referrer" loading="lazy" style="width:22px;height:22px;border-radius:50%;object-fit:cover;flex:none;background:#e2e8f0" onerror="this.style.display='none'">`:''}@${r.username||''}</span></td><td class="pr-3 text-right">${fmt(r.followers)}</td>
+  <td class="pr-3 font-medium"><span style="display:inline-flex;align-items:center;gap:8px">${r.avatar?`<img src="${r.avatar}" referrerpolicy="no-referrer" loading="lazy" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex:none;background:#e2e8f0" onerror="this.style.display='none'">`:''}@${r.username||''}</span></td><td class="pr-3 text-right">${fmt(r.followers)}</td>
   <td class="pr-3 text-right font-semibold">${(r.views||0).toLocaleString()}</td><td class="pr-3 text-right">${(r.likes||0).toLocaleString()}</td>
   <td class="pr-3 text-right">${(r.comments||0).toLocaleString()}</td><td class="pr-3 text-right">${(r.shares||0).toLocaleString()}</td>
   <td class="pr-3 text-right">${(r.saves||0).toLocaleString()}</td><td class="pr-3 text-right">${r.er.toFixed(2)}%</td>
