@@ -61,6 +61,7 @@ class ReportKol(Base):
     subgroup: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     campaign: Mapped[str] = mapped_column(String(32), nullable=False, default="pao", index=True)
     url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    avatar_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     followers: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[dt.datetime] = mapped_column(

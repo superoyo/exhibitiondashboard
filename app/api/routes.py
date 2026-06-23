@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app import config, queries
 from app.db import db_dependency
 from app.models import Kol, ReportKol, ReportPost
-from app.report_refresh import refresh_report, state_for
+from app.report_refresh import fetch_profiles, refresh_report, state_for
 from app.scrape import run_daily_scrape
 
 log = logging.getLogger("api")
@@ -251,7 +251,7 @@ def report_data(campaign: str = "pao", session: Session = Depends(db_dependency)
             "posted": (p.posted_at.date().isoformat() if p and p.posted_at else ""),
             "url": k.url or (p.url if p else "") or "",
             "thumb": (p.cover_url if p else "") or "",
-            "avatar": (p.avatar_url if p else "") or "",
+            "avatar": (p.avatar_url if p else "") or k.avatar_url or "",
             "has_data": bool(p),
         })
     last = session.scalar(
@@ -290,6 +290,23 @@ def report_refresh_trigger(background: BackgroundTasks, campaign: str = "pao"):
 @router.get("/report/refresh/status")
 def report_refresh_status(campaign: str = "pao"):
     return state_for(campaign)
+
+
+@router.post("/report/profiles")
+def report_profiles_trigger(background: BackgroundTasks, campaign: str = "sahagroup"):
+    """Fetch profile pictures (+followers) for the campaign roster — no post
+    links needed. Scrapes TikTok profiles in the background."""
+    st = state_for("pf:" + campaign)
+    if st.get("status") == "running":
+        raise HTTPException(status_code=409, detail="กำลังดึงรูปโปรไฟล์อยู่แล้ว")
+    st.update(status="running", message="เริ่มงาน…", posts=0)
+    background.add_task(fetch_profiles, campaign)
+    return {"status": "started", "campaign": campaign}
+
+
+@router.get("/report/profiles/status")
+def report_profiles_status(campaign: str = "sahagroup"):
+    return state_for("pf:" + campaign)
 
 
 # ----------------------------------------------------------------------------

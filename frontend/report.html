@@ -37,7 +37,10 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 <p id="repSub" class="text-sm" style="color:var(--muted)">ข้อมูลจริงจาก TikTok/Facebook ผ่าน Apify</p>
 </div>
 <div class="text-right">
+<div class="flex gap-2 justify-end flex-wrap">
+<button id="profileBtn" class="btn-refresh" style="background:#475569">🖼️ ดึงรูปโปรไฟล์</button>
 <button id="refreshBtn" class="btn-refresh">🔄 Refresh Data</button>
+</div>
 <div id="refreshInfo" class="text-xs mt-1" style="color:var(--muted)"></div>
 <div id="costInfo" class="text-xs mt-1"></div>
 </div>
@@ -249,6 +252,26 @@ btn.onclick=async()=>{
   poll();
  }catch(e){ btn.disabled=false; btn.innerHTML='🔄 Refresh Data'; setInfo('เริ่มงานไม่สำเร็จ'); }
 };
+// ---- fetch profile pictures (no post links needed) ----
+const pbtn=document.getElementById('profileBtn');
+async function pollProfiles(){
+ try{
+  const s=await (await fetch(`/api/report/profiles/status?campaign=${CAMPAIGN}`)).json();
+  if(s.status==='running'){ pbtn.disabled=true; pbtn.innerHTML='<span class="spin"></span>กำลังดึงรูป…'; setInfo(s.message||'กำลังดึงรูปโปรไฟล์…'); setTimeout(pollProfiles,3000); }
+  else { pbtn.disabled=false; pbtn.innerHTML='🖼️ ดึงรูปโปรไฟล์';
+    if(s.status==='success'){ setInfo('✅ '+(s.message||'')+(s.cost_usd?` · $${s.cost_usd}`:'')); loadData(); }
+    else if(s.status==='failed'){ setInfo('⚠️ '+(s.message||'')); }
+  }
+ }catch(e){ pbtn.disabled=false; pbtn.innerHTML='🖼️ ดึงรูปโปรไฟล์'; }
+}
+pbtn.onclick=async()=>{
+ if(!confirm('ดึงรูปโปรไฟล์ + ยอด followers ของ KOL ทั้งหมดในแคมเปญนี้ (จากช่อง TikTok ไม่ต้องมีลิงก์โพสต์)?\n(ใช้เครดิต Apify · ~1 นาที)')) return;
+ pbtn.disabled=true; pbtn.innerHTML='<span class="spin"></span>เริ่ม…';
+ try{ const r=await fetch(`/api/report/profiles?campaign=${CAMPAIGN}`,{method:'POST'}); if(r.status===409){alert('กำลังดึงอยู่แล้ว');} pollProfiles(); }
+ catch(e){ pbtn.disabled=false; pbtn.innerHTML='🖼️ ดึงรูปโปรไฟล์'; setInfo('เริ่มงานไม่สำเร็จ'); }
+};
+
 loadData();
 fetch(`/api/report/refresh/status?campaign=${CAMPAIGN}`).then(r=>r.json()).then(s=>{if(s.status==='running')poll();}).catch(()=>{});
+fetch(`/api/report/profiles/status?campaign=${CAMPAIGN}`).then(r=>r.json()).then(s=>{if(s.status==='running')pollProfiles();}).catch(()=>{});
 </script></body></html>

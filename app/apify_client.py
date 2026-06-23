@@ -79,6 +79,28 @@ def run_scrape_posts(
                     poll_interval=poll_interval, timeout_s=timeout_s)
 
 
+def run_scrape_profiles(
+    usernames: List[str],
+    *,
+    poll_interval: float = 8.0,
+    timeout_s: float = 300.0,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Lightweight profile scrape (resultsPerPage=1) to grab avatar + followers
+    without needing post links. Used for the 'fetch profile pics' action."""
+    payload = {
+        "profiles": usernames,
+        "resultsPerPage": 1,
+        "profileScrapeSections": ["videos"],
+        "profileSorting": "latest",
+        "shouldDownloadVideos": False,
+        "shouldDownloadCovers": False,
+        "shouldDownloadSubtitles": False,
+        "shouldDownloadSlideshowImages": False,
+        "shouldDownloadAvatars": False,
+    }
+    return _execute(payload, poll_interval=poll_interval, timeout_s=timeout_s)
+
+
 def run_scrape_fb(
     post_urls: List[str],
     *,

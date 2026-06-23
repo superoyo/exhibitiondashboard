@@ -14,7 +14,7 @@ import httpx
 from sqlalchemy import delete, select
 
 from app import config
-from app.apify_client import ApifyError, run_scrape_fb, run_scrape_posts
+from app.apify_client import ApifyError, run_scrape_fb, run_scrape_posts, run_scrape_profiles
 from app.aggregate import _parse_posted_at, _to_int
 from app.db import session_scope
 from app.models import ReportKol, ReportPost
@@ -114,6 +114,80 @@ def _parse_report_items(items: List[Dict[str, Any]]):
             "saves": _to_int(it.get("collectCount")),
         })
     return posts, profile
+
+
+def fetch_profiles(campaign: str = "sahagroup") -> dict:
+    """Scrape TikTok PROFILES of the active roster (no post links needed) to
+    fill avatar + followers + display. Progress in state_for('pf:'+campaign)."""
+    st = state_for("pf:" + campaign)
+    st.update(status="running", message="กำลังดึงรูปโปรไฟล์จาก Apify…",
+              started_at=dt.datetime.now(config.TZ).isoformat(), finished_at=None,
+              posts=0, cost_usd=None)
+    try:
+        with session_scope() as session:
+            kols = session.scalars(select(ReportKol).where(
+                ReportKol.active.is_(True), ReportKol.campaign == campaign)).all()
+            # profiles = TikTok handles only (skip Facebook pages)
+            usernames = [k.username.strip().lower() for k in kols
+                         if k.content_group != "Facebook" and not is_fb(k.url)]
+        st["kol_count"] = len(usernames)
+        if not usernames:
+            st.update(status="failed", message="ไม่มี KOL TikTok ที่ active",
+                      finished_at=dt.datetime.now(config.TZ).isoformat())
+            return {"status": "skipped"}
+
+        log.info("Profiles[%s]: scraping %d profiles", campaign, len(usernames))
+        items, meta = run_scrape_profiles(usernames)
+        prof: Dict[str, Dict] = {}
+        for it in items:
+            a = it.get("authorMeta") or {}
+            name = (it.get("input") or a.get("name") or "").strip().lower()
+            if not name:
+                continue
+            d = prof.setdefault(name, {})
+            av = a.get("avatar") or a.get("originalAvatarUrl")
+            if av:
+                d["avatar"] = av
+            if a.get("fans") is not None:
+                d["fans"] = _to_int(a.get("fans"))
+            if a.get("nickName"):
+                d["nick"] = a.get("nickName")
+
+        done = 0
+        with session_scope() as session:
+            for k in session.scalars(select(ReportKol).where(
+                    ReportKol.active.is_(True), ReportKol.campaign == campaign)).all():
+                p = prof.get(k.username.lower())
+                if not p:
+                    continue
+                if p.get("avatar"):
+                    k.avatar_url = p["avatar"]; done += 1
+                if p.get("fans"):
+                    k.followers = p["fans"]
+                if p.get("nick") and (not k.display or k.display == k.username):
+                    k.display = p["nick"]
+
+        cost = meta.get("cost_usd") or 0.0
+        try:
+            from app.settings import add_cost
+            add_cost(campaign, cost)
+        except Exception:  # noqa: BLE001
+            pass
+        st.update(status="success", message=f"ดึงรูปโปรไฟล์แล้ว {done}/{len(usernames)} ราย",
+                  finished_at=dt.datetime.now(config.TZ).isoformat(),
+                  posts=done, cost_usd=round(cost, 4) if cost else None)
+        log.info("Profiles[%s] done: %d/%d, cost=%s", campaign, done, len(usernames), cost)
+        return {"status": "success", "done": done}
+    except (ApifyError, httpx.HTTPError) as exc:
+        log.error("Profiles[%s] failed: %s", campaign, exc)
+        st.update(status="failed", message=f"ดึงรูปโปรไฟล์ล้มเหลว: {exc}",
+                  finished_at=dt.datetime.now(config.TZ).isoformat())
+        return {"status": "failed", "error": str(exc)}
+    except Exception as exc:  # noqa: BLE001
+        log.exception("Profiles[%s] crashed", campaign)
+        st.update(status="failed", message=f"ผิดพลาด: {exc}",
+                  finished_at=dt.datetime.now(config.TZ).isoformat())
+        return {"status": "failed", "error": str(exc)}
 
 
 def refresh_report(campaign: str = "pao") -> dict:
