@@ -120,6 +120,45 @@ def _parse_report_items(items: List[Dict[str, Any]]):
     return posts, profile
 
 
+def _scrape_and_apply_profiles(campaign: str, handles) -> dict:
+    """Scrape TikTok profiles for `handles` and write avatar/followers/display
+    onto the campaign's active ReportKol rows. Returns {done, cost}.
+    Shared by the standalone profile fetch and the merged Refresh Data flow."""
+    handles = list(handles)
+    if not handles:
+        return {"done": 0, "cost": 0.0}
+    items, meta = run_scrape_profiles(handles)
+    prof: Dict[str, Dict] = {}
+    for it in items:
+        a = it.get("authorMeta") or {}
+        name = (it.get("input") or a.get("name") or "").strip().lower()
+        if not name:
+            continue
+        d = prof.setdefault(name, {})
+        av = a.get("avatar") or a.get("originalAvatarUrl")
+        if av:
+            d["avatar"] = av
+        if a.get("fans") is not None:
+            d["fans"] = _to_int(a.get("fans"))
+        if a.get("nickName"):
+            d["nick"] = a.get("nickName")
+
+    done = 0
+    with session_scope() as session:
+        for k in session.scalars(select(ReportKol).where(
+                ReportKol.active.is_(True), ReportKol.campaign == campaign)).all():
+            p = prof.get(k.username.lower())
+            if not p:
+                continue
+            if p.get("avatar"):
+                k.avatar_url = p["avatar"]; done += 1
+            if p.get("fans"):
+                k.followers = p["fans"]
+            if p.get("nick") and (not k.display or k.display == k.username):
+                k.display = p["nick"]
+    return {"done": done, "cost": meta.get("cost_usd") or 0.0}
+
+
 def fetch_profiles(campaign: str = "sahagroup") -> dict:
     """Scrape TikTok PROFILES of the active roster (no post links needed) to
     fill avatar + followers + display. Progress in state_for('pf:'+campaign)."""
@@ -141,37 +180,9 @@ def fetch_profiles(campaign: str = "sahagroup") -> dict:
             return {"status": "skipped"}
 
         log.info("Profiles[%s]: scraping %d profiles", campaign, len(usernames))
-        items, meta = run_scrape_profiles(usernames)
-        prof: Dict[str, Dict] = {}
-        for it in items:
-            a = it.get("authorMeta") or {}
-            name = (it.get("input") or a.get("name") or "").strip().lower()
-            if not name:
-                continue
-            d = prof.setdefault(name, {})
-            av = a.get("avatar") or a.get("originalAvatarUrl")
-            if av:
-                d["avatar"] = av
-            if a.get("fans") is not None:
-                d["fans"] = _to_int(a.get("fans"))
-            if a.get("nickName"):
-                d["nick"] = a.get("nickName")
-
-        done = 0
-        with session_scope() as session:
-            for k in session.scalars(select(ReportKol).where(
-                    ReportKol.active.is_(True), ReportKol.campaign == campaign)).all():
-                p = prof.get(k.username.lower())
-                if not p:
-                    continue
-                if p.get("avatar"):
-                    k.avatar_url = p["avatar"]; done += 1
-                if p.get("fans"):
-                    k.followers = p["fans"]
-                if p.get("nick") and (not k.display or k.display == k.username):
-                    k.display = p["nick"]
-
-        cost = meta.get("cost_usd") or 0.0
+        res = _scrape_and_apply_profiles(campaign, usernames)
+        done = res["done"]
+        cost = res["cost"]
         try:
             from app.settings import add_cost
             add_cost(campaign, cost)
@@ -195,8 +206,9 @@ def fetch_profiles(campaign: str = "sahagroup") -> dict:
 
 
 def refresh_report(campaign: str = "pao") -> dict:
-    """Scrape the active roster of one campaign by post URL and replace its
-    posts. Never raises — records the outcome in state_for(campaign)."""
+    """Refresh one campaign: scrape posts by URL AND refresh every KOL's profile
+    picture + followers in the same run (the single Refresh Data button does
+    both). Never raises — records the outcome in state_for(campaign)."""
     st = state_for(campaign)
     st.update(status="running", message="กำลังดึงข้อมูลจาก Apify…",
               started_at=dt.datetime.now(config.TZ).isoformat(), finished_at=None,
@@ -207,24 +219,26 @@ def refresh_report(campaign: str = "pao") -> dict:
                 select(ReportKol).where(
                     ReportKol.active.is_(True), ReportKol.campaign == campaign)
             ).all()
-            roster = [(k.username.strip().lower(), k.url) for k in kols]
-        usernames = {u for u, _ in roster}
-        urls = [url for _, url in roster if url]
+            roster = [(k.username.strip().lower(), k.url, k.content_group) for k in kols]
+        usernames = {u for u, _, _ in roster}
+        urls = [url for _, url, _ in roster if url]
+        # TikTok handles (skip Facebook pages) for the profile-picture pass
+        profile_handles = [u for u, url, g in roster if g != "Facebook" and not is_fb(url)]
         st["kol_count"] = len(roster)
 
-        if not urls:
+        if not roster:
             st.update(status="failed",
-                      message="ยังไม่มีลิงก์โพสต์ใน KOL ที่ติ๊ก active — ใส่ลิงก์ในหน้าแก้ไข KOL ก่อน",
+                      message="ยังไม่มี KOL ที่ติ๊ก active ในแคมเปญนี้ — เพิ่มในหน้าแก้ไข KOL ก่อน",
                       finished_at=dt.datetime.now(config.TZ).isoformat())
-            return {"status": "skipped", "reason": "no post URLs"}
+            return {"status": "skipped", "reason": "no active KOLs"}
 
         tt_urls = [u for u in urls if not is_fb(u)]
         fb_urls = [u for u in urls if is_fb(u)]
-        log.info("Refresh[%s]: %d TikTok + %d Facebook URLs", campaign, len(tt_urls), len(fb_urls))
+        log.info("Refresh[%s]: %d TikTok + %d Facebook URLs, %d profiles",
+                 campaign, len(tt_urls), len(fb_urls), len(profile_handles))
 
-        # Each scraper runs independently and tolerates a failed run: one bad
-        # post link no longer aborts the whole refresh — we save every post the
-        # actor DID manage to scrape and just report which ones were missed.
+        # --- posts: each scraper runs independently and tolerates a failed run,
+        # so one bad post link never discards the rest of the batch. ---
         posts, profile, cost = [], {}, 0.0
         scrape_errors: List[str] = []
         partial = False
@@ -259,14 +273,6 @@ def refresh_report(campaign: str = "pao") -> dict:
             if u in usernames and (u not in by_user or p["views"] > by_user[u]["views"]):
                 by_user[u] = p
 
-        # If BOTH scrapers hard-failed (nothing salvaged), surface a failure so
-        # the user knows to check the token/links — don't wipe existing data.
-        if scrape_errors and not by_user:
-            st.update(status="failed",
-                      message="ดึงข้อมูลไม่สำเร็จ: " + " · ".join(scrape_errors),
-                      finished_at=dt.datetime.now(config.TZ).isoformat())
-            return {"status": "failed", "errors": scrape_errors}
-
         with session_scope() as session:
             # Only replace posts for usernames we actually got data for, so a
             # KOL whose link failed keeps its previous snapshot instead of
@@ -286,11 +292,32 @@ def refresh_report(campaign: str = "pao") -> dict:
                     if pr["nick"] and (not k.display or k.display == k.username):
                         k.display = pr["nick"]
 
+        # --- profile pictures + followers for ALL active TikTok handles, so
+        # every KOL's avatar updates on each refresh (not only those with posts). ---
+        prof_done = 0
+        try:
+            pres = _scrape_and_apply_profiles(campaign, profile_handles)
+            prof_done = pres["done"]
+            cost += pres["cost"]
+        except (ApifyError, httpx.HTTPError) as exc:
+            log.error("Refresh[%s] profile pass failed: %s", campaign, exc)
+            scrape_errors.append(f"โปรไฟล์: {exc}")
+
         seen = set(by_user)
+        # Hard failure only if nothing at all was salvaged (posts AND profiles).
+        if scrape_errors and not seen and prof_done == 0:
+            st.update(status="failed",
+                      message="ดึงข้อมูลไม่สำเร็จ: " + " · ".join(scrape_errors),
+                      finished_at=dt.datetime.now(config.TZ).isoformat())
+            return {"status": "failed", "errors": scrape_errors}
+
         missing = len(usernames) - len(seen)
-        msg = f"อัปเดตแล้ว {len(seen)}/{len(usernames)} โพสต์"
-        if missing > 0:
-            msg += f" (ดึงไม่ได้ {missing} — ลิงก์อาจผิด/โพสต์ถูกลบ)"
+        if urls:
+            msg = f"อัปเดตแล้ว {len(seen)}/{len(usernames)} โพสต์ · รูปโปรไฟล์ {prof_done} ราย"
+            if missing > 0:
+                msg += f" (ดึงโพสต์ไม่ได้ {missing} — ลิงก์อาจผิด/โพสต์ถูกลบ)"
+        else:
+            msg = f"อัปเดตรูปโปรไฟล์ {prof_done} ราย (ยังไม่มีลิงก์โพสต์ — ใส่ลิงก์เพื่อดึงสถิติโพสต์)"
         if partial:
             msg += " ⚠️ บางลิงก์ทำให้รอบดึงล้มเหลวบางส่วน แต่ระบบเก็บข้อมูลที่ดึงได้แล้ว"
         if scrape_errors:
@@ -303,8 +330,10 @@ def refresh_report(campaign: str = "pao") -> dict:
         st.update(status="success", message=msg,
                   finished_at=dt.datetime.now(config.TZ).isoformat(),
                   posts=len(seen), cost_usd=round(cost, 4) if cost else None)
-        log.info("Refresh[%s] done: %d/%d posts, cost=%s", campaign, len(seen), len(usernames), cost)
-        return {"status": "success", "posts": len(seen), "cost_usd": round(cost, 4) if cost else None}
+        log.info("Refresh[%s] done: %d/%d posts, %d profiles, cost=%s",
+                 campaign, len(seen), len(usernames), prof_done, cost)
+        return {"status": "success", "posts": len(seen), "profiles": prof_done,
+                "cost_usd": round(cost, 4) if cost else None}
 
     except (ApifyError, httpx.HTTPError) as exc:
         log.error("Refresh[%s] failed: %s", campaign, exc)

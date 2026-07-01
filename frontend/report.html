@@ -6,7 +6,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#f4f6fa;--card:#fff;--line:#e5e7eb;--muted:#64748b;--text:#0f172a}
-html,body{background:var(--bg);color:var(--text);font-family:'Noto Sans Thai',system-ui,sans-serif}
+html{background:#fff}
+body{background:radial-gradient(125% 88% at 50% 132%,#f6cb38 0%,#fadd6a 18%,#fcea9f 36%,#fef6da 56%,#ffffff 76%) no-repeat fixed;background-color:#fff;color:var(--text);font-family:'Noto Sans Thai',system-ui,sans-serif}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 3px rgba(15,23,42,.05)}
 a{color:#2563eb}.chip{padding:.15rem .6rem;border-radius:999px;font-size:.72rem;color:#fff;font-weight:600}
 table th{cursor:pointer;user-select:none;white-space:nowrap}
@@ -27,7 +28,6 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 <nav class="nav">
 <a href="/" class="nav-brand">🎯 Campaign Hub</a>
 <a href="/" class="navtab">← Home</a>
-<span id="navCampaigns" style="display:contents"></span>
 <a id="navEdit" href="/kols" class="navtab">แก้ไข KOL</a>
 </nav>
 <header class="mb-4 flex flex-wrap items-start justify-between gap-3">
@@ -37,7 +37,6 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 </div>
 <div class="text-right">
 <div class="flex gap-2 justify-end flex-wrap">
-<button id="profileBtn" class="btn-refresh" style="background:#475569">🖼️ ดึงรูปโปรไฟล์</button>
 <button id="refreshBtn" class="btn-refresh">🔄 Refresh Data</button>
 </div>
 <div id="refreshInfo" class="text-xs mt-1" style="color:var(--muted)"></div>
@@ -207,12 +206,6 @@ async function loadCampaignMeta(){
  }catch(e){
   document.getElementById('repTitle').textContent = CAMPAIGN + ' — Campaign Report';
  }
- try{
-  const list = (await (await fetch('/api/campaigns?limit=5')).json()).campaigns || [];
-  document.getElementById('navCampaigns').innerHTML = list.map(c=>
-    `<a href="/c/${encodeURIComponent(c.key)}" class="navtab${c.key===CAMPAIGN?' navtab-active':''}">${c.emoji||'📊'} ${c.name}</a>`
-  ).join('');
- }catch(e){}
 }
 loadCampaignMeta();
 
@@ -265,7 +258,7 @@ async function poll(){
  }catch(e){ btn.disabled=false; btn.innerHTML='🔄 Refresh Data'; }
 }
 btn.onclick=async()=>{
- if(!confirm('ดึงสถิติล่าสุดจากลิงก์โพสต์แคมเปญ เฉพาะ KOL ที่ติ๊ก active ในหน้าแก้ไข KOL?\n(ใช้เครดิต Apify · อาจใช้เวลา ~1 นาที)')) return;
+ if(!confirm('อัปเดตข้อมูลแคมเปญนี้ (เฉพาะ KOL ที่ติ๊ก active):\n• ดึงสถิติล่าสุดจากลิงก์โพสต์\n• อัปเดตรูปโปรไฟล์ + followers ของ KOL แต่ละคน\n(ใช้เครดิต Apify · อาจใช้เวลา ~1-2 นาที)')) return;
  btn.disabled=true; btn.innerHTML='<span class="spin"></span>เริ่ม…';
  try{
   const r=await fetch(`/api/report/refresh?campaign=${CAMPAIGN}`,{method:'POST'});
@@ -273,26 +266,7 @@ btn.onclick=async()=>{
   poll();
  }catch(e){ btn.disabled=false; btn.innerHTML='🔄 Refresh Data'; setInfo('เริ่มงานไม่สำเร็จ'); }
 };
-// ---- fetch profile pictures (no post links needed) ----
-const pbtn=document.getElementById('profileBtn');
-async function pollProfiles(){
- try{
-  const s=await (await fetch(`/api/report/profiles/status?campaign=${CAMPAIGN}`)).json();
-  if(s.status==='running'){ pbtn.disabled=true; pbtn.innerHTML='<span class="spin"></span>กำลังดึงรูป…'; setInfo(s.message||'กำลังดึงรูปโปรไฟล์…'); setTimeout(pollProfiles,3000); }
-  else { pbtn.disabled=false; pbtn.innerHTML='🖼️ ดึงรูปโปรไฟล์';
-    if(s.status==='success'){ setInfo('✅ '+(s.message||'')+(s.cost_usd?` · $${s.cost_usd}`:'')); loadData(); }
-    else if(s.status==='failed'){ setInfo('⚠️ '+(s.message||'')); }
-  }
- }catch(e){ pbtn.disabled=false; pbtn.innerHTML='🖼️ ดึงรูปโปรไฟล์'; }
-}
-pbtn.onclick=async()=>{
- if(!confirm('ดึงรูปโปรไฟล์ + ยอด followers ของ KOL ทั้งหมดในแคมเปญนี้ (จากช่อง TikTok ไม่ต้องมีลิงก์โพสต์)?\n(ใช้เครดิต Apify · ~1 นาที)')) return;
- pbtn.disabled=true; pbtn.innerHTML='<span class="spin"></span>เริ่ม…';
- try{ const r=await fetch(`/api/report/profiles?campaign=${CAMPAIGN}`,{method:'POST'}); if(r.status===409){alert('กำลังดึงอยู่แล้ว');} pollProfiles(); }
- catch(e){ pbtn.disabled=false; pbtn.innerHTML='🖼️ ดึงรูปโปรไฟล์'; setInfo('เริ่มงานไม่สำเร็จ'); }
-};
 
 loadData();
 fetch(`/api/report/refresh/status?campaign=${CAMPAIGN}`).then(r=>r.json()).then(s=>{if(s.status==='running')poll();}).catch(()=>{});
-fetch(`/api/report/profiles/status?campaign=${CAMPAIGN}`).then(r=>r.json()).then(s=>{if(s.status==='running')pollProfiles();}).catch(()=>{});
 </script></body></html>
