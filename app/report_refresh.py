@@ -127,6 +127,28 @@ def handle_from_url(url: Optional[str]) -> str:
     return ""
 
 
+def _needs_resolve(url: Optional[str]) -> bool:
+    """Short/share links whose canonical URL (with post id / page name) is hidden
+    behind a redirect."""
+    u = (url or "").lower()
+    return ("vt.tiktok.com" in u or "vm.tiktok.com" in u or "/share/" in u
+            or "fb.watch" in u or "story.php" in u or "l.facebook.com" in u)
+
+
+def _resolve_link(url: str) -> str:
+    """Follow the redirect of a short/share link to its canonical URL."""
+    try:
+        import httpx as _httpx
+        with _httpx.Client(follow_redirects=True, timeout=12, headers={
+                "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                               "AppleWebKit/537.36 (KHTML, like Gecko) "
+                               "Chrome/125.0.0.0 Safari/537.36")}) as c:
+            r = c.get(url)
+            return str(r.url) or url
+    except Exception:  # noqa: BLE001 — keep the original url on any failure
+        return url
+
+
 def kol_links(k) -> list:
     """All (platform,url,handle) links for a KOL — from links_json, else the
     single url column (pre-multiplatform data)."""
@@ -408,6 +430,20 @@ def refresh_report(campaign: str = "pao") -> dict:
                       finished_at=dt.datetime.now(config.TZ).isoformat())
             return {"status": "skipped", "reason": "no active KOLs"}
 
+        # Resolve short/share links to their canonical URL so post-id / page-name
+        # matching works (FB share links, vt.tiktok.com, fb.watch, story.php).
+        st.update(message="กำลังตรวจลิงก์…")
+        for _u, links in roster:
+            for ln in links:
+                if _needs_resolve(ln["url"]):
+                    final = _resolve_link(ln["url"])
+                    if final and final != ln["url"]:
+                        ln["url"] = final
+                        ln["platform"] = platform_of(final)
+                        h = handle_from_url(final)
+                        if h:
+                            ln["handle"] = h
+
         # group post URLs by platform (dedup)
         urls_by_plat: Dict[str, list] = {}
         for _u, links in roster:
@@ -496,7 +532,10 @@ def refresh_report(campaign: str = "pao") -> dict:
                 ))
             kmap = {u: links for u, links in roster}
             for k in session.scalars(select(ReportKol).where(ReportKol.campaign == campaign)).all():
-                for ln in kmap.get(k.username.lower(), []):
+                links_now = kmap.get(k.username.lower())
+                if links_now:  # persist resolved canonical URLs so next refresh is fast
+                    k.links_json = json.dumps(links_now, ensure_ascii=False)
+                for ln in (links_now or []):
                     pr = profile.get(ln["handle"])
                     if pr:
                         if pr.get("followers"):
