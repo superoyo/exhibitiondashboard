@@ -81,26 +81,15 @@ a{color:inherit;text-decoration:none}
         <span class="text-xs font-semibold" style="color:var(--muted)">ชื่อแคมเปญ (แสดงบนหัวรายงาน)</span>
         <input id="fName" class="inp mt-1" placeholder="เช่น Sahagroup Fair 2028">
       </label>
-      <label class="block">
-        <span class="text-xs font-semibold" style="color:var(--muted)">URL Key (ใช้ในลิงก์ /c/&lt;key&gt;) — เว้นว่างจะสร้างอัตโนมัติจากชื่อ</span>
-        <input id="fKey" class="inp mt-1" placeholder="เช่น sahagroup2028">
-      </label>
       <div>
         <span class="text-xs font-semibold" style="color:var(--muted)">Emoji / ไอคอน</span>
         <div id="fEmoji" class="emoji-pick mt-1"></div>
       </div>
       <label class="block">
-        <span class="text-xs font-semibold" style="color:var(--muted)">คำอธิบาย (ตัวรอง)</span>
+        <span class="text-xs font-semibold" style="color:var(--muted)">คำอธิบาย (บอกว่าเป็นแคมเปญอะไร)</span>
         <input id="fSub" class="inp mt-1" placeholder="เช่น Mega KOL + Micro-Nano KOL · TikTok/FB">
       </label>
-      <label class="block">
-        <span class="text-xs font-semibold" style="color:var(--muted)">กลุ่มใหญ่ (คั่นด้วยลูกน้ำ)</span>
-        <input id="fGroups" class="inp mt-1" placeholder="เช่น Mega Kol, Micro-Nano Kol">
-      </label>
-      <label class="block">
-        <span class="text-xs font-semibold" style="color:var(--muted)">กลุ่มย่อย (คั่นด้วยลูกน้ำ, ใส่ทีหลังได้)</span>
-        <input id="fSubs" class="inp mt-1" placeholder="เช่น THE TASTE MAKERS, THE MEMORY MAKERS">
-      </label>
+      <p class="text-xs" style="color:var(--muted)">รหัสแคมเปญ (เช่น 00001) ระบบจะสร้างให้อัตโนมัติตามลำดับ</p>
       <div class="flex items-center justify-end gap-2 mt-2">
         <button id="cancelBtn" class="btn">ยกเลิก</button>
         <button id="createBtn" class="btn btn-primary">สร้าง</button>
@@ -215,7 +204,7 @@ function renderEmojiPick(){
   el.querySelectorAll('button').forEach(b=>b.onclick=()=>{pickedEmoji=b.dataset.e;renderEmojiPick();});
 }
 function openModal(){document.getElementById('modalBack').style.display='flex';document.getElementById('fName').focus();}
-function closeModal(){document.getElementById('modalBack').style.display='none';['fName','fKey','fSub','fGroups','fSubs'].forEach(id=>document.getElementById(id).value='');pickedEmoji='📊';renderEmojiPick();document.getElementById('modalErr').textContent='';}
+function closeModal(){document.getElementById('modalBack').style.display='none';['fName','fSub'].forEach(id=>document.getElementById(id).value='');pickedEmoji='📊';renderEmojiPick();document.getElementById('modalErr').textContent='';}
 document.getElementById('newBtn').onclick=openModal;
 document.getElementById('closeBtn').onclick=closeModal;
 document.getElementById('cancelBtn').onclick=closeModal;
@@ -226,11 +215,8 @@ document.getElementById('createBtn').onclick=async()=>{
   if(!name){document.getElementById('modalErr').textContent='ใส่ชื่อแคมเปญก่อน';return;}
   const body={
     name,
-    key:document.getElementById('fKey').value.trim()||null,
     emoji:pickedEmoji,
     subtitle:document.getElementById('fSub').value.trim(),
-    groups:document.getElementById('fGroups').value.split(',').map(s=>s.trim()).filter(Boolean),
-    subgroups:document.getElementById('fSubs').value.split(',').map(s=>s.trim()).filter(Boolean),
   };
   document.getElementById('createBtn').disabled=true;
   try{

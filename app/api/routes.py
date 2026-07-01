@@ -11,7 +11,6 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 import json
-import re
 
 from app import config, queries
 from app.db import db_dependency
@@ -343,15 +342,6 @@ def token_set(body: TokenIn):
 # Campaign metadata CRUD — powers the home page (list) and "+ Create Campaign"
 # ----------------------------------------------------------------------------
 
-_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$|^[a-z0-9]{1,32}$")
-
-
-def _slugify_key(raw: str) -> str:
-    s = (raw or "").strip().lower()
-    s = re.sub(r"[^a-z0-9-]+", "-", s)
-    s = re.sub(r"-+", "-", s).strip("-")
-    return s[:32]
-
 
 def _campaign_dict(c: Campaign, roster_count: int = 0, refreshed_at=None) -> dict:
     return {
@@ -428,30 +418,28 @@ def get_campaign(key: str, session: Session = Depends(db_dependency)):
     return _campaign_dict(c, roster_count, last)
 
 
+def _next_campaign_key(session: Session) -> str:
+    """Auto-generate the next sequential campaign code: 00001, 00002, …
+
+    Based on the max existing numeric key across ALL campaigns (incl. archived),
+    so codes never repeat even after a campaign is deleted. Legacy string keys
+    (sahagroup/pao/…) are ignored for numbering."""
+    nums = [int(k) for (k,) in session.query(Campaign.key).all() if k.isdigit()]
+    n = (max(nums) + 1) if nums else 1
+    key = f"{n:05d}"
+    while session.get(Campaign, key):  # safety against a collision
+        n += 1
+        key = f"{n:05d}"
+    return key
+
+
 @router.post("/campaigns")
 def create_campaign(body: CampaignIn, session: Session = Depends(db_dependency)):
-    """Create a new campaign — key auto-derived from name if missing."""
-    raw_key = body.key if body.key else body.name
-    key = _slugify_key(raw_key)
-    if not key or not _KEY_RE.match(key):
-        raise HTTPException(400, "key ต้องเป็น a-z 0-9 หรือ - เท่านั้น (3–32 ตัวอักษร)")
+    """Create a new campaign. The URL key is a system-generated running code
+    (00001, 00002, …) — the client only sends name/emoji/subtitle."""
     if not (body.name or "").strip():
         raise HTTPException(400, "name ห้ามว่าง")
-    existing = session.get(Campaign, key)
-    if existing:
-        if existing.active:
-            raise HTTPException(409, f"มีแคมเปญ key='{key}' อยู่แล้ว")
-        # Revive a previously-deleted (archived) campaign instead of erroring —
-        # its old KOL roster/posts come back with it.
-        existing.name = body.name.strip()
-        existing.emoji = (body.emoji or "📊").strip()[:8] or "📊"
-        existing.subtitle = (body.subtitle or "").strip() or None
-        existing.groups_json = json.dumps(body.groups or [], ensure_ascii=False)
-        existing.subgroups_json = json.dumps(body.subgroups or [], ensure_ascii=False)
-        existing.active = True
-        session.commit()
-        session.refresh(existing)
-        return _campaign_dict(existing)
+    key = _next_campaign_key(session)
     c = Campaign(
         key=key,
         name=body.name.strip(),
