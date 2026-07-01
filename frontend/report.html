@@ -37,6 +37,7 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 </div>
 <div class="text-right">
 <div class="flex gap-2 justify-end flex-wrap">
+<button id="shareBtn" class="btn-refresh" style="background:#2563eb">🔗 สร้างลิงก์ลูกค้า</button>
 <button id="refreshBtn" class="btn-refresh">🔄 Refresh Data</button>
 </div>
 <div id="refreshInfo" class="text-xs mt-1" style="color:var(--muted)"></div>
@@ -187,15 +188,31 @@ function render(DATA){
 function inferCampaign(){
  const p=location.pathname.replace(/\/$/,'');
  const m=p.match(/^\/c\/([a-z0-9-]+)$/i); if(m) return m[1].toLowerCase();
+ const mv=p.match(/^\/v\/([a-z0-9-]+)$/i); if(mv) return mv[1].toLowerCase();
  if(p==='/report') return 'pao';
  if(p==='/sahagroup2027') return 'sahagroup2027';
  if(p==='/sahagroup') return 'sahagroup';
  return 'sahagroup'; // fallback (old bookmark of '/')
 }
 const CAMPAIGN = inferCampaign();
+// View-only mode (shareable client link): /v/<key> or ?view=1 — show stats,
+// hide every edit/refresh/share control so clients can only look.
+const VIEW_ONLY = /^\/v\//i.test(location.pathname) || new URLSearchParams(location.search).get('view')==='1';
 // Point every "แก้ไข KOL" link at this campaign's roster
 {const q='/kols?campaign='+encodeURIComponent(CAMPAIGN);
  ['editLink','navEdit'].forEach(id=>{const el=document.getElementById(id); if(el) el.href=q;});}
+if(VIEW_ONLY){
+ document.body.classList.add('view-only');
+ ['refreshBtn','shareBtn','navEdit','costInfo'].forEach(id=>{const el=document.getElementById(id); if(el) el.style.display='none';});
+ const nav=document.querySelector('nav.nav'); if(nav) nav.style.display='none';
+}
+// "สร้างลิงก์ลูกค้า" — copy the public view-only URL (owner view only)
+{const sb=document.getElementById('shareBtn');
+ if(sb) sb.onclick=async()=>{
+  const link=location.origin+'/v/'+encodeURIComponent(CAMPAIGN);
+  try{ await navigator.clipboard.writeText(link); setInfo('✅ คัดลอกลิงก์สำหรับลูกค้าแล้ว — '+link); }
+  catch(e){ window.prompt('คัดลอกลิงก์นี้ส่งให้ลูกค้า (ดูได้อย่างเดียว):', link); }
+ };}
 
 // Fetch campaign metadata for title/subtitle + top-5 quick nav
 async function loadCampaignMeta(){
@@ -270,5 +287,5 @@ btn.onclick=async()=>{
 };
 
 loadData();
-fetch(`/api/report/refresh/status?campaign=${CAMPAIGN}`).then(r=>r.json()).then(s=>{if(s.status==='running')poll();}).catch(()=>{});
+if(!VIEW_ONLY) fetch(`/api/report/refresh/status?campaign=${CAMPAIGN}`).then(r=>r.json()).then(s=>{if(s.status==='running')poll();}).catch(()=>{});
 </script></body></html>

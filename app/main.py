@@ -48,7 +48,7 @@ def _seed_on_startup() -> None:
 @app.get("/api/version")
 def version():
     """Build marker — lets us confirm which commit Railway is actually running."""
-    return {"build": "campaign-hub-v21"}
+    return {"build": "campaign-hub-v22"}
 
 
 FRONTEND_DIR = pathlib.Path(__file__).resolve().parent.parent / "frontend"
@@ -78,6 +78,13 @@ def index():
 @app.get("/c/{campaign_key}")
 def campaign_report(campaign_key: str):
     """Dynamic per-campaign report. All new campaigns use this URL pattern."""
+    return _page(REPORT)
+
+
+@app.get("/v/{campaign_key}")
+def campaign_report_view(campaign_key: str):
+    """Public, view-only campaign report (shareable link for clients). Same
+    page as /c/<key> but the frontend hides all edit/refresh controls."""
     return _page(REPORT)
 
 
