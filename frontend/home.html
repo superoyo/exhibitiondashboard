@@ -30,6 +30,8 @@ a{color:inherit;text-decoration:none}
 .del-btn{position:absolute;top:.6rem;right:.6rem;z-index:2;width:32px;height:32px;border:1px solid var(--line);background:#fff;border-radius:8px;font-size:.95rem;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#dc2626;transition:.12s}
 .del-btn:hover{background:#fee2e2;border-color:#fecaca}
 .del-btn:disabled{opacity:.5;cursor:default}
+.edit-btn{position:absolute;top:.6rem;right:2.9rem;z-index:2;width:32px;height:32px;border:1px solid var(--line);background:#fff;border-radius:8px;font-size:.9rem;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#334155;transition:.12s}
+.edit-btn:hover{background:#eef2f7;border-color:#94a3b8}
 .logo{margin-left:auto;display:flex;flex-direction:column;line-height:.98;font-weight:800;font-size:1rem;color:#0f172a;letter-spacing:-.02em;font-family:system-ui,'Segoe UI',Arial,sans-serif}
 .logo .lw{position:relative;display:inline-block}
 .logo .ldot{position:absolute;top:.08em;right:-.5em;width:.32em;height:.32em;border-radius:50%;background:#f5c518}
@@ -73,7 +75,7 @@ a{color:inherit;text-decoration:none}
 <div id="modalBack" class="modal-back" role="dialog" aria-modal="true">
   <div class="modal">
     <div class="flex items-center justify-between mb-3">
-      <h2 class="text-lg font-bold">🆕 สร้างแคมเปญใหม่</h2>
+      <h2 id="modalTitle" class="text-lg font-bold">🆕 สร้างแคมเปญใหม่</h2>
       <button id="closeBtn" class="btn" aria-label="ปิด">✕</button>
     </div>
     <div class="grid gap-3">
@@ -89,7 +91,7 @@ a{color:inherit;text-decoration:none}
         <span class="text-xs font-semibold" style="color:var(--muted)">คำอธิบาย (บอกว่าเป็นแคมเปญอะไร)</span>
         <input id="fSub" class="inp mt-1" placeholder="เช่น Mega KOL + Micro-Nano KOL · TikTok/FB">
       </label>
-      <p class="text-xs" style="color:var(--muted)">รหัสแคมเปญ (เช่น 00001) ระบบจะสร้างให้อัตโนมัติตามลำดับ</p>
+      <p id="createHint" class="text-xs" style="color:var(--muted)">รหัสแคมเปญ (เช่น 00001) ระบบจะสร้างให้อัตโนมัติตามลำดับ</p>
       <div class="flex items-center justify-end gap-2 mt-2">
         <button id="cancelBtn" class="btn">ยกเลิก</button>
         <button id="createBtn" class="btn btn-primary">สร้าง</button>
@@ -114,9 +116,10 @@ function cardHTML(c){
   const key=esc(c.key), name=esc(c.name);
   return `
     <div class="card relative">
+      <button class="edit-btn" data-key="${key}" title="แก้ไขแคมเปญนี้" aria-label="แก้ไขแคมเปญ ${name}">✏️</button>
       <button class="del-btn" data-key="${key}" data-name="${name}" title="ลบแคมเปญนี้" aria-label="ลบแคมเปญ ${name}">🗑</button>
       <a href="/c/${encodeURIComponent(c.key)}" class="block p-5">
-        <div class="flex items-start justify-between gap-2" style="padding-right:2.2rem">
+        <div class="flex items-start justify-between gap-2" style="padding-right:5rem">
           <div class="text-4xl">${esc(c.emoji||'📊')}</div>
           <div class="text-right">
             <div class="text-xs" style="color:var(--muted)">${fmtDate(c.created_at)}</div>
@@ -134,11 +137,23 @@ function cardHTML(c){
       </a>
     </div>`;
 }
+let RENDERED=[]; // campaigns currently shown (for edit/delete lookup by key)
 function renderCards(list, emptyHTML){
+  RENDERED=list;
   const grid=document.getElementById('grid');
   if(!list.length){ grid.innerHTML=emptyHTML; return; }
   grid.innerHTML=list.map(cardHTML).join('');
 }
+
+// Edit a campaign (name / emoji / description). The ✏️ button sits outside the
+// card's <a>, so a click never navigates — it opens the modal in edit mode.
+document.getElementById('grid').addEventListener('click', (ev)=>{
+  const btn=ev.target.closest('.edit-btn');
+  if(!btn) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const c=RENDERED.find(x=>x.key===btn.dataset.key);
+  if(c) openEditModal(c);
+});
 
 // Delete a campaign (with confirmation). The 🗑 button sits outside the card's
 // <a>, so a click never navigates — we still confirm before hitting the API.
@@ -203,8 +218,28 @@ function renderEmojiPick(){
   el.innerHTML=EMOJIS.map(e=>`<button type="button" data-e="${e}" class="${e===pickedEmoji?'on':''}">${e}</button>`).join('');
   el.querySelectorAll('button').forEach(b=>b.onclick=()=>{pickedEmoji=b.dataset.e;renderEmojiPick();});
 }
-function openModal(){document.getElementById('modalBack').style.display='flex';document.getElementById('fName').focus();}
-function closeModal(){document.getElementById('modalBack').style.display='none';['fName','fSub'].forEach(id=>document.getElementById(id).value='');pickedEmoji='📊';renderEmojiPick();document.getElementById('modalErr').textContent='';}
+let editingKey=null; // null = create mode, else the key being edited
+function openModal(){
+  editingKey=null;
+  document.getElementById('modalTitle').textContent='🆕 สร้างแคมเปญใหม่';
+  document.getElementById('createBtn').textContent='สร้าง';
+  document.getElementById('createHint').style.display='';
+  document.getElementById('modalBack').style.display='flex';
+  document.getElementById('fName').focus();
+}
+function openEditModal(c){
+  editingKey=c.key;
+  document.getElementById('modalTitle').textContent='✏️ แก้ไขแคมเปญ ('+c.key+')';
+  document.getElementById('createBtn').textContent='บันทึก';
+  document.getElementById('createHint').style.display='none';
+  document.getElementById('fName').value=c.name||'';
+  document.getElementById('fSub').value=c.subtitle||'';
+  pickedEmoji=c.emoji||'📊'; renderEmojiPick();
+  document.getElementById('modalErr').textContent='';
+  document.getElementById('modalBack').style.display='flex';
+  document.getElementById('fName').focus();
+}
+function closeModal(){editingKey=null;document.getElementById('modalBack').style.display='none';['fName','fSub'].forEach(id=>document.getElementById(id).value='');pickedEmoji='📊';renderEmojiPick();document.getElementById('modalErr').textContent='';}
 document.getElementById('newBtn').onclick=openModal;
 document.getElementById('closeBtn').onclick=closeModal;
 document.getElementById('cancelBtn').onclick=closeModal;
@@ -218,17 +253,28 @@ document.getElementById('createBtn').onclick=async()=>{
     emoji:pickedEmoji,
     subtitle:document.getElementById('fSub').value.trim(),
   };
-  document.getElementById('createBtn').disabled=true;
+  const cb=document.getElementById('createBtn');
+  cb.disabled=true;
   try{
-    const r=await fetch('/api/campaigns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    const d=await r.json();
-    if(!r.ok){document.getElementById('modalErr').textContent=d.detail||('HTTP '+r.status);document.getElementById('createBtn').disabled=false;return;}
-    toast('สร้างแคมเปญ "'+d.name+'" แล้ว');
-    closeModal();
-    document.getElementById('createBtn').disabled=false;
-    // Jump straight to the new campaign so the user can add KOLs
-    setTimeout(()=>{location.href='/c/'+encodeURIComponent(d.key);},400);
-  }catch(e){document.getElementById('modalErr').textContent=e.message;document.getElementById('createBtn').disabled=false;}
+    if(editingKey){
+      // ---- edit mode: PATCH name/emoji/subtitle, stay on Home ----
+      const r=await fetch('/api/campaigns/'+encodeURIComponent(editingKey),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const d=await r.json();
+      if(!r.ok){document.getElementById('modalErr').textContent=d.detail||('HTTP '+r.status);cb.disabled=false;return;}
+      toast('บันทึกแคมเปญ "'+d.name+'" แล้ว');
+      closeModal(); cb.disabled=false;
+      loadGrid();
+    }else{
+      // ---- create mode ----
+      const r=await fetch('/api/campaigns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const d=await r.json();
+      if(!r.ok){document.getElementById('modalErr').textContent=d.detail||('HTTP '+r.status);cb.disabled=false;return;}
+      toast('สร้างแคมเปญ "'+d.name+'" แล้ว');
+      closeModal(); cb.disabled=false;
+      // Jump straight to the new campaign so the user can add KOLs
+      setTimeout(()=>{location.href='/c/'+encodeURIComponent(d.key);},400);
+    }
+  }catch(e){document.getElementById('modalErr').textContent=e.message;cb.disabled=false;}
 };
 
 renderEmojiPick();
