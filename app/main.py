@@ -48,7 +48,7 @@ def _seed_on_startup() -> None:
 @app.get("/api/version")
 def version():
     """Build marker — lets us confirm which commit Railway is actually running."""
-    return {"build": "campaign-hub-v31"}
+    return {"build": "campaign-hub-v32"}
 
 
 FRONTEND_DIR = pathlib.Path(__file__).resolve().parent.parent / "frontend"
@@ -71,7 +71,7 @@ def _page(path: pathlib.Path):
 
 @app.get("/")
 def index():
-    """Campaign Hub — home page listing all campaigns. First stop for users."""
+    """Influencer Real Time Report — home page listing all campaigns."""
     return _page(HOME_PAGE)
 
 
