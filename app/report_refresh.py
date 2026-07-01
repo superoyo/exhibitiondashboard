@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -20,6 +21,14 @@ from app.db import session_scope
 from app.models import ReportKol, ReportPost
 
 log = logging.getLogger("report_refresh")
+
+# Apify puts the token in the request URL, so httpx error strings leak it.
+# Redact before any error text reaches the UI/status.
+_TOKEN_RE = re.compile(r"(token=)[^&\s'\"]+", re.I)
+
+
+def _redact(exc) -> str:
+    return _TOKEN_RE.sub(r"\1***", str(exc))
 
 
 def video_id_of(url: Optional[str]) -> str:
@@ -195,14 +204,14 @@ def fetch_profiles(campaign: str = "sahagroup") -> dict:
         return {"status": "success", "done": done}
     except (ApifyError, httpx.HTTPError) as exc:
         log.error("Profiles[%s] failed: %s", campaign, exc)
-        st.update(status="failed", message=f"ดึงรูปโปรไฟล์ล้มเหลว: {exc}",
+        st.update(status="failed", message=f"ดึงรูปโปรไฟล์ล้มเหลว: {_redact(exc)}",
                   finished_at=dt.datetime.now(config.TZ).isoformat())
-        return {"status": "failed", "error": str(exc)}
+        return {"status": "failed", "error": _redact(exc)}
     except Exception as exc:  # noqa: BLE001
         log.exception("Profiles[%s] crashed", campaign)
-        st.update(status="failed", message=f"ผิดพลาด: {exc}",
+        st.update(status="failed", message=f"ผิดพลาด: {_redact(exc)}",
                   finished_at=dt.datetime.now(config.TZ).isoformat())
-        return {"status": "failed", "error": str(exc)}
+        return {"status": "failed", "error": _redact(exc)}
 
 
 def refresh_report(campaign: str = "pao") -> dict:
@@ -253,7 +262,7 @@ def refresh_report(campaign: str = "pao") -> dict:
                     partial = True
             except (ApifyError, httpx.HTTPError) as exc:
                 log.error("Refresh[%s] TikTok batch failed: %s", campaign, exc)
-                scrape_errors.append(f"TikTok: {exc}")
+                scrape_errors.append(f"TikTok: {_redact(exc)}")
         if fb_urls:
             try:
                 items, meta = run_scrape_fb(fb_urls, tolerate_failure=True)
@@ -265,7 +274,7 @@ def refresh_report(campaign: str = "pao") -> dict:
                     partial = True
             except (ApifyError, httpx.HTTPError) as exc:
                 log.error("Refresh[%s] Facebook batch failed: %s", campaign, exc)
-                scrape_errors.append(f"Facebook: {exc}")
+                scrape_errors.append(f"Facebook: {_redact(exc)}")
 
         by_user: Dict[str, Dict] = {}
         for p in posts:
@@ -301,13 +310,18 @@ def refresh_report(campaign: str = "pao") -> dict:
             cost += pres["cost"]
         except (ApifyError, httpx.HTTPError) as exc:
             log.error("Refresh[%s] profile pass failed: %s", campaign, exc)
-            scrape_errors.append(f"โปรไฟล์: {exc}")
+            scrape_errors.append(f"โปรไฟล์: {_redact(exc)}")
 
         seen = set(by_user)
         # Hard failure only if nothing at all was salvaged (posts AND profiles).
         if scrape_errors and not seen and prof_done == 0:
-            st.update(status="failed",
-                      message="ดึงข้อมูลไม่สำเร็จ: " + " · ".join(scrape_errors),
+            joined = " · ".join(scrape_errors)
+            if "401" in joined:
+                fail_msg = ("⚠️ Apify token ใช้ไม่ได้/หมดอายุ (401) — ไปที่เมนู "
+                            "Apify Token (หน้า Home) ใส่ token ใหม่แล้วลอง Refresh อีกครั้ง")
+            else:
+                fail_msg = "ดึงข้อมูลไม่สำเร็จ: " + joined
+            st.update(status="failed", message=fail_msg,
                       finished_at=dt.datetime.now(config.TZ).isoformat())
             return {"status": "failed", "errors": scrape_errors}
 
@@ -337,11 +351,11 @@ def refresh_report(campaign: str = "pao") -> dict:
 
     except (ApifyError, httpx.HTTPError) as exc:
         log.error("Refresh[%s] failed: %s", campaign, exc)
-        st.update(status="failed", message=f"ดึงข้อมูลล้มเหลว: {exc}",
+        st.update(status="failed", message=f"ดึงข้อมูลล้มเหลว: {_redact(exc)}",
                   finished_at=dt.datetime.now(config.TZ).isoformat())
-        return {"status": "failed", "error": str(exc)}
+        return {"status": "failed", "error": _redact(exc)}
     except Exception as exc:  # noqa: BLE001
         log.exception("Refresh[%s] crashed", campaign)
-        st.update(status="failed", message=f"ผิดพลาด: {exc}",
+        st.update(status="failed", message=f"ผิดพลาด: {_redact(exc)}",
                   finished_at=dt.datetime.now(config.TZ).isoformat())
-        return {"status": "failed", "error": str(exc)}
+        return {"status": "failed", "error": _redact(exc)}
