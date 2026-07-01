@@ -94,6 +94,25 @@ class ReportPost(Base):
     )
 
 
+class Campaign(Base):
+    """Metadata for a report campaign — makes campaigns dynamic (created from
+    the /kols/home UI, not by editing code). The `campaign` string column in
+    report_kols/report_posts references this table's `key` (soft-linked; no FK
+    so pre-existing data survives without a metadata row)."""
+    __tablename__ = "campaigns"
+
+    key: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    emoji: Mapped[str] = mapped_column(String(8), nullable=False, default="📊")
+    subtitle: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    groups_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    subgroups_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class AppSetting(Base):
     """Tiny key/value store for runtime-editable settings (e.g. apify_token),
     so an expired Apify key can be swapped from the web UI without a redeploy."""

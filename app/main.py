@@ -24,6 +24,7 @@ def _seed_on_startup() -> None:
     if it fails (e.g. DB not ready), the web still serves and logs the error."""
     try:
         from app.seed import (
+            seed_campaigns_if_empty,
             seed_if_empty,
             seed_report_kols_if_empty,
             seed_report_posts_if_empty,
@@ -36,9 +37,10 @@ def _seed_on_startup() -> None:
         rp = seed_report_posts_if_empty()
         sg = seed_sahagroup_if_empty()
         sg27 = seed_sahagroup2027_if_empty()
+        cm = seed_campaigns_if_empty()
         log.info(
-            "Startup bootstrap: %d tracker, %d PAO KOLs, %d PAO posts, %d Sahagroup KOLs, %d Sahagroup2027 KOLs.",
-            n, r, rp, sg, sg27,
+            "Startup bootstrap: %d tracker, %d PAO KOLs, %d PAO posts, %d Sahagroup KOLs, %d Sahagroup2027 KOLs, %d campaign meta.",
+            n, r, rp, sg, sg27, cm,
         )
     except Exception as exc:  # noqa: BLE001 — seeding must never crash the web
         log.warning("Startup seed skipped (%s). Run scripts/seed_kols.py manually.", exc)
@@ -46,7 +48,7 @@ def _seed_on_startup() -> None:
 @app.get("/api/version")
 def version():
     """Build marker — lets us confirm which commit Railway is actually running."""
-    return {"build": "sahagroup2027-v11"}
+    return {"build": "campaign-hub-v12"}
 
 
 FRONTEND_DIR = pathlib.Path(__file__).resolve().parent.parent / "frontend"
@@ -54,6 +56,7 @@ INDEX = FRONTEND_DIR / "index.html"
 REPORT = FRONTEND_DIR / "report.html"
 KOLS_PAGE = FRONTEND_DIR / "kols.html"
 TOKEN_PAGE = FRONTEND_DIR / "token.html"
+HOME_PAGE = FRONTEND_DIR / "home.html"
 
 # HTML pages must always revalidate — otherwise browsers serve a stale shell
 # after a deploy (e.g. the old report before the dynamic rewrite).
@@ -68,19 +71,32 @@ def _page(path: pathlib.Path):
 
 @app.get("/")
 def index():
-    """Sahagroup Fair campaign report (PAO-pattern, campaign=sahagroup)."""
+    """Campaign Hub — home page listing all campaigns. First stop for users."""
+    return _page(HOME_PAGE)
+
+
+@app.get("/c/{campaign_key}")
+def campaign_report(campaign_key: str):
+    """Dynamic per-campaign report. All new campaigns use this URL pattern."""
     return _page(REPORT)
 
 
+# ---- legacy paths kept alive so old bookmarks + shared links still work ----
 @app.get("/report")
 def report():
-    """PAO Super Perfume campaign report (campaign=pao)."""
+    """Legacy: PAO Super Perfume campaign report (campaign=pao)."""
     return _page(REPORT)
 
 
 @app.get("/sahagroup2027")
 def sahagroup2027():
-    """Sahagroup Fair 2027 campaign report (campaign=sahagroup2027)."""
+    """Legacy: Sahagroup Fair 2027 report."""
+    return _page(REPORT)
+
+
+@app.get("/sahagroup")
+def sahagroup2026():
+    """Alias for the Sahagroup 2026 report (the old '/' before Campaign Hub)."""
     return _page(REPORT)
 
 

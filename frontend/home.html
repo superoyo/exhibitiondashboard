@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="th"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Campaign Hub — เลือกแคมเปญ</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f4f6fa;--card:#fff;--line:#e5e7eb;--muted:#64748b;--text:#0f172a}
+html,body{background:var(--bg);color:var(--text);font-family:'Noto Sans Thai',system-ui,sans-serif}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 3px rgba(15,23,42,.05);transition:.15s}
+.card:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(15,23,42,.08);border-color:#94a3b8}
+a{color:inherit;text-decoration:none}
+.nav{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin-bottom:1rem}
+.nav-brand{font-weight:700;font-size:1rem;margin-right:.6rem}
+.navtab{padding:.4rem .9rem;border-radius:999px;font-size:.85rem;font-weight:600;color:#475569;border:1px solid var(--line);background:#fff}
+.navtab-active{background:#0f172a;color:#fff;border-color:#0f172a}
+.navtab:hover{background:#eef2f7}
+.btn{border-radius:10px;padding:.55rem 1.1rem;font-weight:700;font-size:.9rem;cursor:pointer;border:1px solid var(--line);background:#fff}
+.btn-primary{background:#0f172a;color:#fff;border-color:#0f172a}
+.btn-primary:hover{background:#1e293b}
+.btn-danger{color:#dc2626;border-color:#fecaca}
+.inp{border:1px solid var(--line);border-radius:8px;padding:.5rem .7rem;font-size:.9rem;width:100%;background:#fff}
+.chip{display:inline-block;padding:.1rem .55rem;border-radius:999px;font-size:.7rem;font-weight:600;background:#eef2f7;color:#475569;margin:.1rem .15rem 0 0}
+.modal-back{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;z-index:40}
+.modal{background:#fff;border-radius:14px;padding:1.25rem;max-width:520px;width:calc(100vw - 2rem);max-height:calc(100vh - 2rem);overflow:auto}
+#toast{position:fixed;right:1rem;bottom:1rem;z-index:50;display:none;background:#fff;border:1px solid var(--line);padding:.55rem 1rem;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.08)}
+.emoji-pick{display:grid;grid-template-columns:repeat(8,1fr);gap:.35rem}
+.emoji-pick button{padding:.4rem;border:1px solid var(--line);border-radius:8px;font-size:1.2rem;background:#fff;cursor:pointer}
+.emoji-pick button.on{background:#0f172a;border-color:#0f172a}
+</style></head><body class="min-h-screen">
+<div class="max-w-6xl mx-auto px-3 sm:px-5 py-5">
+<nav class="nav">
+  <span class="nav-brand">🎯 Campaign Hub</span>
+  <a href="/" class="navtab navtab-active">รวมแคมเปญ</a>
+  <a href="/kols" class="navtab">แก้ไข KOL</a>
+  <a href="/token" class="navtab">Apify Token</a>
+</nav>
+
+<header class="mb-5 flex flex-wrap items-end justify-between gap-3">
+  <div>
+    <h1 class="text-2xl sm:text-3xl font-bold">รวมแคมเปญทั้งหมด</h1>
+    <p class="text-sm mt-1" style="color:var(--muted)">แสดง 15 แคมเปญล่าสุด · คลิกการ์ดเพื่อดูรายงาน · กด "+ สร้างแคมเปญใหม่" เพื่อเพิ่มโดยไม่ต้องเขียนโค้ด</p>
+  </div>
+  <div class="flex gap-2">
+    <button id="newBtn" class="btn btn-primary">+ สร้างแคมเปญใหม่</button>
+  </div>
+</header>
+
+<div id="grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+  <div class="card p-6 text-sm" style="color:var(--muted)">กำลังโหลด…</div>
+</div>
+
+<!-- Create modal -->
+<div id="modalBack" class="modal-back" role="dialog" aria-modal="true">
+  <div class="modal">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-lg font-bold">🆕 สร้างแคมเปญใหม่</h2>
+      <button id="closeBtn" class="btn" aria-label="ปิด">✕</button>
+    </div>
+    <div class="grid gap-3">
+      <label class="block">
+        <span class="text-xs font-semibold" style="color:var(--muted)">ชื่อแคมเปญ (แสดงบนหัวรายงาน)</span>
+        <input id="fName" class="inp mt-1" placeholder="เช่น Sahagroup Fair 2028">
+      </label>
+      <label class="block">
+        <span class="text-xs font-semibold" style="color:var(--muted)">URL Key (ใช้ในลิงก์ /c/&lt;key&gt;) — เว้นว่างจะสร้างอัตโนมัติจากชื่อ</span>
+        <input id="fKey" class="inp mt-1" placeholder="เช่น sahagroup2028">
+      </label>
+      <div>
+        <span class="text-xs font-semibold" style="color:var(--muted)">Emoji / ไอคอน</span>
+        <div id="fEmoji" class="emoji-pick mt-1"></div>
+      </div>
+      <label class="block">
+        <span class="text-xs font-semibold" style="color:var(--muted)">คำอธิบาย (ตัวรอง)</span>
+        <input id="fSub" class="inp mt-1" placeholder="เช่น Mega KOL + Micro-Nano KOL · TikTok/FB">
+      </label>
+      <label class="block">
+        <span class="text-xs font-semibold" style="color:var(--muted)">กลุ่มใหญ่ (คั่นด้วยลูกน้ำ)</span>
+        <input id="fGroups" class="inp mt-1" placeholder="เช่น Mega Kol, Micro-Nano Kol">
+      </label>
+      <label class="block">
+        <span class="text-xs font-semibold" style="color:var(--muted)">กลุ่มย่อย (คั่นด้วยลูกน้ำ, ใส่ทีหลังได้)</span>
+        <input id="fSubs" class="inp mt-1" placeholder="เช่น THE TASTE MAKERS, THE MEMORY MAKERS">
+      </label>
+      <div class="flex items-center justify-end gap-2 mt-2">
+        <button id="cancelBtn" class="btn">ยกเลิก</button>
+        <button id="createBtn" class="btn btn-primary">สร้าง</button>
+      </div>
+      <div id="modalErr" class="text-sm" style="color:#dc2626"></div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+</div>
+
+<script>
+const EMOJIS=['📊','🛍️','🧴','🎬','🍜','💄','🏠','🎮','📱','⚽','✈️','🎨','🎵','📷','🚗','💼'];
+let pickedEmoji='📊';
+function toast(msg, ok=true){const t=document.getElementById('toast');t.textContent=(ok?'✅ ':'⚠️ ')+msg;t.style.display='block';t.style.borderColor=ok?'#bbf7d0':'#fecaca';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',2600);}
+function fmt(n){return n>=1e6?(n/1e6).toFixed(2)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':(''+n);}
+function fmtDate(iso){if(!iso)return '';try{return new Date(iso).toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'numeric'});}catch(e){return '';}}
+function esc(s){return (s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+async function loadGrid(){
+  try{
+    const d=await(await fetch('/api/campaigns?limit=15')).json();
+    const grid=document.getElementById('grid');
+    if(!d.campaigns.length){grid.innerHTML='<div class="card p-8 text-center col-span-full"><div class="text-3xl mb-2">📭</div><div class="font-semibold mb-1">ยังไม่มีแคมเปญ</div><div class="text-sm mb-3" style="color:var(--muted)">กด "+ สร้างแคมเปญใหม่" ด้านบนเพื่อเริ่ม</div></div>';return;}
+    grid.innerHTML=d.campaigns.map(c=>`
+      <a href="/c/${encodeURIComponent(c.key)}" class="card p-5 block">
+        <div class="flex items-start justify-between gap-2">
+          <div class="text-4xl">${esc(c.emoji||'📊')}</div>
+          <div class="text-right">
+            <div class="text-xs" style="color:var(--muted)">${fmtDate(c.created_at)}</div>
+            <div class="text-xs mt-1" style="color:var(--muted)">${c.roster_count||0} KOLs</div>
+          </div>
+        </div>
+        <div class="mt-2 font-bold text-lg leading-tight">${esc(c.name)}</div>
+        <div class="text-xs mt-1" style="color:var(--muted)">/c/${esc(c.key)}</div>
+        ${c.subtitle?`<div class="text-sm mt-2" style="color:#334155">${esc(c.subtitle)}</div>`:''}
+        <div class="mt-3">${(c.groups||[]).slice(0,4).map(g=>`<span class="chip">${esc(g)}</span>`).join('')}${(c.groups||[]).length>4?`<span class="chip">+${(c.groups||[]).length-4}</span>`:''}</div>
+        <div class="text-xs mt-3 flex items-center justify-between" style="color:var(--muted)">
+          <span>${c.refreshed_at?'🔄 อัปเดต '+fmtDate(c.refreshed_at):'ยังไม่มีข้อมูล'}</span>
+          <span class="font-semibold" style="color:#2563eb">เปิดรายงาน →</span>
+        </div>
+      </a>`).join('');
+  }catch(e){document.getElementById('grid').innerHTML='<div class="card p-6 col-span-full" style="color:#dc2626">โหลดไม่สำเร็จ: '+esc(e.message)+'</div>';}
+}
+
+function renderEmojiPick(){
+  const el=document.getElementById('fEmoji');
+  el.innerHTML=EMOJIS.map(e=>`<button type="button" data-e="${e}" class="${e===pickedEmoji?'on':''}">${e}</button>`).join('');
+  el.querySelectorAll('button').forEach(b=>b.onclick=()=>{pickedEmoji=b.dataset.e;renderEmojiPick();});
+}
+function openModal(){document.getElementById('modalBack').style.display='flex';document.getElementById('fName').focus();}
+function closeModal(){document.getElementById('modalBack').style.display='none';['fName','fKey','fSub','fGroups','fSubs'].forEach(id=>document.getElementById(id).value='');pickedEmoji='📊';renderEmojiPick();document.getElementById('modalErr').textContent='';}
+document.getElementById('newBtn').onclick=openModal;
+document.getElementById('closeBtn').onclick=closeModal;
+document.getElementById('cancelBtn').onclick=closeModal;
+document.getElementById('modalBack').onclick=e=>{if(e.target.id==='modalBack')closeModal();};
+
+document.getElementById('createBtn').onclick=async()=>{
+  const name=document.getElementById('fName').value.trim();
+  if(!name){document.getElementById('modalErr').textContent='ใส่ชื่อแคมเปญก่อน';return;}
+  const body={
+    name,
+    key:document.getElementById('fKey').value.trim()||null,
+    emoji:pickedEmoji,
+    subtitle:document.getElementById('fSub').value.trim(),
+    groups:document.getElementById('fGroups').value.split(',').map(s=>s.trim()).filter(Boolean),
+    subgroups:document.getElementById('fSubs').value.split(',').map(s=>s.trim()).filter(Boolean),
+  };
+  document.getElementById('createBtn').disabled=true;
+  try{
+    const r=await fetch('/api/campaigns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(!r.ok){document.getElementById('modalErr').textContent=d.detail||('HTTP '+r.status);document.getElementById('createBtn').disabled=false;return;}
+    toast('สร้างแคมเปญ "'+d.name+'" แล้ว');
+    closeModal();
+    document.getElementById('createBtn').disabled=false;
+    // Jump straight to the new campaign so the user can add KOLs
+    setTimeout(()=>{location.href='/c/'+encodeURIComponent(d.key);},400);
+  }catch(e){document.getElementById('modalErr').textContent=e.message;document.getElementById('createBtn').disabled=false;}
+};
+
+renderEmojiPick();
+loadGrid();
+</script></body></html>

@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy import func
 
 from app.db import session_scope
-from app.models import Kol, ReportKol, ReportPost
+from app.models import Campaign, Kol, ReportKol, ReportPost
 
 log = logging.getLogger("seed")
 
@@ -124,6 +124,67 @@ def seed_sahagroup_if_empty(config_path: pathlib.Path = SAHAGROUP_CONFIG) -> int
 def seed_sahagroup2027_if_empty(config_path: pathlib.Path = SAHAGROUP2027_CONFIG) -> int:
     """Bootstrap the Sahagroup Fair 2027 roster (empty placeholder — fill via /kols)."""
     return _seed_report_roster(config_path, "sahagroup2027")
+
+
+# ---------------------------------------------------------------------------
+# Campaign metadata bootstrap — makes the 3 legacy hardcoded campaigns show up
+# in the new dynamic home page on first startup. After this, new campaigns are
+# created via the UI ("+ Create Campaign") and stored directly in this table.
+# ---------------------------------------------------------------------------
+
+_LEGACY_CAMPAIGNS = [
+    {
+        "key": "sahagroup",
+        "name": "Sahagroup Fair 2026",
+        "emoji": "🛍️",
+        "subtitle": "Mega KOL + Micro-Nano KOL · ข้อมูลจริงจาก TikTok ผ่าน Apify",
+        "groups": ["Mega Kol", "Micro-Nano Kol"],
+        "subgroups": ["THE TASTE MAKERS", "THE MEMORY MAKERS", "THE VIBE MAKERS",
+                      "Fashion", "Food", "Beauty", "Household Items"],
+    },
+    {
+        "key": "pao",
+        "name": "PAO Super Perfume 2026",
+        "emoji": "🧴",
+        "subtitle": "สรุปผล KOL/Influencer · ข้อมูลจริงจาก TikTok/Facebook ผ่าน Apify",
+        "groups": ["Entertain", "Micro Local", "คู่รัก", "Facebook"],
+        "subgroups": [],
+    },
+    {
+        "key": "sahagroup2027",
+        "name": "Sahagroup Fair 2027",
+        "emoji": "🛍️",
+        "subtitle": "แคมเปญปี 2027 · เพิ่มรายชื่อ KOL ในหน้า \"แก้ไข KOL\" แล้วกด Refresh Data",
+        "groups": ["Mega Kol", "Micro-Nano Kol"],
+        "subgroups": ["THE TASTE MAKERS", "THE MEMORY MAKERS", "THE VIBE MAKERS",
+                      "Fashion", "Food", "Beauty", "Household Items"],
+    },
+]
+
+
+def seed_campaigns_if_empty() -> int:
+    """Insert campaign metadata for the 3 legacy campaigns on first boot.
+    Idempotent: only creates rows that don't already exist (so a manually-edited
+    campaign in the DB is never overwritten)."""
+    created = 0
+    with session_scope() as session:
+        existing_keys = set(session.scalars(select(Campaign.key)).all())
+        for row in _LEGACY_CAMPAIGNS:
+            if row["key"] in existing_keys:
+                continue
+            session.add(Campaign(
+                key=row["key"],
+                name=row["name"],
+                emoji=row["emoji"],
+                subtitle=row["subtitle"],
+                groups_json=json.dumps(row["groups"], ensure_ascii=False),
+                subgroups_json=json.dumps(row["subgroups"], ensure_ascii=False),
+                active=True,
+            ))
+            created += 1
+    if created:
+        log.info("Seeded %d legacy campaign metadata rows.", created)
+    return created
 
 
 def seed_report_posts_if_empty(config_path: pathlib.Path = REPORT_POSTS_CONFIG) -> int:

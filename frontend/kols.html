@@ -35,10 +35,8 @@
 
     <!-- Nav -->
     <nav class="nav">
-      <span class="nav-brand">📊 Sahagroup KOL Hub</span>
-      <a href="/" class="navtab">Sahagroup 2026</a>
-      <a href="/sahagroup2027" class="navtab">Sahagroup 2027</a>
-      <a href="/report" class="navtab">PAO Report</a>
+      <a href="/" class="nav-brand">🎯 Campaign Hub</a>
+      <a href="/" class="navtab">← รวมแคมเปญ</a>
       <a href="/kols" class="navtab navtab-active">แก้ไข KOL</a>
       <a href="/token" class="navtab">Apify Token</a>
     </nav>
@@ -48,12 +46,9 @@
       <p class="text-sm" style="color:var(--muted)">เพิ่ม / แก้ไข / ปิด-เปิด / ลบ KOL ของแต่ละ dashboard · บันทึกลงฐานข้อมูลทันที</p>
     </header>
 
-    <!-- roster switch -->
-    <div class="flex flex-wrap gap-2 mb-4">
-      <button class="seg seg-active" data-roster="report" data-campaign="sahagroup">Sahagroup 2026</button>
-      <button class="seg" data-roster="report" data-campaign="sahagroup2027">Sahagroup 2027</button>
-      <button class="seg" data-roster="report" data-campaign="pao">PAO Report</button>
-      <button class="seg" data-roster="tracker" data-campaign="">Tracker (live)</button>
+    <!-- roster switch (populated from /api/campaigns) -->
+    <div id="rosterSwitch" class="flex flex-wrap gap-2 mb-4">
+      <span class="text-sm" style="color:var(--muted)">กำลังโหลดแคมเปญ…</span>
     </div>
 
     <p id="note" class="text-xs mb-3" style="color:var(--muted)"></p>
@@ -92,20 +87,17 @@
   <div id="toast" class="card px-4 py-2 text-sm"></div>
 
 <script>
-const GROUPS = {
-  "report:sahagroup": ["Mega Kol","Micro-Nano Kol"],
-  "report:sahagroup2027": ["Mega Kol","Micro-Nano Kol"],
-  "report:pao": ["Entertain","Micro Local","คู่รัก","Facebook"],
-  "tracker:": ["Fashion","Food","Beauty","Household Items"],
-};
-const SUBGROUPS = {
-  "report:sahagroup": ["THE TASTE MAKERS","THE MEMORY MAKERS","THE VIBE MAKERS","Fashion","Food","Beauty","Household Items"],
-  "report:sahagroup2027": ["THE TASTE MAKERS","THE MEMORY MAKERS","THE VIBE MAKERS","Fashion","Food","Beauty","Household Items"],
-  "report:pao": [],
-};
+// Groups/subgroups are per-campaign (fetched from /api/campaigns). The Tracker
+// (live) roster is separate and keeps its fixed group list.
+const TRACKER_GROUPS = ["Fashion","Food","Beauty","Household Items"];
+let CAMPAIGN_META = {}; // key -> {name, emoji, groups, subgroups}
 function hashColor(c){const P=['#6366f1','#10b981','#ec4899','#f59e0b','#06b6d4','#8b5cf6','#ef4444','#14b8a6'];let h=0;for(const ch of (c||''))h=(h*31+ch.charCodeAt(0))>>>0;return P[h%P.length];}
-let roster = "report", campaign = "sahagroup";
-const sel = () => roster + ":" + (roster==="report"?campaign:"");
+// Read ?campaign= from URL so links from home/report pages open the right roster
+const urlCampaign = new URLSearchParams(location.search).get('campaign') || '';
+let roster = urlCampaign==='__tracker' ? 'tracker' : 'report';
+let campaign = roster==='tracker' ? '' : (urlCampaign || 'sahagroup');
+function groupsFor(){ return roster==='tracker' ? TRACKER_GROUPS : (CAMPAIGN_META[campaign]?.groups || []); }
+function subsFor(){ return roster==='tracker' ? [] : (CAMPAIGN_META[campaign]?.subgroups || []); }
 
 const $ = s => document.querySelector(s);
 function toast(msg, ok=true){ const t=$("#toast"); t.textContent=(ok?"✅ ":"⚠️ ")+msg; t.style.display="block"; t.style.borderColor=ok?"#bbf7d0":"#fecaca"; clearTimeout(t._t); t._t=setTimeout(()=>t.style.display="none",2600); }
@@ -118,12 +110,12 @@ async function api(method, path, body){
   return data;
 }
 function esc(s){return (s||"").replace(/"/g,'&quot;');}
-function hasSub(){ return roster==="report" && (SUBGROUPS[sel()]||[]).length>0; }
+function hasSub(){ return roster==="report" && subsFor().length>0; }
 async function load(){
   const isReport = roster==="report";
-  const groups = GROUPS[sel()]||[];
+  const groups = groupsFor();
   $("#groupList").innerHTML = groups.map(g=>`<option value="${g}">`).join("");
-  $("#subList").innerHTML = (SUBGROUPS[sel()]||[]).map(g=>`<option value="${g}">`).join("");
+  $("#subList").innerHTML = subsFor().map(g=>`<option value="${g}">`).join("");
   $("#addGroup").value = groups[0] || "";
   $("#addUrlWrap").style.display = isReport ? "block" : "none";
   $("#addSub").style.display = hasSub() ? "" : "none";
@@ -173,7 +165,7 @@ $("#addBtn").onclick = async ()=>{
   const username = $("#addUser").value.trim();
   if(!username){ toast("ใส่ username ก่อน",false); return; }
   try{
-    const body = {username, display:$("#addDisplay").value.trim(), group:$("#addGroup").value.trim()||(GROUPS[sel()]||[])[0]};
+    const body = {username, display:$("#addDisplay").value.trim(), group:$("#addGroup").value.trim()||groupsFor()[0]};
     if(hasSub()) body.subgroup = $("#addSub").value.trim();
     if(roster==="report") body.url = $("#addUrl").value.trim();
     await api("POST","", body);
@@ -183,18 +175,42 @@ $("#addBtn").onclick = async ()=>{
 };
 $("#reload").onclick = load;
 function setNote(){
-  const label = {sahagroup:'Sahagroup 2026', sahagroup2027:'Sahagroup 2027', pao:'PAO'}[campaign] || campaign;
+  const label = roster==='tracker' ? 'Tracker (live)' : (CAMPAIGN_META[campaign]?.name || campaign);
   $("#note").innerHTML = roster==="tracker"
     ? "หน้านี้คุม KOL ที่ระบบ scrape live (kols) — แยกจากรายงานแคมเปญ"
-    : `📌 แคมเปญ <b>${label}</b> · ใส่/แก้ <b>ลิงก์โพสต์</b> ของแต่ละ KOL แล้วไปหน้ารายงานกด <b>Refresh Data</b> (ติ๊ก active = รวมในรายงาน)`;
+    : `📌 แคมเปญ <b>${esc(label)}</b> · ใส่/แก้ <b>ลิงก์โพสต์</b> ของแต่ละ KOL แล้วไปหน้ารายงานกด <b>Refresh Data</b> (ติ๊ก active = รวมในรายงาน)`;
 }
-document.querySelectorAll(".seg").forEach(b=>b.onclick=()=>{
-  document.querySelectorAll(".seg").forEach(x=>x.classList.remove("seg-active"));
-  b.classList.add("seg-active");
-  roster = b.dataset.roster; campaign = b.dataset.campaign || "";
-  setNote(); load();
-});
-setNote(); load();
+function renderRosterSwitch(){
+  const buttons = Object.values(CAMPAIGN_META).map(c=>
+    `<button class="seg ${roster==='report'&&campaign===c.key?'seg-active':''}" data-roster="report" data-campaign="${esc(c.key)}">${c.emoji||'📊'} ${esc(c.name)}</button>`
+  ).join('');
+  $("#rosterSwitch").innerHTML = buttons +
+    `<button class="seg ${roster==='tracker'?'seg-active':''}" data-roster="tracker" data-campaign="">Tracker (live)</button>`;
+  document.querySelectorAll("#rosterSwitch .seg").forEach(b=>b.onclick=()=>{
+    document.querySelectorAll("#rosterSwitch .seg").forEach(x=>x.classList.remove("seg-active"));
+    b.classList.add("seg-active");
+    roster = b.dataset.roster; campaign = b.dataset.campaign || "";
+    setNote(); load();
+  });
+}
+async function bootstrap(){
+  try{
+    const d = await (await fetch('/api/campaigns?limit=100')).json();
+    CAMPAIGN_META = {}; (d.campaigns||[]).forEach(c=>{ CAMPAIGN_META[c.key]=c; });
+    // If URL didn't specify a campaign, land on the newest one
+    if(!urlCampaign && Object.keys(CAMPAIGN_META).length){
+      const first = d.campaigns[0]; if(first) campaign = first.key;
+    }
+    // Fallback: campaign in URL but no metadata row -> still allow editing
+    if(campaign && !CAMPAIGN_META[campaign]){
+      CAMPAIGN_META[campaign] = {key:campaign, name:campaign, emoji:'📊', groups:[], subgroups:[]};
+    }
+  }catch(e){ toast("โหลดแคมเปญไม่สำเร็จ: "+e.message,false); }
+  renderRosterSwitch();
+  setNote();
+  load();
+}
+bootstrap();
 </script>
 </body>
 </html>

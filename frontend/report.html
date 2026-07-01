@@ -25,10 +25,9 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 </style></head><body class="min-h-screen">
 <div class="max-w-7xl mx-auto px-3 sm:px-5 py-5">
 <nav class="nav">
-<span class="nav-brand">📊 Sahagroup KOL Hub</span>
-<a href="/" class="navtab" data-nav="/">Sahagroup 2026</a>
-<a href="/sahagroup2027" class="navtab" data-nav="/sahagroup2027">Sahagroup 2027</a>
-<a href="/report" class="navtab" data-nav="/report">PAO Report</a>
+<a href="/" class="nav-brand">🎯 Campaign Hub</a>
+<a href="/" class="navtab">← รวมแคมเปญ</a>
+<span id="navCampaigns" style="display:contents"></span>
 <a href="/kols" class="navtab">แก้ไข KOL</a>
 <a href="/token" class="navtab">Apify Token</a>
 </nav>
@@ -50,7 +49,7 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 <div id="empty" class="card p-8 text-center" style="display:none">
 <div class="text-4xl mb-2">📭</div>
 <div class="font-semibold mb-1">ยังไม่มีรายชื่อ KOL ในแคมเปญนี้</div>
-<div class="text-sm mb-4" style="color:var(--muted)">เพิ่มรายชื่อ/ลิงก์โพสต์ในหน้า <a href="/kols">แก้ไข KOL</a> แล้วกด Refresh Data</div>
+<div class="text-sm mb-4" style="color:var(--muted)">เพิ่มรายชื่อ/ลิงก์โพสต์ในหน้า <a id="editLink" href="/kols">แก้ไข KOL</a> แล้วกด Refresh Data</div>
 </div>
 
 <div id="content" style="display:none">
@@ -184,19 +183,38 @@ function render(DATA){
 }
 
 // ---- data load + refresh ----
-// campaign inferred from path: '/' = Sahagroup 2026, '/sahagroup2027' = Sahagroup 2027, '/report' = PAO
-const _P = location.pathname.replace(/\/$/,'');
-const CAMPAIGN = _P === '/report' ? 'pao' : _P === '/sahagroup2027' ? 'sahagroup2027' : 'sahagroup';
-const META = {
- pao:{title:'🧴 PAO Super Perfume 2026 — Campaign Report', sub:'สรุปผล KOL/Influencer · ข้อมูลจริงจาก TikTok/Facebook ผ่าน Apify'},
- sahagroup:{title:'🛍️ Sahagroup Fair 2026 — Campaign Report', sub:'Mega KOL + Micro-Nano KOL · ข้อมูลจริงจาก TikTok ผ่าน Apify'},
- sahagroup2027:{title:'🛍️ Sahagroup Fair 2027 — Campaign Report', sub:'แคมเปญปี 2027 · เพิ่มรายชื่อ KOL ในหน้า "แก้ไข KOL" แล้วกด Refresh Data'},
-};
-document.getElementById('repTitle').textContent=META[CAMPAIGN].title;
-document.getElementById('repSub').textContent=META[CAMPAIGN].sub;
-// nav active for this page
-{const navHref = CAMPAIGN==='pao' ? '/report' : CAMPAIGN==='sahagroup2027' ? '/sahagroup2027' : '/';
- const a=document.querySelector(`.navtab[data-nav="${navHref}"]`); if(a)a.classList.add('navtab-active');}
+// Campaign inferred from URL. Canonical: /c/<key>. Legacy paths still work.
+function inferCampaign(){
+ const p=location.pathname.replace(/\/$/,'');
+ const m=p.match(/^\/c\/([a-z0-9-]+)$/i); if(m) return m[1].toLowerCase();
+ if(p==='/report') return 'pao';
+ if(p==='/sahagroup2027') return 'sahagroup2027';
+ if(p==='/sahagroup') return 'sahagroup';
+ return 'sahagroup'; // fallback (old bookmark of '/')
+}
+const CAMPAIGN = inferCampaign();
+// Make the empty-state "แก้ไข KOL" link jump to the correct roster
+{const el=document.getElementById('editLink'); if(el) el.href='/kols?campaign='+encodeURIComponent(CAMPAIGN);}
+
+// Fetch campaign metadata for title/subtitle + top-5 quick nav
+async function loadCampaignMeta(){
+ try{
+  const meta = await (await fetch('/api/campaigns/'+encodeURIComponent(CAMPAIGN))).json();
+  const emoji = meta.emoji || '📊';
+  document.getElementById('repTitle').textContent = `${emoji} ${meta.name || CAMPAIGN} — Campaign Report`;
+  document.getElementById('repSub').textContent = meta.subtitle || 'ข้อมูลจริงจาก TikTok/Facebook ผ่าน Apify';
+  document.title = `${meta.name || CAMPAIGN} — Campaign Report`;
+ }catch(e){
+  document.getElementById('repTitle').textContent = CAMPAIGN + ' — Campaign Report';
+ }
+ try{
+  const list = (await (await fetch('/api/campaigns?limit=5')).json()).campaigns || [];
+  document.getElementById('navCampaigns').innerHTML = list.map(c=>
+    `<a href="/c/${encodeURIComponent(c.key)}" class="navtab${c.key===CAMPAIGN?' navtab-active':''}">${c.emoji||'📊'} ${c.name}</a>`
+  ).join('');
+ }catch(e){}
+}
+loadCampaignMeta();
 
 const btn=document.getElementById('refreshBtn');
 function setInfo(t){document.getElementById('refreshInfo').innerHTML=t;}

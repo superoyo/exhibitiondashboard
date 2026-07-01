@@ -10,9 +10,12 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+import json
+import re
+
 from app import config, queries
 from app.db import db_dependency
-from app.models import Kol, ReportKol, ReportPost
+from app.models import Campaign, Kol, ReportKol, ReportPost
 from app.report_refresh import fetch_profiles, refresh_report, state_for
 from app.scrape import run_daily_scrape
 
@@ -334,6 +337,155 @@ def token_set(body: TokenIn):
         raise HTTPException(400, "Token สั้นเกินไป ดูเหมือนไม่ถูกต้อง")
     set_setting(APIFY_TOKEN_KEY, tok)
     return {"status": "saved", "masked": mask_token(tok), "source": "database"}
+
+
+# ----------------------------------------------------------------------------
+# Campaign metadata CRUD — powers the home page (list) and "+ Create Campaign"
+# ----------------------------------------------------------------------------
+
+_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$|^[a-z0-9]{1,32}$")
+
+
+def _slugify_key(raw: str) -> str:
+    s = (raw or "").strip().lower()
+    s = re.sub(r"[^a-z0-9-]+", "-", s)
+    s = re.sub(r"-+", "-", s).strip("-")
+    return s[:32]
+
+
+def _campaign_dict(c: Campaign, roster_count: int = 0, refreshed_at=None) -> dict:
+    return {
+        "key": c.key,
+        "name": c.name,
+        "emoji": c.emoji or "📊",
+        "subtitle": c.subtitle or "",
+        "groups": json.loads(c.groups_json) if c.groups_json else [],
+        "subgroups": json.loads(c.subgroups_json) if c.subgroups_json else [],
+        "active": c.active,
+        "created_at": c.created_at.isoformat() if c.created_at else None,
+        "roster_count": roster_count,
+        "refreshed_at": refreshed_at.isoformat() if refreshed_at else None,
+    }
+
+
+class CampaignIn(BaseModel):
+    key: Optional[str] = None
+    name: str
+    emoji: Optional[str] = "📊"
+    subtitle: Optional[str] = ""
+    groups: Optional[list[str]] = None
+    subgroups: Optional[list[str]] = None
+
+
+class CampaignPatch(BaseModel):
+    name: Optional[str] = None
+    emoji: Optional[str] = None
+    subtitle: Optional[str] = None
+    groups: Optional[list[str]] = None
+    subgroups: Optional[list[str]] = None
+    active: Optional[bool] = None
+
+
+@router.get("/campaigns")
+def list_campaigns(limit: int = Query(15, ge=1, le=100),
+                   include_inactive: bool = Query(False),
+                   session: Session = Depends(db_dependency)):
+    """Latest N campaigns (default 15) — home page grid. Attaches roster_count
+    and refreshed_at (max ReportPost.scraped_at) so cards can show status."""
+    q = select(Campaign)
+    if not include_inactive:
+        q = q.where(Campaign.active.is_(True))
+    q = q.order_by(Campaign.created_at.desc()).limit(limit)
+    rows = session.scalars(q).all()
+
+    counts = dict(
+        session.execute(
+            select(ReportKol.campaign, func.count()).where(
+                ReportKol.active.is_(True)
+            ).group_by(ReportKol.campaign)
+        ).all()
+    )
+    last = dict(
+        session.execute(
+            select(ReportPost.campaign, func.max(ReportPost.scraped_at)).group_by(ReportPost.campaign)
+        ).all()
+    )
+    return {"campaigns": [_campaign_dict(c, counts.get(c.key, 0), last.get(c.key)) for c in rows]}
+
+
+@router.get("/campaigns/{key}")
+def get_campaign(key: str, session: Session = Depends(db_dependency)):
+    c = session.get(Campaign, key)
+    if not c:
+        raise HTTPException(404, f"ไม่พบแคมเปญ '{key}'")
+    roster_count = session.scalar(
+        select(func.count()).select_from(ReportKol).where(
+            ReportKol.campaign == key, ReportKol.active.is_(True))
+    ) or 0
+    last = session.scalar(
+        select(func.max(ReportPost.scraped_at)).where(ReportPost.campaign == key)
+    )
+    return _campaign_dict(c, roster_count, last)
+
+
+@router.post("/campaigns")
+def create_campaign(body: CampaignIn, session: Session = Depends(db_dependency)):
+    """Create a new campaign — key auto-derived from name if missing."""
+    raw_key = body.key if body.key else body.name
+    key = _slugify_key(raw_key)
+    if not key or not _KEY_RE.match(key):
+        raise HTTPException(400, "key ต้องเป็น a-z 0-9 หรือ - เท่านั้น (3–32 ตัวอักษร)")
+    if session.get(Campaign, key):
+        raise HTTPException(409, f"มีแคมเปญ key='{key}' อยู่แล้ว")
+    if not (body.name or "").strip():
+        raise HTTPException(400, "name ห้ามว่าง")
+    c = Campaign(
+        key=key,
+        name=body.name.strip(),
+        emoji=(body.emoji or "📊").strip()[:8],
+        subtitle=(body.subtitle or "").strip() or None,
+        groups_json=json.dumps(body.groups or [], ensure_ascii=False),
+        subgroups_json=json.dumps(body.subgroups or [], ensure_ascii=False),
+        active=True,
+    )
+    session.add(c)
+    session.commit()
+    session.refresh(c)
+    return _campaign_dict(c, 0, None)
+
+
+@router.patch("/campaigns/{key}")
+def update_campaign(key: str, body: CampaignPatch, session: Session = Depends(db_dependency)):
+    c = session.get(Campaign, key)
+    if not c:
+        raise HTTPException(404, f"ไม่พบแคมเปญ '{key}'")
+    if body.name is not None:
+        c.name = body.name.strip()
+    if body.emoji is not None:
+        c.emoji = body.emoji.strip()[:8] or "📊"
+    if body.subtitle is not None:
+        c.subtitle = body.subtitle.strip() or None
+    if body.groups is not None:
+        c.groups_json = json.dumps(body.groups, ensure_ascii=False)
+    if body.subgroups is not None:
+        c.subgroups_json = json.dumps(body.subgroups, ensure_ascii=False)
+    if body.active is not None:
+        c.active = body.active
+    session.commit()
+    session.refresh(c)
+    return _campaign_dict(c)
+
+
+@router.delete("/campaigns/{key}")
+def delete_campaign(key: str, session: Session = Depends(db_dependency)):
+    """Soft delete — set active=false so KOL data is preserved. Hidden from
+    home page but data + URL still work."""
+    c = session.get(Campaign, key)
+    if not c:
+        raise HTTPException(404, f"ไม่พบแคมเปญ '{key}'")
+    c.active = False
+    session.commit()
+    return {"status": "archived", "key": key}
 
 
 @router.post("/token/test")
