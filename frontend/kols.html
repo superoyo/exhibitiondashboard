@@ -37,17 +37,16 @@
     <nav class="nav">
       <a href="/" class="nav-brand">🎯 Campaign Hub</a>
       <a href="/" class="navtab">← Home</a>
-      <a href="/kols" class="navtab navtab-active">แก้ไข KOL</a>
-      <a href="/token" class="navtab">Apify Token</a>
+      <a id="navBackReport" href="/" class="navtab">← กลับหน้ารายงาน</a>
     </nav>
 
     <header class="mb-4">
-      <h1 class="text-xl sm:text-2xl font-bold">✏️ แก้ไขรายชื่อ KOL</h1>
-      <p class="text-sm" style="color:var(--muted)">เพิ่ม / แก้ไข / ปิด-เปิด / ลบ KOL ของแต่ละ dashboard · บันทึกลงฐานข้อมูลทันที</p>
+      <h1 class="text-xl sm:text-2xl font-bold">✏️ แก้ไขรายชื่อ KOL — <span id="campName">…</span></h1>
+      <p class="text-sm" style="color:var(--muted)">เพิ่ม / แก้ไข / ปิด-เปิด / ลบ KOL ของแคมเปญนี้ · บันทึกลงฐานข้อมูลทันที</p>
     </header>
 
-    <!-- roster switch (populated from /api/campaigns) -->
-    <div id="rosterSwitch" class="flex flex-wrap gap-2 mb-4">
+    <!-- current campaign (locked — this page edits ONE campaign only) -->
+    <div id="rosterSwitch" class="mb-4">
       <span class="text-sm" style="color:var(--muted)">กำลังโหลดแคมเปญ…</span>
     </div>
 
@@ -180,18 +179,18 @@ function setNote(){
     ? "หน้านี้คุม KOL ที่ระบบ scrape live (kols) — แยกจากรายงานแคมเปญ"
     : `📌 แคมเปญ <b>${esc(label)}</b> · ใส่/แก้ <b>ลิงก์โพสต์</b> ของแต่ละ KOL แล้วไปหน้ารายงานกด <b>Refresh Data</b> (ติ๊ก active = รวมในรายงาน)`;
 }
-function renderRosterSwitch(){
-  const buttons = Object.values(CAMPAIGN_META).map(c=>
-    `<button class="seg ${roster==='report'&&campaign===c.key?'seg-active':''}" data-roster="report" data-campaign="${esc(c.key)}">${c.emoji||'📊'} ${esc(c.name)}</button>`
-  ).join('');
-  $("#rosterSwitch").innerHTML = buttons +
-    `<button class="seg ${roster==='tracker'?'seg-active':''}" data-roster="tracker" data-campaign="">Tracker (live)</button>`;
-  document.querySelectorAll("#rosterSwitch .seg").forEach(b=>b.onclick=()=>{
-    document.querySelectorAll("#rosterSwitch .seg").forEach(x=>x.classList.remove("seg-active"));
-    b.classList.add("seg-active");
-    roster = b.dataset.roster; campaign = b.dataset.campaign || "";
-    setNote(); load();
-  });
+// This page edits ONE campaign only (the one passed via ?campaign=). No switcher
+// is shown, so other campaigns' rosters are never visible or reachable here.
+function renderCampaignLabel(){
+  const meta = roster==='tracker'
+    ? {emoji:'📡', name:'Tracker (live)'}
+    : (CAMPAIGN_META[campaign] || {emoji:'📊', name:campaign});
+  document.getElementById('campName').textContent = `${meta.emoji||'📊'} ${meta.name}`;
+  $("#rosterSwitch").innerHTML =
+    `<span class="seg seg-active" style="cursor:default">${meta.emoji||'📊'} ${esc(meta.name)}</span>`
+    + `<span class="text-xs" style="color:var(--muted);margin-left:.5rem">แก้ไขเฉพาะ KOL ของแคมเปญนี้เท่านั้น</span>`;
+  const back = document.getElementById('navBackReport');
+  if(back) back.href = roster==='tracker' ? '/tracker' : '/c/'+encodeURIComponent(campaign);
 }
 async function bootstrap(){
   try{
@@ -206,7 +205,7 @@ async function bootstrap(){
       CAMPAIGN_META[campaign] = {key:campaign, name:campaign, emoji:'📊', groups:[], subgroups:[]};
     }
   }catch(e){ toast("โหลดแคมเปญไม่สำเร็จ: "+e.message,false); }
-  renderRosterSwitch();
+  renderCampaignLabel();
   setNote();
   load();
 }
