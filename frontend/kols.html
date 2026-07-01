@@ -243,36 +243,45 @@ function pickCol(headers, keys){
   for(let i=0;i<headers.length;i++){ const h=headers[i]; if(h && keys.some(k=>h.includes(k))) return i; }
   return -1;
 }
+function looksUrl(s){ return /https?:\/\/|www\.|tiktok\.com|facebook\.com|fb\.watch|instagram\.com|youtu/i.test(_n(s)); }
 function handleFromUrl(u){
   u=_n(u);
-  let m=u.match(/tiktok\.com\/@([^\/\?#]+)/i); if(m) return m[1].toLowerCase();
-  m=u.match(/facebook\.com\/([^\/\?#]+)/i); if(m) return m[1].toLowerCase();
+  let m=u.match(/tiktok\.com\/@([^\/\?#\s]+)/i); if(m) return m[1].toLowerCase();
+  m=u.match(/(?:facebook\.com|fb\.com)\/([^\/\?#\s]+)/i); if(m) return m[1].toLowerCase();
+  m=u.match(/instagram\.com\/([^\/\?#\s]+)/i); if(m) return m[1].toLowerCase();
   return '';
 }
-// Turn one workbook into a KOL list. Grouping: explicit หมวด/group column wins;
-// otherwise the Sheet name is the group (when the file has multiple sheets).
+// Turn one workbook into a KOL list. Robust to header names — falls back to
+// scanning every cell for a TikTok/FB link or @handle. Grouping: explicit
+// หมวด/group column wins; else the Sheet name is the group (multi-sheet files).
 function parseWorkbook(wb){
-  const out=[];
+  const out=[]; const dbg=[];
   const multi = wb.SheetNames.length>1;
   wb.SheetNames.forEach(sheetName=>{
     const ws=wb.Sheets[sheetName]; if(!ws) return;
     const rows=XLSX.utils.sheet_to_json(ws,{header:1,blankrows:false,defval:''});
     if(!rows.length) return;
-    let hi=0; for(let i=0;i<rows.length;i++){ if(rows[i].filter(c=>_n(c)).length>=2){hi=i;break;} }
+    let hi=0; for(let i=0;i<rows.length;i++){ if(rows[i].filter(c=>_n(c)).length>=1){hi=i;break;} }
     const headers=rows[hi].map(_low);
-    const cUrl=pickCol(headers,['link','url','ลิงก์','ลิ้ง','โพสต','post','คลิป','video']);
-    let   cU  =pickCol(headers,['username','handle','ผู้ใช้','บัญชี','user','ไอดี','ชื่อบัญชี','tiktok']);
+    dbg.push('“'+sheetName+'” ['+headers.filter(Boolean).join(', ')+']');
+    const cUrl=pickCol(headers,['link','url','ลิงก์','ลิ้ง','โพสต','post','คลิป','video','งาน']);
+    let   cU  =pickCol(headers,['username','handle','ผู้ใช้','บัญชี','user','ไอดี','ชื่อบัญชี','account','tiktok','tt','ig','ช่อง','channel']);
     if(cU===cUrl) cU=-1; // a "tiktok link" column is a url, not a username
     const cName=pickCol(headers,['ชื่อ','name','display','nickname','kol','อินฟลู']);
     const cGrp=pickCol(headers,['หมวด','ประเภท','group','category','type','tier','กลุ่ม']);
     const cSub=pickCol(headers,['ย่อย','subgroup','sub']);
     const cFol=pickCol(headers,['follow','ติดตาม','fan']);
-    for(let i=hi+1;i<rows.length;i++){
+    // If the "header" row itself already holds a URL/@handle, the file has no
+    // headers — start reading from that row instead of skipping it.
+    const headerIsData = rows[hi].some(c=>looksUrl(c)||/^@[\w.]+$/.test(_n(c)));
+    for(let i=(headerIsData?hi:hi+1);i<rows.length;i++){
       const row=rows[i]; if(!row || !row.filter(c=>_n(c)).length) continue;
-      const url = cUrl>=0 ? _n(row[cUrl]) : '';
+      let url = cUrl>=0 ? _n(row[cUrl]) : '';
+      if(!url){ const c=row.find(looksUrl); if(c) url=_n(c); }        // scan any cell
       let username = cU>=0 ? _n(row[cU]).replace(/^@/,'') : '';
-      if(/https?:|\//.test(username)) username = handleFromUrl(username); // cell held a URL
+      if(/https?:|\//.test(username)) username = handleFromUrl(username);
       if(!username) username = handleFromUrl(url);
+      if(!username){ const at=row.map(_n).find(v=>/^@[\w.]+$/.test(v)); if(at) username=at.slice(1).toLowerCase(); }
       if(!username) continue;
       const colGrp = cGrp>=0 ? _n(row[cGrp]) : '';
       let group, subgroup = cSub>=0 ? _n(row[cSub]) : '';
@@ -282,11 +291,15 @@ function parseWorkbook(wb){
       out.push({username:username.toLowerCase(), display:(cName>=0?_n(row[cName]):'')||username, group, subgroup, url, followers});
     }
   });
+  parseWorkbook._dbg = dbg.join('  ·  ');
   return out;
 }
 async function importKols(kols){
   const st=$("#importStatus");
-  if(!kols || !kols.length){ st.textContent='⚠️ ไม่พบรายชื่อ KOL ในไฟล์/ชีต (ตรวจหัวคอลัมน์: username/ลิงก์)'; return; }
+  if(!kols || !kols.length){
+    st.innerHTML='⚠️ ไม่พบรายชื่อ KOL — ต้องมีคอลัมน์ที่เป็น <b>ลิงก์ TikTok/Facebook</b> หรือ <b>@username</b> อย่างน้อย 1 คอลัมน์<br>ระบบอ่านเจอ: '+(parseWorkbook._dbg||'(ว่าง)');
+    return;
+  }
   const groups=[...new Set(kols.map(k=>k.group))];
   if(!confirm(`พบ ${kols.length} KOL\nกลุ่ม: ${groups.join(', ')}\n\n⚠️ การนำเข้าจะ "ลบรายชื่อเดิมทั้งหมด" ของแคมเปญนี้แล้วแทนที่ด้วยรายการใหม่ ยืนยันหรือไม่?`)) return;
   st.textContent='กำลังนำเข้า…';
