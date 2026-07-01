@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>แก้ไขรายชื่อ KOL — Sahagroup KOL Hub</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <style>
     :root { --bg:#f4f6fa; --card:#fff; --line:#e5e7eb; --muted:#64748b; --text:#0f172a; }
@@ -53,9 +54,29 @@
 
     <p id="note" class="text-xs mb-3" style="color:var(--muted)"></p>
 
+    <!-- import: replace whole roster from Excel/CSV or Google Sheet -->
+    <div class="card p-3 mb-4">
+      <div class="text-sm font-semibold mb-1">📥 นำเข้ารายชื่อ KOL (แทนที่ทั้งหมด)</div>
+      <p class="text-xs mb-3" style="color:var(--muted)">ระบบจะวิเคราะห์หมวดหมู่ให้อัตโนมัติ — จากชื่อ <b>Sheet</b> (ถ้ามีหลายชีต) หรือคอลัมน์ <b>หมวด/ประเภท/group</b> · คอลัมน์ที่รองรับ: username/ชื่อ · ลิงก์โพสต์ · หมวด · กลุ่มย่อย · followers · <b>⚠️ การนำเข้าจะลบรายชื่อเดิมทั้งหมดแล้วแทนที่</b></p>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <div class="text-xs font-semibold mb-1">แบบที่ 1 · อัปโหลดไฟล์ Excel / CSV</div>
+          <input id="fileInput" type="file" accept=".xlsx,.xls,.csv" class="inp" />
+        </div>
+        <div>
+          <div class="text-xs font-semibold mb-1">แบบที่ 2 · ลิงก์ Google Sheet (แชร์ผู้อ่าน)</div>
+          <div class="flex gap-2">
+            <input id="gsheetUrl" class="inp" placeholder="วางลิงก์ Google Sheet…" />
+            <button id="gsheetBtn" class="btn btn-primary whitespace-nowrap">นำเข้า</button>
+          </div>
+        </div>
+      </div>
+      <div id="importStatus" class="text-xs mt-2" style="color:var(--muted)"></div>
+    </div>
+
     <!-- add form -->
     <div class="card p-3 mb-4">
-      <div class="text-sm font-semibold mb-2">➕ เพิ่ม KOL ใหม่</div>
+      <div class="text-sm font-semibold mb-2">➕ แบบที่ 3 · เพิ่ม KOL ทีละคน</div>
       <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
         <input id="addUser" class="inp" placeholder="username (ไม่ต้องใส่ @)" />
         <input id="addDisplay" class="inp" placeholder="ชื่อแสดง (เว้นว่าง = username)" />
@@ -211,6 +232,88 @@ async function bootstrap(){
   load();
 }
 bootstrap();
+
+// ---------------------------------------------------------------------------
+// Bulk import (Excel/CSV upload or Google Sheet) — parsed client-side, then
+// REPLACES the whole roster of the current campaign.
+// ---------------------------------------------------------------------------
+function _n(s){ return (s==null?'':s).toString().trim(); }
+function _low(s){ return _n(s).toLowerCase(); }
+function pickCol(headers, keys){
+  for(let i=0;i<headers.length;i++){ const h=headers[i]; if(h && keys.some(k=>h.includes(k))) return i; }
+  return -1;
+}
+function handleFromUrl(u){
+  u=_n(u);
+  let m=u.match(/tiktok\.com\/@([^\/\?#]+)/i); if(m) return m[1].toLowerCase();
+  m=u.match(/facebook\.com\/([^\/\?#]+)/i); if(m) return m[1].toLowerCase();
+  return '';
+}
+// Turn one workbook into a KOL list. Grouping: explicit หมวด/group column wins;
+// otherwise the Sheet name is the group (when the file has multiple sheets).
+function parseWorkbook(wb){
+  const out=[];
+  const multi = wb.SheetNames.length>1;
+  wb.SheetNames.forEach(sheetName=>{
+    const ws=wb.Sheets[sheetName]; if(!ws) return;
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,blankrows:false,defval:''});
+    if(!rows.length) return;
+    let hi=0; for(let i=0;i<rows.length;i++){ if(rows[i].filter(c=>_n(c)).length>=2){hi=i;break;} }
+    const headers=rows[hi].map(_low);
+    const cUrl=pickCol(headers,['link','url','ลิงก์','ลิ้ง','โพสต','post','คลิป','video']);
+    let   cU  =pickCol(headers,['username','handle','ผู้ใช้','บัญชี','user','ไอดี','ชื่อบัญชี','tiktok']);
+    if(cU===cUrl) cU=-1; // a "tiktok link" column is a url, not a username
+    const cName=pickCol(headers,['ชื่อ','name','display','nickname','kol','อินฟลู']);
+    const cGrp=pickCol(headers,['หมวด','ประเภท','group','category','type','tier','กลุ่ม']);
+    const cSub=pickCol(headers,['ย่อย','subgroup','sub']);
+    const cFol=pickCol(headers,['follow','ติดตาม','fan']);
+    for(let i=hi+1;i<rows.length;i++){
+      const row=rows[i]; if(!row || !row.filter(c=>_n(c)).length) continue;
+      const url = cUrl>=0 ? _n(row[cUrl]) : '';
+      let username = cU>=0 ? _n(row[cU]).replace(/^@/,'') : '';
+      if(/https?:|\//.test(username)) username = handleFromUrl(username); // cell held a URL
+      if(!username) username = handleFromUrl(url);
+      if(!username) continue;
+      const colGrp = cGrp>=0 ? _n(row[cGrp]) : '';
+      let group, subgroup = cSub>=0 ? _n(row[cSub]) : '';
+      if(multi){ group = _n(sheetName) || 'KOL'; if(!subgroup && colGrp) subgroup=colGrp; }
+      else { group = colGrp || 'KOL'; }
+      let followers=0; if(cFol>=0){ const fv=parseInt(_n(row[cFol]).replace(/[^0-9]/g,'')); if(!isNaN(fv)) followers=fv; }
+      out.push({username:username.toLowerCase(), display:(cName>=0?_n(row[cName]):'')||username, group, subgroup, url, followers});
+    }
+  });
+  return out;
+}
+async function importKols(kols){
+  const st=$("#importStatus");
+  if(!kols || !kols.length){ st.textContent='⚠️ ไม่พบรายชื่อ KOL ในไฟล์/ชีต (ตรวจหัวคอลัมน์: username/ลิงก์)'; return; }
+  const groups=[...new Set(kols.map(k=>k.group))];
+  if(!confirm(`พบ ${kols.length} KOL\nกลุ่ม: ${groups.join(', ')}\n\n⚠️ การนำเข้าจะ "ลบรายชื่อเดิมทั้งหมด" ของแคมเปญนี้แล้วแทนที่ด้วยรายการใหม่ ยืนยันหรือไม่?`)) return;
+  st.textContent='กำลังนำเข้า…';
+  try{
+    const r=await fetch('/api/roster/report/bulk?campaign='+encodeURIComponent(campaign),
+      {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kols})});
+    const d=await r.json(); if(!r.ok) throw new Error(d.detail||('HTTP '+r.status));
+    st.textContent=`✅ นำเข้าแล้ว ${d.count} รายชื่อ (แทนที่ของเดิม)`;
+    toast(`นำเข้า ${d.count} รายชื่อแล้ว`); load();
+  }catch(e){ st.textContent='⚠️ '+e.message; toast(e.message,false); }
+}
+$("#fileInput").onchange=async(e)=>{
+  const f=e.target.files[0]; if(!f) return;
+  $("#importStatus").textContent='กำลังอ่านไฟล์…';
+  try{ const wb=XLSX.read(await f.arrayBuffer(),{type:'array'}); await importKols(parseWorkbook(wb)); }
+  catch(err){ $("#importStatus").textContent='อ่านไฟล์ไม่สำเร็จ: '+err.message; }
+  e.target.value='';
+};
+$("#gsheetBtn").onclick=async()=>{
+  const url=$("#gsheetUrl").value.trim(); if(!url){ $("#importStatus").textContent='วางลิงก์ Google Sheet ก่อน'; return; }
+  $("#importStatus").textContent='กำลังดึง Google Sheet…';
+  try{
+    const resp=await fetch('/api/sheet/fetch?url='+encodeURIComponent(url));
+    if(!resp.ok){ const d=await resp.json().catch(()=>({})); throw new Error(d.detail||'ดึงไม่สำเร็จ'); }
+    const wb=XLSX.read(await resp.arrayBuffer(),{type:'array'}); await importKols(parseWorkbook(wb));
+  }catch(err){ $("#importStatus").textContent='⚠️ '+err.message; }
+};
 </script>
 </body>
 </html>

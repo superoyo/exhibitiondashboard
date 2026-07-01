@@ -4,12 +4,13 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import logging
+import re
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
 from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 import json
@@ -212,6 +213,77 @@ for _name, _model, _isrep in (("tracker", Kol, False), ("report", ReportKol, Tru
     router.add_api_route(f"/roster/{_name}", _add, methods=["POST"])
     router.add_api_route(f"/roster/{_name}/{{item_id}}", _update, methods=["PATCH"])
     router.add_api_route(f"/roster/{_name}/{{item_id}}", _delete, methods=["DELETE"])
+
+
+# ----------------------------------------------------------------------------
+# Bulk import — REPLACE a campaign's whole roster from a parsed KOL list
+# (Excel/CSV or Google Sheet, parsed client-side). Replace, never append, so a
+# re-upload can't create duplicate rows.
+# ----------------------------------------------------------------------------
+
+class BulkKolIn(BaseModel):
+    username: str
+    display: Optional[str] = None
+    group: Optional[str] = None
+    subgroup: Optional[str] = None
+    url: Optional[str] = None
+    followers: Optional[int] = 0
+
+
+class BulkRosterIn(BaseModel):
+    kols: list[BulkKolIn]
+
+
+@router.post("/roster/report/bulk")
+def bulk_replace_report(body: BulkRosterIn, campaign: str = "pao",
+                        session: Session = Depends(db_dependency)):
+    """Replace ALL KOLs of one campaign with the given list (dedup by username).
+    report_posts are left untouched — a Refresh re-matches them by username."""
+    seen: dict = {}
+    for k in body.kols:
+        u = (k.username or "").strip().lstrip("@").lower()
+        if u:
+            seen[u] = k  # last wins
+    if not seen:
+        raise HTTPException(400, "ไม่พบรายชื่อ KOL ที่ใช้ได้ในไฟล์/ชีต")
+
+    session.execute(delete(ReportKol).where(ReportKol.campaign == campaign))
+    for u, k in seen.items():
+        session.add(ReportKol(
+            username=u,
+            display=(k.display or u).strip(),
+            content_group=(k.group or "KOL").strip() or "KOL",
+            subgroup=(k.subgroup.strip() if k.subgroup else None) or None,
+            campaign=campaign,
+            url=(k.url.strip() if k.url else None) or None,
+            followers=int(k.followers or 0),
+            active=True,
+        ))
+    session.commit()
+    return {"status": "replaced", "count": len(seen)}
+
+
+@router.get("/sheet/fetch")
+def sheet_fetch(url: str = Query(...)):
+    """Proxy a public Google Sheet's xlsx export so the browser can parse it
+    (client-side fetch is blocked by CORS). Returns the raw .xlsx bytes."""
+    m = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", url)
+    if not m:
+        raise HTTPException(400, "ลิงก์ Google Sheet ไม่ถูกต้อง")
+    export = f"https://docs.google.com/spreadsheets/d/{m.group(1)}/export?format=xlsx"
+    try:
+        import httpx as _httpx
+        r = _httpx.get(export, timeout=30, follow_redirects=True)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, f"ดึง Google Sheet ไม่สำเร็จ: {exc}")
+    ctype = (r.headers.get("content-type") or "").lower()
+    if r.status_code != 200 or "html" in ctype:
+        raise HTTPException(
+            400, "ดึง Google Sheet ไม่สำเร็จ — ตั้งค่าแชร์เป็น 'ใครก็ตามที่มีลิงก์ (ผู้อ่าน)' ก่อน")
+    return Response(
+        content=r.content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 # ----------------------------------------------------------------------------
