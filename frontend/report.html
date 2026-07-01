@@ -26,6 +26,9 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 .logo{display:flex;flex-direction:column;line-height:.98;font-weight:800;font-size:1rem;color:#0f172a;letter-spacing:-.02em;font-family:system-ui,'Segoe UI',Arial,sans-serif}
 .logo .lw{position:relative;display:inline-block}
 .logo .ldot{position:absolute;top:.08em;right:-.5em;width:.32em;height:.32em;border-radius:50%;background:#f5c518}
+.post-link{display:block;text-align:center;margin-top:.75rem;padding:.45rem .5rem;border-radius:8px;background:#0f172a;color:#fff;font-size:.82rem;font-weight:600;text-decoration:none}
+.post-link:hover{background:#1e293b}
+.post-link.disabled{background:#e2e8f0;color:#94a3b8;pointer-events:none}
 </style></head><body class="min-h-screen">
 <div class="max-w-7xl mx-auto px-3 sm:px-5 py-5">
 <nav class="nav">
@@ -155,6 +158,7 @@ function render(DATA){
      <div>👁 ${fmt(r.views)}</div><div>❤️ ${fmt(r.likes)}</div><div>💬 ${fmt(r.comments)}</div>
      <div>🔁 ${fmt(r.shares)}</div><div>🔖 ${fmt(r.saves||0)}</div><div>📊 ${r.er.toFixed(2)}%</div>
     </div>
+    ${r.url?`<a href="${r.url}" target="_blank" rel="noopener" class="post-link">🔗 ดูโพสต์ต้นทาง ↗</a>`:`<span class="post-link disabled">— ยังไม่มีลิงก์โพสต์ —</span>`}
    </div>
   </div>`).join('');
   if(top.length===0){cards='<div class="text-sm" style="color:var(--muted)">ไม่มีข้อมูลในกลุ่มนี้</div>';}
