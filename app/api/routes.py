@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import logging
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
+from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -14,7 +16,7 @@ import json
 
 from app import config, queries
 from app.db import db_dependency
-from app.models import Campaign, Kol, ReportKol, ReportPost
+from app.models import Campaign, ImageCache, Kol, ReportKol, ReportPost
 from app.report_refresh import fetch_profiles, refresh_report, state_for
 from app.scrape import run_daily_scrape
 
@@ -487,6 +489,43 @@ def delete_campaign(key: str, session: Session = Depends(db_dependency)):
     c.active = False
     session.commit()
     return {"status": "archived", "key": key}
+
+
+# ----------------------------------------------------------------------------
+# Image proxy + cache — TikTok avatar/cover URLs are signed and expire after a
+# few days, so KOL pictures vanish once the link dies. We fetch each image once
+# (while its URL is still valid) and serve our own copy from here forever.
+# ----------------------------------------------------------------------------
+
+@router.get("/img")
+def img_proxy(u: str = Query(...), session: Session = Depends(db_dependency)):
+    if not u.startswith(("http://", "https://")):
+        raise HTTPException(400, "bad url")
+    h = hashlib.sha256(u.encode("utf-8")).hexdigest()[:40]
+    cache_headers = {"Cache-Control": "public, max-age=604800"}
+
+    row = session.get(ImageCache, h)
+    if row and row.data:
+        return Response(content=row.data, media_type=row.content_type or "image/jpeg",
+                        headers=cache_headers)
+
+    # Not cached yet — fetch server-side (no referrer, bypasses hotlink block),
+    # store the bytes, and serve. Best-effort: on any failure fall back to a
+    # redirect so behaviour is never worse than loading the URL directly.
+    try:
+        import httpx as _httpx
+        r = _httpx.get(u, timeout=15, follow_redirects=True)
+        ct = (r.headers.get("content-type") or "image/jpeg").split(";")[0].strip()
+        if r.status_code == 200 and r.content and ct.startswith("image/"):
+            try:
+                session.merge(ImageCache(hash=h, content_type=ct, data=r.content))
+                session.commit()
+            except Exception:  # noqa: BLE001 — caching is best-effort
+                session.rollback()
+            return Response(content=r.content, media_type=ct, headers=cache_headers)
+    except Exception:  # noqa: BLE001
+        pass
+    return RedirectResponse(u, status_code=302)
 
 
 @router.post("/token/test")

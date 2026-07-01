@@ -91,6 +91,8 @@ const fmt=n=>n>=1e6?(n/1e6).toFixed(2)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':(''+n);
 const _cc={Entertain:'#6366f1','Micro Local':'#10b981','คู่รัก':'#ec4899',Fashion:'#6366f1',Food:'#f59e0b',Beauty:'#ec4899','Household Items':'#10b981'};
 const PALETTE=['#6366f1','#10b981','#ec4899','#f59e0b','#06b6d4','#8b5cf6','#ef4444','#14b8a6'];
 function CATC(c){if(_cc[c])return _cc[c];let h=0;for(const ch of (c||''))h=(h*31+ch.charCodeAt(0))>>>0;return PALETTE[h%PALETTE.length];}
+// Route TikTok images through our cache proxy so expiring CDN URLs stay alive.
+const IMG=u=>u?('/api/img?u='+encodeURIComponent(u)):'';
 
 function render(DATA){
  const E=DATA.map(r=>{const eng=r.likes+r.comments+r.shares+(r.saves||0);return {...r,engagement:eng,er:r.views?eng/r.views*100:0};});
@@ -122,14 +124,14 @@ function render(DATA){
   let cards=top.map((r,i)=>`
   <div class="card overflow-hidden" style="${i===0?'border:2px solid '+CATC(r.category):''}">
    <a href="${r.url}" target="_blank" class="block relative">
-    ${r.thumb?`<img src="${r.thumb}" loading="lazy" referrerpolicy="no-referrer" style="width:100%;height:190px;object-fit:cover;display:block" onerror="this.style.display='none'">`:`<div style="width:100%;height:190px;background:#e2e8f0;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:.8rem">ไม่มีรูป — กด Refresh</div>`}
+    ${r.thumb?`<img src="${IMG(r.thumb)}" loading="lazy" referrerpolicy="no-referrer" style="width:100%;height:190px;object-fit:cover;display:block" onerror="this.style.display='none'">`:`<div style="width:100%;height:190px;background:#e2e8f0;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:.8rem">ไม่มีรูป — กด Refresh</div>`}
     <div class="absolute top-2 left-2 text-3xl" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))">${medal[i]}</div>
     <span class="chip absolute top-3 right-2" style="background:${CATC(r.category)}">${r.category}</span>
     <div class="absolute inset-x-0 bottom-0 px-3 py-2 text-white text-sm font-semibold" style="background:linear-gradient(transparent,rgba(0,0,0,.7))">▶ ดูคลิปจริง</div>
    </a>
    <div class="p-3">
     <div style="display:flex;align-items:center;gap:8px">
-     ${r.avatar?`<img src="${r.avatar}" referrerpolicy="no-referrer" loading="lazy" style="width:42px;height:42px;border-radius:50%;object-fit:cover;flex:none;background:#e2e8f0;border:2px solid ${CATC(r.category)}" onerror="this.style.display='none'">`:''}
+     ${r.avatar?`<img src="${IMG(r.avatar)}" referrerpolicy="no-referrer" loading="lazy" style="width:42px;height:42px;border-radius:50%;object-fit:cover;flex:none;background:#e2e8f0;border:2px solid ${CATC(r.category)}" onerror="this.style.display='none'">`:''}
      <div style="min-width:0">
       <div class="font-bold text-lg leading-tight truncate">@${r.username}</div>
       <div class="text-xs truncate" style="color:var(--muted)">${r.nickname||''}</div>
@@ -165,7 +167,7 @@ function render(DATA){
  function table(){const d=[...E];d.sort((a,b)=>{let x=a[sortK],y=b[sortK];if(typeof x==='string'){return asc?(''+x).localeCompare(y):(''+y).localeCompare(x)}return asc?x-y:y-x});
   document.getElementById('tb').innerHTML=d.map(r=>`<tr class="border-b hover:bg-black/5" style="border-color:var(--line)">
   <td class="py-2 pr-3"><span class="chip" style="background:${CATC(r.category)}">${r.category}</span></td>
-  <td class="pr-3 font-medium"><span style="display:inline-flex;align-items:center;gap:8px">${r.avatar?`<img src="${r.avatar}" referrerpolicy="no-referrer" loading="lazy" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex:none;background:#e2e8f0" onerror="this.style.display='none'">`:''}@${r.username||''}</span></td><td class="pr-3 text-right">${fmt(r.followers)}</td>
+  <td class="pr-3 font-medium"><span style="display:inline-flex;align-items:center;gap:8px">${r.avatar?`<img src="${IMG(r.avatar)}" referrerpolicy="no-referrer" loading="lazy" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex:none;background:#e2e8f0" onerror="this.style.display='none'">`:''}@${r.username||''}</span></td><td class="pr-3 text-right">${fmt(r.followers)}</td>
   <td class="pr-3 text-right font-semibold">${(r.views||0).toLocaleString()}</td><td class="pr-3 text-right">${(r.likes||0).toLocaleString()}</td>
   <td class="pr-3 text-right">${(r.comments||0).toLocaleString()}</td><td class="pr-3 text-right">${(r.shares||0).toLocaleString()}</td>
   <td class="pr-3 text-right">${(r.saves||0).toLocaleString()}</td><td class="pr-3 text-right">${r.er.toFixed(2)}%</td>

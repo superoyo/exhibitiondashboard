@@ -16,6 +16,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    LargeBinary,
     Numeric,
     String,
     Text,
@@ -108,6 +109,21 @@ class Campaign(Base):
     groups_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     subgroups_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ImageCache(Base):
+    """Cached bytes of remote images (TikTok avatars/covers). TikTok's CDN URLs
+    are signed + expire after a few days, so pictures vanish once the link dies.
+    We fetch each image once (while its URL is still valid) and serve our own
+    copy forever from /api/img."""
+    __tablename__ = "image_cache"
+
+    hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    content_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
