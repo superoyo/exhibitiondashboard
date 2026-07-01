@@ -514,7 +514,15 @@ def img_proxy(u: str = Query(...), session: Session = Depends(db_dependency)):
     # redirect so behaviour is never worse than loading the URL directly.
     try:
         import httpx as _httpx
-        r = _httpx.get(u, timeout=15, follow_redirects=True)
+        # Browser-like headers — TikTok's CDN returns 403 to bare requests, which
+        # is why cover/avatar images failed to fetch (and cache) server-side.
+        r = _httpx.get(u, timeout=15, follow_redirects=True, headers={
+            "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                           "AppleWebKit/537.36 (KHTML, like Gecko) "
+                           "Chrome/125.0.0.0 Safari/537.36"),
+            "Referer": "https://www.tiktok.com/",
+            "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        })
         ct = (r.headers.get("content-type") or "image/jpeg").split(";")[0].strip()
         if r.status_code == 200 and r.content and ct.startswith("image/"):
             try:
