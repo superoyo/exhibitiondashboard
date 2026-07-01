@@ -73,10 +73,17 @@ def run_scrape_posts(
     *,
     poll_interval: float = 10.0,
     timeout_s: float = 300.0,
+    tolerate_failure: bool = False,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """Scrape SPECIFIC posts by URL — used by the campaign report refresh."""
+    """Scrape SPECIFIC posts by URL — used by the campaign report refresh.
+
+    tolerate_failure=True: if one bad URL makes the whole Apify run end FAILED,
+    still return whatever posts were scraped before it failed (instead of
+    discarding everything). This is what keeps a single broken link from
+    wiping out the rest of the roster's data."""
     return _execute(_build_post_input(post_urls),
-                    poll_interval=poll_interval, timeout_s=timeout_s)
+                    poll_interval=poll_interval, timeout_s=timeout_s,
+                    tolerate_failure=tolerate_failure)
 
 
 def run_scrape_profiles(
@@ -106,11 +113,13 @@ def run_scrape_fb(
     *,
     poll_interval: float = 8.0,
     timeout_s: float = 300.0,
+    tolerate_failure: bool = False,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Scrape specific Facebook posts by URL (campaign report — FB pages)."""
     payload = {"startUrls": [{"url": u} for u in post_urls], "resultsLimit": 1}
     return _execute(payload, actor_id=config.FB_ACTOR_ID,
-                    poll_interval=poll_interval, timeout_s=timeout_s)
+                    poll_interval=poll_interval, timeout_s=timeout_s,
+                    tolerate_failure=tolerate_failure)
 
 
 def _execute(
@@ -119,11 +128,15 @@ def _execute(
     actor_id: str = config.APIFY_ACTOR_ID,
     poll_interval: float = 10.0,
     timeout_s: float = 300.0,
+    tolerate_failure: bool = False,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Run the actor with the given input and return (items, run_meta).
 
-    run_meta contains: apify_run_id, status, cost_usd, dataset_id.
-    Raises ApifyError on a failed/aborted/timed-out run or polling timeout.
+    run_meta contains: apify_run_id, status, cost_usd, dataset_id, partial.
+    Raises ApifyError on a failed/aborted/timed-out run or polling timeout —
+    UNLESS tolerate_failure=True, in which case a bad terminal status still
+    returns whatever dataset items were produced (meta['partial']=True), so one
+    broken input URL can't discard the whole batch's good results.
     """
     from app.settings import get_apify_token
 
@@ -156,10 +169,18 @@ def _execute(
             status = last.get("status")
             log.info("Apify run %s status=%s", run_id, status)
 
+        partial = False
         if status in TERMINAL_BAD:
-            raise ApifyError(f"Apify run {run_id} ended with status={status}")
+            if not tolerate_failure:
+                raise ApifyError(f"Apify run {run_id} ended with status={status}")
+            # Tolerating: keep whatever the actor produced before it failed.
+            partial = True
+            log.warning(
+                "Apify run %s ended %s — salvaging partial dataset (tolerate_failure)",
+                run_id, status,
+            )
 
-        # Step 3 — fetch dataset items
+        # Step 3 — fetch dataset items (runs even for a salvaged failed run)
         items_resp = client.get(
             f"{BASE}/datasets/{dataset_id}/items",
             params={"token": token, "clean": "true"},
@@ -173,8 +194,9 @@ def _execute(
         "status": status,
         "cost_usd": float(cost) if cost is not None else None,
         "dataset_id": dataset_id,
+        "partial": partial,
     }
-    log.info("Apify run %s done: %d items, cost=%s", run_id, len(items), cost)
+    log.info("Apify run %s done: %d items, cost=%s, partial=%s", run_id, len(items), cost, partial)
     return items, meta
 
 

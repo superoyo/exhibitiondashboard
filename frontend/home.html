@@ -30,20 +30,28 @@ a{color:inherit;text-decoration:none}
 <div class="max-w-6xl mx-auto px-3 sm:px-5 py-5">
 <nav class="nav">
   <span class="nav-brand">🎯 Campaign Hub</span>
-  <a href="/" class="navtab navtab-active">รวมแคมเปญ</a>
-  <a href="/kols" class="navtab">แก้ไข KOL</a>
+  <a href="/" class="navtab navtab-active">Home</a>
   <a href="/token" class="navtab">Apify Token</a>
 </nav>
 
-<header class="mb-5 flex flex-wrap items-end justify-between gap-3">
+<header class="mb-4 flex flex-wrap items-end justify-between gap-3">
   <div>
-    <h1 class="text-2xl sm:text-3xl font-bold">รวมแคมเปญทั้งหมด</h1>
+    <h1 class="text-2xl sm:text-3xl font-bold">Home</h1>
     <p class="text-sm mt-1" style="color:var(--muted)">แสดง 15 แคมเปญล่าสุด · คลิกการ์ดเพื่อดูรายงาน · กด "+ สร้างแคมเปญใหม่" เพื่อเพิ่มโดยไม่ต้องเขียนโค้ด</p>
   </div>
   <div class="flex gap-2">
     <button id="newBtn" class="btn btn-primary">+ สร้างแคมเปญใหม่</button>
   </div>
 </header>
+
+<!-- search -->
+<div class="mb-4">
+  <div class="relative">
+    <input id="search" class="inp" style="padding-left:2.2rem" placeholder="ค้นหา Campaign report… (พิมพ์ชื่อแคมเปญหรือ key)" autocomplete="off">
+    <span style="position:absolute;left:.7rem;top:50%;transform:translateY(-50%);color:var(--muted)">🔍</span>
+  </div>
+  <div id="searchHint" class="text-xs mt-1" style="color:var(--muted)"></div>
+</div>
 
 <div id="grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
   <div class="card p-6 text-sm" style="color:var(--muted)">กำลังโหลด…</div>
@@ -101,30 +109,70 @@ function fmt(n){return n>=1e6?(n/1e6).toFixed(2)+'M':n>=1e3?(n/1e3).toFixed(1)+'
 function fmtDate(iso){if(!iso)return '';try{return new Date(iso).toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'numeric'});}catch(e){return '';}}
 function esc(s){return (s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
+function cardHTML(c){
+  return `
+    <a href="/c/${encodeURIComponent(c.key)}" class="card p-5 block">
+      <div class="flex items-start justify-between gap-2">
+        <div class="text-4xl">${esc(c.emoji||'📊')}</div>
+        <div class="text-right">
+          <div class="text-xs" style="color:var(--muted)">${fmtDate(c.created_at)}</div>
+          <div class="text-xs mt-1" style="color:var(--muted)">${c.roster_count||0} KOLs</div>
+        </div>
+      </div>
+      <div class="mt-2 font-bold text-lg leading-tight">${esc(c.name)}</div>
+      <div class="text-xs mt-1" style="color:var(--muted)">/c/${esc(c.key)}</div>
+      ${c.subtitle?`<div class="text-sm mt-2" style="color:#334155">${esc(c.subtitle)}</div>`:''}
+      <div class="mt-3">${(c.groups||[]).slice(0,4).map(g=>`<span class="chip">${esc(g)}</span>`).join('')}${(c.groups||[]).length>4?`<span class="chip">+${(c.groups||[]).length-4}</span>`:''}</div>
+      <div class="text-xs mt-3 flex items-center justify-between" style="color:var(--muted)">
+        <span>${c.refreshed_at?'🔄 อัปเดต '+fmtDate(c.refreshed_at):'ยังไม่มีข้อมูล'}</span>
+        <span class="font-semibold" style="color:#2563eb">เปิดรายงาน →</span>
+      </div>
+    </a>`;
+}
+function renderCards(list, emptyHTML){
+  const grid=document.getElementById('grid');
+  if(!list.length){ grid.innerHTML=emptyHTML; return; }
+  grid.innerHTML=list.map(cardHTML).join('');
+}
+
+let LATEST=[];        // 15 newest (default view)
+let SEARCH_CACHE=null; // all campaigns (lazy-loaded on first search)
+
+const EMPTY_DEFAULT='<div class="card p-8 text-center col-span-full"><div class="text-3xl mb-2">📭</div><div class="font-semibold mb-1">ยังไม่มีแคมเปญ</div><div class="text-sm mb-3" style="color:var(--muted)">กด "+ สร้างแคมเปญใหม่" ด้านบนเพื่อเริ่ม</div></div>';
+
 async function loadGrid(){
   try{
     const d=await(await fetch('/api/campaigns?limit=15')).json();
-    const grid=document.getElementById('grid');
-    if(!d.campaigns.length){grid.innerHTML='<div class="card p-8 text-center col-span-full"><div class="text-3xl mb-2">📭</div><div class="font-semibold mb-1">ยังไม่มีแคมเปญ</div><div class="text-sm mb-3" style="color:var(--muted)">กด "+ สร้างแคมเปญใหม่" ด้านบนเพื่อเริ่ม</div></div>';return;}
-    grid.innerHTML=d.campaigns.map(c=>`
-      <a href="/c/${encodeURIComponent(c.key)}" class="card p-5 block">
-        <div class="flex items-start justify-between gap-2">
-          <div class="text-4xl">${esc(c.emoji||'📊')}</div>
-          <div class="text-right">
-            <div class="text-xs" style="color:var(--muted)">${fmtDate(c.created_at)}</div>
-            <div class="text-xs mt-1" style="color:var(--muted)">${c.roster_count||0} KOLs</div>
-          </div>
-        </div>
-        <div class="mt-2 font-bold text-lg leading-tight">${esc(c.name)}</div>
-        <div class="text-xs mt-1" style="color:var(--muted)">/c/${esc(c.key)}</div>
-        ${c.subtitle?`<div class="text-sm mt-2" style="color:#334155">${esc(c.subtitle)}</div>`:''}
-        <div class="mt-3">${(c.groups||[]).slice(0,4).map(g=>`<span class="chip">${esc(g)}</span>`).join('')}${(c.groups||[]).length>4?`<span class="chip">+${(c.groups||[]).length-4}</span>`:''}</div>
-        <div class="text-xs mt-3 flex items-center justify-between" style="color:var(--muted)">
-          <span>${c.refreshed_at?'🔄 อัปเดต '+fmtDate(c.refreshed_at):'ยังไม่มีข้อมูล'}</span>
-          <span class="font-semibold" style="color:#2563eb">เปิดรายงาน →</span>
-        </div>
-      </a>`).join('');
+    LATEST=d.campaigns||[];
+    SEARCH_CACHE=null; // invalidate after any create so search re-fetches
+    renderCards(LATEST, EMPTY_DEFAULT);
   }catch(e){document.getElementById('grid').innerHTML='<div class="card p-6 col-span-full" style="color:#dc2626">โหลดไม่สำเร็จ: '+esc(e.message)+'</div>';}
+}
+
+async function ensureSearchCache(){
+  if(SEARCH_CACHE) return SEARCH_CACHE;
+  const d=await(await fetch('/api/campaigns?limit=100')).json();
+  SEARCH_CACHE=d.campaigns||[];
+  return SEARCH_CACHE;
+}
+async function runSearch(){
+  const q=document.getElementById('search').value.trim().toLowerCase();
+  const hint=document.getElementById('searchHint');
+  if(!q){ hint.textContent=''; renderCards(LATEST, EMPTY_DEFAULT); return; }
+  hint.textContent='กำลังค้นหา…';
+  let all;
+  try{ all=await ensureSearchCache(); }
+  catch(e){ hint.textContent='ค้นหาไม่สำเร็จ: '+e.message; return; }
+  const matches=all.filter(c=>
+    (c.name||'').toLowerCase().includes(q) ||
+    (c.key||'').toLowerCase().includes(q) ||
+    (c.subtitle||'').toLowerCase().includes(q));
+  hint.textContent=`พบ ${matches.length} แคมเปญ จากทั้งหมด ${all.length}`;
+  renderCards(matches, `<div class="card p-8 text-center col-span-full"><div class="text-3xl mb-2">🔍</div><div class="font-semibold">ไม่พบแคมเปญที่ตรงกับ "${esc(q)}"</div></div>`);
+}
+{
+  let t; const s=document.getElementById('search');
+  s.addEventListener('input',()=>{ clearTimeout(t); t=setTimeout(runSearch,180); });
 }
 
 function renderEmojiPick(){

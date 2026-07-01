@@ -222,19 +222,36 @@ def refresh_report(campaign: str = "pao") -> dict:
         fb_urls = [u for u in urls if is_fb(u)]
         log.info("Refresh[%s]: %d TikTok + %d Facebook URLs", campaign, len(tt_urls), len(fb_urls))
 
+        # Each scraper runs independently and tolerates a failed run: one bad
+        # post link no longer aborts the whole refresh — we save every post the
+        # actor DID manage to scrape and just report which ones were missed.
         posts, profile, cost = [], {}, 0.0
+        scrape_errors: List[str] = []
+        partial = False
         if tt_urls:
-            items, meta = run_scrape_posts(tt_urls)
-            p, pr = _parse_report_items(items)
-            posts += p; profile.update(pr)
-            if meta.get("cost_usd"):
-                cost += meta["cost_usd"]
+            try:
+                items, meta = run_scrape_posts(tt_urls, tolerate_failure=True)
+                p, pr = _parse_report_items(items)
+                posts += p; profile.update(pr)
+                if meta.get("cost_usd"):
+                    cost += meta["cost_usd"]
+                if meta.get("partial"):
+                    partial = True
+            except (ApifyError, httpx.HTTPError) as exc:
+                log.error("Refresh[%s] TikTok batch failed: %s", campaign, exc)
+                scrape_errors.append(f"TikTok: {exc}")
         if fb_urls:
-            items, meta = run_scrape_fb(fb_urls)
-            p, pr = _parse_fb_items(items)
-            posts += p; profile.update(pr)
-            if meta.get("cost_usd"):
-                cost += meta["cost_usd"]
+            try:
+                items, meta = run_scrape_fb(fb_urls, tolerate_failure=True)
+                p, pr = _parse_fb_items(items)
+                posts += p; profile.update(pr)
+                if meta.get("cost_usd"):
+                    cost += meta["cost_usd"]
+                if meta.get("partial"):
+                    partial = True
+            except (ApifyError, httpx.HTTPError) as exc:
+                log.error("Refresh[%s] Facebook batch failed: %s", campaign, exc)
+                scrape_errors.append(f"Facebook: {exc}")
 
         by_user: Dict[str, Dict] = {}
         for p in posts:
@@ -242,9 +259,22 @@ def refresh_report(campaign: str = "pao") -> dict:
             if u in usernames and (u not in by_user or p["views"] > by_user[u]["views"]):
                 by_user[u] = p
 
+        # If BOTH scrapers hard-failed (nothing salvaged), surface a failure so
+        # the user knows to check the token/links — don't wipe existing data.
+        if scrape_errors and not by_user:
+            st.update(status="failed",
+                      message="ดึงข้อมูลไม่สำเร็จ: " + " · ".join(scrape_errors),
+                      finished_at=dt.datetime.now(config.TZ).isoformat())
+            return {"status": "failed", "errors": scrape_errors}
+
         with session_scope() as session:
-            session.execute(delete(ReportPost).where(
-                ReportPost.campaign == campaign, ReportPost.username.in_(usernames)))
+            # Only replace posts for usernames we actually got data for, so a
+            # KOL whose link failed keeps its previous snapshot instead of
+            # being blanked out.
+            refreshed_users = set(by_user)
+            if refreshed_users:
+                session.execute(delete(ReportPost).where(
+                    ReportPost.campaign == campaign, ReportPost.username.in_(refreshed_users)))
             for p in by_user.values():
                 session.add(ReportPost(campaign=campaign, **p))
             for k in session.scalars(select(ReportKol).where(
@@ -261,6 +291,10 @@ def refresh_report(campaign: str = "pao") -> dict:
         msg = f"อัปเดตแล้ว {len(seen)}/{len(usernames)} โพสต์"
         if missing > 0:
             msg += f" (ดึงไม่ได้ {missing} — ลิงก์อาจผิด/โพสต์ถูกลบ)"
+        if partial:
+            msg += " ⚠️ บางลิงก์ทำให้รอบดึงล้มเหลวบางส่วน แต่ระบบเก็บข้อมูลที่ดึงได้แล้ว"
+        if scrape_errors:
+            msg += " · " + " · ".join(scrape_errors)
         try:
             from app.settings import add_cost
             add_cost(campaign, cost)
