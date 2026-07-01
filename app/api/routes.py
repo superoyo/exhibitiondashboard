@@ -18,7 +18,13 @@ import json
 from app import config, queries
 from app.db import db_dependency
 from app.models import Campaign, ImageCache, Kol, ReportKol, ReportPost
-from app.report_refresh import fetch_profiles, refresh_report, state_for
+from app.report_refresh import (
+    _PLATFORM_LABELS,
+    fetch_profiles,
+    kol_links,
+    refresh_report,
+    state_for,
+)
 from app.scrape import run_daily_scrape
 
 log = logging.getLogger("api")
@@ -221,12 +227,19 @@ for _name, _model, _isrep in (("tracker", Kol, False), ("report", ReportKol, Tru
 # re-upload can't create duplicate rows.
 # ----------------------------------------------------------------------------
 
+class BulkLinkIn(BaseModel):
+    platform: Optional[str] = None
+    url: str
+    handle: Optional[str] = None
+
+
 class BulkKolIn(BaseModel):
     username: str
     display: Optional[str] = None
     group: Optional[str] = None
     subgroup: Optional[str] = None
     url: Optional[str] = None
+    links: Optional[list[BulkLinkIn]] = None
     followers: Optional[int] = 0
 
 
@@ -238,7 +251,8 @@ class BulkRosterIn(BaseModel):
 def bulk_replace_report(body: BulkRosterIn, campaign: str = "pao",
                         session: Session = Depends(db_dependency)):
     """Replace ALL KOLs of one campaign with the given list (dedup by username).
-    report_posts are left untouched — a Refresh re-matches them by username."""
+    Each KOL may carry multiple platform links (links_json). report_posts are
+    left for the next Refresh to re-match."""
     seen: dict = {}
     for k in body.kols:
         u = (k.username or "").strip().lstrip("@").lower()
@@ -249,13 +263,17 @@ def bulk_replace_report(body: BulkRosterIn, campaign: str = "pao",
 
     session.execute(delete(ReportKol).where(ReportKol.campaign == campaign))
     for u, k in seen.items():
+        links = [{"platform": (ln.platform or ""), "url": ln.url.strip(),
+                  "handle": (ln.handle or "")} for ln in (k.links or []) if ln.url and ln.url.strip()]
+        primary = (k.url.strip() if k.url else "") or (links[0]["url"] if links else "")
         session.add(ReportKol(
             username=u,
             display=(k.display or u).strip(),
             content_group=(k.group or "KOL").strip() or "KOL",
             subgroup=(k.subgroup.strip() if k.subgroup else None) or None,
             campaign=campaign,
-            url=(k.url.strip() if k.url else None) or None,
+            url=primary or None,
+            links_json=json.dumps(links, ensure_ascii=False) if links else None,
             followers=int(k.followers or 0),
             active=True,
         ))
@@ -364,35 +382,41 @@ def report_data(campaign: str = "pao", session: Session = Depends(db_dependency)
         .where(ReportKol.active.is_(True), ReportKol.campaign == campaign)
         .order_by(ReportKol.content_group, ReportKol.subgroup)
     ).all()
-    posts_by_user: dict = {}
+    # best post per (username, platform) so each platform's stats stay separate
+    posts_by: dict = {}
     for p in session.scalars(select(ReportPost).where(ReportPost.campaign == campaign)).all():
-        u = p.username.lower()
-        if u not in posts_by_user or p.views > posts_by_user[u].views:
-            posts_by_user[u] = p
+        key = (p.username.lower(), p.platform or "tiktok")
+        if key not in posts_by or p.views > posts_by[key].views:
+            posts_by[key] = p
 
     records = []
-    scraped = 0
+    with_data = 0
     for k in roster:
-        p = posts_by_user.get(k.username.lower())
-        if p:
-            scraped += 1
-        records.append({
-            "username": k.username,
-            "nickname": k.display,
-            "category": k.subgroup or k.content_group,
-            "biggroup": k.content_group,
-            "followers": k.followers,
-            "views": p.views if p else 0,
-            "likes": p.likes if p else 0,
-            "comments": p.comments if p else 0,
-            "shares": p.shares if p else 0,
-            "saves": p.saves if p else 0,
-            "posted": (p.posted_at.date().isoformat() if p and p.posted_at else ""),
-            "url": k.url or (p.url if p else "") or "",
-            "thumb": (p.cover_url if p else "") or "",
-            "avatar": (p.avatar_url if p else "") or k.avatar_url or "",
-            "has_data": bool(p),
-        })
+        links = kol_links(k) or [{"platform": "other", "url": k.url or "", "handle": k.username.lower()}]
+        for ln in links:
+            plat = ln["platform"]
+            p = posts_by.get((k.username.lower(), plat))
+            if p:
+                with_data += 1
+            records.append({
+                "username": k.username,
+                "nickname": k.display,
+                "platform": plat,
+                "platform_label": _PLATFORM_LABELS.get(plat, plat),
+                "category": k.subgroup or k.content_group,
+                "biggroup": k.content_group,
+                "followers": k.followers,
+                "views": p.views if p else 0,
+                "likes": p.likes if p else 0,
+                "comments": p.comments if p else 0,
+                "shares": p.shares if p else 0,
+                "saves": p.saves if p else 0,
+                "posted": (p.posted_at.date().isoformat() if p and p.posted_at else ""),
+                "url": ln["url"] or (p.url if p else "") or "",
+                "thumb": (p.cover_url if p else "") or "",
+                "avatar": (p.avatar_url if p else "") or k.avatar_url or "",
+                "has_data": bool(p),
+            })
     last = session.scalar(
         select(func.max(ReportPost.scraped_at)).where(ReportPost.campaign == campaign)
     )
@@ -401,8 +425,9 @@ def report_data(campaign: str = "pao", session: Session = Depends(db_dependency)
     return {
         "records": records,
         "refreshed_at": last.isoformat() if last else None,
-        "roster_count": len(roster),
-        "post_count": scraped,
+        "roster_count": len(records),
+        "post_count": with_data,
+        "kol_count": len(roster),
         "cost_total": cost["total"],
         "cost_count": cost["count"],
     }

@@ -36,6 +36,11 @@ TZ = ZoneInfo(TZ_NAME)
 # Apify actor + tuning knobs (kept here so they are easy to find / change).
 APIFY_ACTOR_ID: str = "clockworks~tiktok-scraper"
 FB_ACTOR_ID: str = "apify~facebook-posts-scraper"  # campaign report Facebook posts
+# Extra-platform actors (multi-platform report). Override via env if a different
+# actor works better. Best-effort — parsing degrades gracefully if they change.
+IG_ACTOR_ID: str = os.getenv("IG_ACTOR_ID", "apify~instagram-scraper")
+YT_ACTOR_ID: str = os.getenv("YT_ACTOR_ID", "streamers~youtube-scraper")
+X_ACTOR_ID: str = os.getenv("X_ACTOR_ID", "apidojo~tweet-scraper")
 RESULTS_PER_PAGE: int = 20
 LOOKBACK_DAYS: int = 7  # oldestPostDateUnified = today - LOOKBACK_DAYS
 

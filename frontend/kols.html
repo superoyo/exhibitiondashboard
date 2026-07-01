@@ -244,16 +244,27 @@ function pickCol(headers, keys){
   return -1;
 }
 function looksUrl(s){ return /https?:\/\/|www\.|tiktok\.com|facebook\.com|fb\.watch|instagram\.com|youtu/i.test(_n(s)); }
+function platformOf(u){ u=(u||'').toLowerCase();
+  if(u.includes('tiktok.com'))return 'tiktok';
+  if(u.includes('facebook.com')||u.includes('fb.watch')||u.includes('fb.com'))return 'facebook';
+  if(u.includes('instagram.com'))return 'instagram';
+  if(u.includes('youtube.com')||u.includes('youtu.be'))return 'youtube';
+  if(u.includes('x.com')||u.includes('twitter.com'))return 'x';
+  if(u.includes('line.me'))return 'line';
+  return 'other'; }
 function handleFromUrl(u){
   u=_n(u);
   let m=u.match(/tiktok\.com\/@([^\/\?#\s]+)/i); if(m) return m[1].toLowerCase();
   m=u.match(/(?:facebook\.com|fb\.com)\/([^\/\?#\s]+)/i); if(m) return m[1].toLowerCase();
   m=u.match(/instagram\.com\/([^\/\?#\s]+)/i); if(m) return m[1].toLowerCase();
+  m=u.match(/(?:x\.com|twitter\.com)\/([^\/\?#\s]+)/i); if(m) return m[1].toLowerCase();
+  m=u.match(/youtube\.com\/@([^\/\?#\s]+)/i); if(m) return m[1].toLowerCase();
   return '';
 }
-// Turn one workbook into a KOL list. Robust to header names — falls back to
-// scanning every cell for a TikTok/FB link or @handle. Grouping: explicit
-// หมวด/group column wins; else the Sheet name is the group (multi-sheet files).
+function urlsIn(text){ return (text.match(/https?:\/\/[^\s)]+/gi)||[]).map(u=>u.replace(/[.,;]+$/,'')); }
+// Turn one workbook into a KOL list. Each row may hold MANY platform links in
+// one cell — we grab every URL, classify by platform, and keep them as links[].
+// Grouping: explicit หมวด/group column > multi-sheet name > section-header rows.
 function parseWorkbook(wb){
   const out=[]; const dbg=[];
   const multi = wb.SheetNames.length>1;
@@ -264,31 +275,35 @@ function parseWorkbook(wb){
     let hi=0; for(let i=0;i<rows.length;i++){ if(rows[i].filter(c=>_n(c)).length>=1){hi=i;break;} }
     const headers=rows[hi].map(_low);
     dbg.push('“'+sheetName+'” ['+headers.filter(Boolean).join(', ')+']');
-    const cUrl=pickCol(headers,['link','url','ลิงก์','ลิ้ง','โพสต','post','คลิป','video','งาน']);
-    let   cU  =pickCol(headers,['username','handle','ผู้ใช้','บัญชี','user','ไอดี','ชื่อบัญชี','account','tiktok','tt','ig','ช่อง','channel']);
-    if(cU===cUrl) cU=-1; // a "tiktok link" column is a url, not a username
-    const cName=pickCol(headers,['ชื่อ','name','display','nickname','kol','อินฟลู']);
+    let cU  =pickCol(headers,['username','handle','ผู้ใช้','บัญชี','user','ไอดี','ชื่อบัญชี','account','ช่อง','channel','kol','ชื่อ','name']);
     const cGrp=pickCol(headers,['หมวด','ประเภท','group','category','type','tier','กลุ่ม']);
     const cSub=pickCol(headers,['ย่อย','subgroup','sub']);
     const cFol=pickCol(headers,['follow','ติดตาม','fan']);
-    // If the "header" row itself already holds a URL/@handle, the file has no
-    // headers — start reading from that row instead of skipping it.
     const headerIsData = rows[hi].some(c=>looksUrl(c)||/^@[\w.]+$/.test(_n(c)));
+    let section='';  // last-seen section-header text (single-sheet grouping)
     for(let i=(headerIsData?hi:hi+1);i<rows.length;i++){
-      const row=rows[i]; if(!row || !row.filter(c=>_n(c)).length) continue;
-      let url = cUrl>=0 ? _n(row[cUrl]) : '';
-      if(!url){ const c=row.find(looksUrl); if(c) url=_n(c); }        // scan any cell
+      const row=rows[i]; const filled=row.filter(c=>_n(c)); if(!filled.length) continue;
+      const allText=row.map(_n).join('  ');
+      const urls=[...new Set(urlsIn(allText))];
+      // A short text-only row with no links = a section/category header
+      if(!urls.length && !multi && cGrp<0 && filled.length<=2){
+        const t=filled.map(_n).find(v=>v && !/^\d+$/.test(v) && !/^#/.test(v));
+        if(t){ section=t; }
+        continue;
+      }
       let username = cU>=0 ? _n(row[cU]).replace(/^@/,'') : '';
       if(/https?:|\//.test(username)) username = handleFromUrl(username);
-      if(!username) username = handleFromUrl(url);
-      if(!username){ const at=row.map(_n).find(v=>/^@[\w.]+$/.test(v)); if(at) username=at.slice(1).toLowerCase(); }
-      if(!username && !url) continue;  // keep url-only rows — handle resolved from the link later
+      if(!username){ const at=filled.map(_n).find(v=>/^@[\w.]+$/.test(v)); if(at) username=at.slice(1); }
+      if(!username && urls.length) username = handleFromUrl(urls.find(u=>platformOf(u)==='tiktok')||urls[0]);
+      if(!username && !urls.length) continue;   // nothing usable
+      const links = urls.map(u=>({platform:platformOf(u), url:u, handle:handleFromUrl(u)}));
       const colGrp = cGrp>=0 ? _n(row[cGrp]) : '';
       let group, subgroup = cSub>=0 ? _n(row[cSub]) : '';
-      if(multi){ group = _n(sheetName) || 'KOL'; if(!subgroup && colGrp) subgroup=colGrp; }
-      else { group = colGrp || 'KOL'; }
+      if(colGrp) group=colGrp;
+      else if(multi){ group=_n(sheetName)||'KOL'; }
+      else { group = section || 'KOL'; }
       let followers=0; if(cFol>=0){ const fv=parseInt(_n(row[cFol]).replace(/[^0-9]/g,'')); if(!isNaN(fv)) followers=fv; }
-      out.push({username:username.toLowerCase(), display:(cName>=0?_n(row[cName]):'')||username, group, subgroup, url, followers});
+      out.push({username:(username||'').toLowerCase(), display:(cU>=0?_n(row[cU]):'')||username, group, subgroup, links, followers});
     }
   });
   parseWorkbook._dbg = dbg.join('  ·  ');
@@ -297,32 +312,34 @@ function parseWorkbook(wb){
 async function importKols(kols){
   const st=$("#importStatus");
   if(!kols || !kols.length){
-    st.innerHTML='⚠️ ไม่พบรายชื่อ KOL — ต้องมีคอลัมน์ที่เป็น <b>ลิงก์ TikTok/Facebook</b> หรือ <b>@username</b> อย่างน้อย 1 คอลัมน์<br>ระบบอ่านเจอ: '+(parseWorkbook._dbg||'(ว่าง)');
+    st.innerHTML='⚠️ ไม่พบรายชื่อ KOL — ต้องมี <b>ลิงก์โพสต์</b> (TikTok/FB/IG/YT/X) หรือ <b>@username</b> อย่างน้อย 1 อย่าง<br>ระบบอ่านเจอ: '+(parseWorkbook._dbg||'(ว่าง)');
     return;
   }
-  // Rows that only have a post link -> fetch the posting account's @handle
-  const need=[...new Set(kols.filter(k=>!k.username && k.url).map(k=>k.url))];
+  // Resolve @handle for links that don't carry one in the URL (short links).
+  const need=[...new Set(kols.flatMap(k=>(k.links||[]).filter(l=>!l.handle).map(l=>l.url)))];
   if(need.length){
-    st.textContent=`กำลังดึง @username จากลิงก์ลงงาน ${need.length} รายการ…`;
+    st.textContent=`กำลังดึง @username จากลิงก์ลงงาน ${need.length} รายการ (อาจใช้เวลาสักครู่)…`;
     try{
       const r=await fetch('/api/resolve-handles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({urls:need})});
-      const d=await r.json(); const map=d.handles||{};
-      kols.forEach(k=>{ if(!k.username && k.url && map[k.url]) k.username=map[k.url]; });
-    }catch(e){/* unresolved rows are dropped below */}
+      const map=(await r.json()).handles||{};
+      kols.forEach(k=>(k.links||[]).forEach(l=>{ if(!l.handle && map[l.url]) l.handle=map[l.url]; }));
+    }catch(e){/* leave handles empty; those sub-rows just won't get stats */}
   }
+  // KOL username: from column, else the first link handle
+  kols.forEach(k=>{ if(!k.username){ const l=(k.links||[]).find(x=>x.handle); if(l) k.username=l.handle; } if(!k.display) k.display=k.username; });
   const dropped = kols.filter(k=>!k.username).length;
   kols = kols.filter(k=>k.username);
-  kols.forEach(k=>{ if(!k.display) k.display=k.username; });
-  if(!kols.length){ st.textContent='⚠️ ดึง @username จากลิงก์ไม่สำเร็จเลย — ตรวจว่าลิงก์เปิดดูได้/เป็นลิงก์โพสต์จริง'; return; }
+  if(!kols.length){ st.textContent='⚠️ ระบุ KOL ไม่ได้เลย — ตรวจว่าไฟล์มีลิงก์โพสต์หรือ @username'; return; }
   const groups=[...new Set(kols.map(k=>k.group))];
-  const extra = dropped ? `\n(ดึง @handle จากลิงก์ไม่ได้ ${dropped} รายการ — จะข้ามไป)` : '';
-  if(!confirm(`พบ ${kols.length} KOL\nกลุ่ม: ${groups.join(', ')}${extra}\n\n⚠️ การนำเข้าจะ "ลบรายชื่อเดิมทั้งหมด" ของแคมเปญนี้แล้วแทนที่ด้วยรายการใหม่ ยืนยันหรือไม่?`)) return;
+  const totalLinks=kols.reduce((s,k)=>s+(k.links||[]).length,0);
+  const extra = dropped ? `\n(ระบุ KOL ไม่ได้ ${dropped} แถว — จะข้าม)` : '';
+  if(!confirm(`พบ ${kols.length} KOL · ${totalLinks} ลิงก์ (หลายแพลตฟอร์ม)\nกลุ่ม: ${groups.join(', ')}${extra}\n\n⚠️ การนำเข้าจะ "ลบรายชื่อเดิมทั้งหมด" ของแคมเปญนี้แล้วแทนที่ด้วยรายการใหม่ ยืนยันหรือไม่?`)) return;
   st.textContent='กำลังนำเข้า…';
   try{
     const r=await fetch('/api/roster/report/bulk?campaign='+encodeURIComponent(campaign),
       {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kols})});
     const d=await r.json(); if(!r.ok) throw new Error(d.detail||('HTTP '+r.status));
-    st.textContent=`✅ นำเข้าแล้ว ${d.count} รายชื่อ (แทนที่ของเดิม)`;
+    st.textContent=`✅ นำเข้าแล้ว ${d.count} รายชื่อ (${totalLinks} ลิงก์) — แทนที่ของเดิม · ไปกด Refresh Data เพื่อดึงสถิติ`;
     toast(`นำเข้า ${d.count} รายชื่อแล้ว`); load();
   }catch(e){ st.textContent='⚠️ '+e.message; toast(e.message,false); }
 }

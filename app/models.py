@@ -62,6 +62,9 @@ class ReportKol(Base):
     subgroup: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     campaign: Mapped[str] = mapped_column(String(32), nullable=False, default="pao", index=True)
     url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # JSON list of {"platform","url","handle"} — all channels this KOL posted on.
+    # Falls back to `url` (single link) when null, for pre-multiplatform data.
+    links_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     avatar_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     followers: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -80,6 +83,7 @@ class ReportPost(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     campaign: Mapped[str] = mapped_column(String(32), nullable=False, default="pao", index=True)
     username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    platform: Mapped[str] = mapped_column(String(16), nullable=False, default="tiktok", index=True)
     video_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     cover_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

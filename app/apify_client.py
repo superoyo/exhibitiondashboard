@@ -122,6 +122,42 @@ def run_scrape_fb(
                     tolerate_failure=tolerate_failure)
 
 
+def run_scrape_ig(
+    post_urls: List[str], *, poll_interval: float = 8.0, timeout_s: float = 300.0,
+    tolerate_failure: bool = False,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Scrape specific Instagram posts/reels by URL (best-effort)."""
+    payload = {"directUrls": post_urls, "resultsType": "posts", "resultsLimit": 1,
+               "addParentData": False}
+    return _execute(payload, actor_id=config.IG_ACTOR_ID,
+                    poll_interval=poll_interval, timeout_s=timeout_s,
+                    tolerate_failure=tolerate_failure)
+
+
+def run_scrape_yt(
+    post_urls: List[str], *, poll_interval: float = 8.0, timeout_s: float = 300.0,
+    tolerate_failure: bool = False,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Scrape specific YouTube videos/shorts by URL (best-effort)."""
+    payload = {"startUrls": [{"url": u} for u in post_urls],
+               "maxResults": 1, "maxResultsShorts": 1, "downloadSubtitles": False}
+    return _execute(payload, actor_id=config.YT_ACTOR_ID,
+                    poll_interval=poll_interval, timeout_s=timeout_s,
+                    tolerate_failure=tolerate_failure)
+
+
+def run_scrape_x(
+    post_urls: List[str], *, poll_interval: float = 8.0, timeout_s: float = 300.0,
+    tolerate_failure: bool = False,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Scrape specific X/Twitter posts by URL (best-effort)."""
+    payload = {"startUrls": post_urls, "maxItems": len(post_urls) or 1,
+               "tweetLanguage": None}
+    return _execute(payload, actor_id=config.X_ACTOR_ID,
+                    poll_interval=poll_interval, timeout_s=timeout_s,
+                    tolerate_failure=tolerate_failure)
+
+
 def _execute(
     payload: Dict[str, Any],
     *,
