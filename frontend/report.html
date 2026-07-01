@@ -26,7 +26,8 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 <div class="max-w-7xl mx-auto px-3 sm:px-5 py-5">
 <nav class="nav">
 <span class="nav-brand">📊 Sahagroup KOL Hub</span>
-<a href="/" class="navtab" data-nav="/">Sahagroup</a>
+<a href="/" class="navtab" data-nav="/">Sahagroup 2026</a>
+<a href="/sahagroup2027" class="navtab" data-nav="/sahagroup2027">Sahagroup 2027</a>
 <a href="/report" class="navtab" data-nav="/report">PAO Report</a>
 <a href="/kols" class="navtab">แก้ไข KOL</a>
 <a href="/token" class="navtab">Apify Token</a>
@@ -183,16 +184,18 @@ function render(DATA){
 }
 
 // ---- data load + refresh ----
-// campaign inferred from path: '/' = Sahagroup, '/report' = PAO
-const CAMPAIGN = location.pathname.replace(/\/$/,'') === '/report' ? 'pao' : 'sahagroup';
+// campaign inferred from path: '/' = Sahagroup 2026, '/sahagroup2027' = Sahagroup 2027, '/report' = PAO
+const _P = location.pathname.replace(/\/$/,'');
+const CAMPAIGN = _P === '/report' ? 'pao' : _P === '/sahagroup2027' ? 'sahagroup2027' : 'sahagroup';
 const META = {
  pao:{title:'🧴 PAO Super Perfume 2026 — Campaign Report', sub:'สรุปผล KOL/Influencer · ข้อมูลจริงจาก TikTok/Facebook ผ่าน Apify'},
  sahagroup:{title:'🛍️ Sahagroup Fair 2026 — Campaign Report', sub:'Mega KOL + Micro-Nano KOL · ข้อมูลจริงจาก TikTok ผ่าน Apify'},
+ sahagroup2027:{title:'🛍️ Sahagroup Fair 2027 — Campaign Report', sub:'แคมเปญปี 2027 · เพิ่มรายชื่อ KOL ในหน้า "แก้ไข KOL" แล้วกด Refresh Data'},
 };
 document.getElementById('repTitle').textContent=META[CAMPAIGN].title;
 document.getElementById('repSub').textContent=META[CAMPAIGN].sub;
 // nav active for this page
-{const navHref = CAMPAIGN==='pao' ? '/report' : '/';
+{const navHref = CAMPAIGN==='pao' ? '/report' : CAMPAIGN==='sahagroup2027' ? '/sahagroup2027' : '/';
  const a=document.querySelector(`.navtab[data-nav="${navHref}"]`); if(a)a.classList.add('navtab-active');}
 
 const btn=document.getElementById('refreshBtn');

@@ -28,20 +28,25 @@ def _seed_on_startup() -> None:
             seed_report_kols_if_empty,
             seed_report_posts_if_empty,
             seed_sahagroup_if_empty,
+            seed_sahagroup2027_if_empty,
         )
 
         n = seed_if_empty()
         r = seed_report_kols_if_empty()
         rp = seed_report_posts_if_empty()
         sg = seed_sahagroup_if_empty()
-        log.info("Startup bootstrap: %d tracker, %d PAO KOLs, %d PAO posts, %d Sahagroup KOLs.", n, r, rp, sg)
+        sg27 = seed_sahagroup2027_if_empty()
+        log.info(
+            "Startup bootstrap: %d tracker, %d PAO KOLs, %d PAO posts, %d Sahagroup KOLs, %d Sahagroup2027 KOLs.",
+            n, r, rp, sg, sg27,
+        )
     except Exception as exc:  # noqa: BLE001 — seeding must never crash the web
         log.warning("Startup seed skipped (%s). Run scripts/seed_kols.py manually.", exc)
 
 @app.get("/api/version")
 def version():
     """Build marker — lets us confirm which commit Railway is actually running."""
-    return {"build": "profile-pics-v10"}
+    return {"build": "sahagroup2027-v11"}
 
 
 FRONTEND_DIR = pathlib.Path(__file__).resolve().parent.parent / "frontend"
@@ -70,6 +75,12 @@ def index():
 @app.get("/report")
 def report():
     """PAO Super Perfume campaign report (campaign=pao)."""
+    return _page(REPORT)
+
+
+@app.get("/sahagroup2027")
+def sahagroup2027():
+    """Sahagroup Fair 2027 campaign report (campaign=sahagroup2027)."""
     return _page(REPORT)
 
 

@@ -24,6 +24,7 @@ CONFIG = _CFG_DIR / "kols.json"
 REPORT_CONFIG = _CFG_DIR / "report_kols.json"
 REPORT_POSTS_CONFIG = _CFG_DIR / "report_posts.json"
 SAHAGROUP_CONFIG = _CFG_DIR / "sahagroup_kols.json"
+SAHAGROUP2027_CONFIG = _CFG_DIR / "sahagroup2027_kols.json"
 
 
 def seed_from_config(config_path: pathlib.Path = CONFIG) -> int:
@@ -118,6 +119,11 @@ def seed_report_kols_if_empty(config_path: pathlib.Path = REPORT_CONFIG) -> int:
 def seed_sahagroup_if_empty(config_path: pathlib.Path = SAHAGROUP_CONFIG) -> int:
     """Bootstrap the Sahagroup report roster (49 KOLs, no post links yet)."""
     return _seed_report_roster(config_path, "sahagroup")
+
+
+def seed_sahagroup2027_if_empty(config_path: pathlib.Path = SAHAGROUP2027_CONFIG) -> int:
+    """Bootstrap the Sahagroup Fair 2027 roster (empty placeholder — fill via /kols)."""
+    return _seed_report_roster(config_path, "sahagroup2027")
 
 
 def seed_report_posts_if_empty(config_path: pathlib.Path = REPORT_POSTS_CONFIG) -> int:

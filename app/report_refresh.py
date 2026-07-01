@@ -68,7 +68,11 @@ def _new_state() -> Dict[str, Any]:
 
 # Per-campaign in-memory progress (single worker). 'pao' kept as the default
 # key so the legacy no-arg endpoints keep working.
-REFRESH_STATES: Dict[str, Dict[str, Any]] = {"pao": _new_state(), "sahagroup": _new_state()}
+REFRESH_STATES: Dict[str, Dict[str, Any]] = {
+    "pao": _new_state(),
+    "sahagroup": _new_state(),
+    "sahagroup2027": _new_state(),
+}
 
 
 def state_for(campaign: str) -> Dict[str, Any]:

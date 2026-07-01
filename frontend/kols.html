@@ -36,7 +36,8 @@
     <!-- Nav -->
     <nav class="nav">
       <span class="nav-brand">📊 Sahagroup KOL Hub</span>
-      <a href="/" class="navtab">Sahagroup</a>
+      <a href="/" class="navtab">Sahagroup 2026</a>
+      <a href="/sahagroup2027" class="navtab">Sahagroup 2027</a>
       <a href="/report" class="navtab">PAO Report</a>
       <a href="/kols" class="navtab navtab-active">แก้ไข KOL</a>
       <a href="/token" class="navtab">Apify Token</a>
@@ -49,7 +50,8 @@
 
     <!-- roster switch -->
     <div class="flex flex-wrap gap-2 mb-4">
-      <button class="seg seg-active" data-roster="report" data-campaign="sahagroup">Sahagroup</button>
+      <button class="seg seg-active" data-roster="report" data-campaign="sahagroup">Sahagroup 2026</button>
+      <button class="seg" data-roster="report" data-campaign="sahagroup2027">Sahagroup 2027</button>
       <button class="seg" data-roster="report" data-campaign="pao">PAO Report</button>
       <button class="seg" data-roster="tracker" data-campaign="">Tracker (live)</button>
     </div>
@@ -92,11 +94,13 @@
 <script>
 const GROUPS = {
   "report:sahagroup": ["Mega Kol","Micro-Nano Kol"],
+  "report:sahagroup2027": ["Mega Kol","Micro-Nano Kol"],
   "report:pao": ["Entertain","Micro Local","คู่รัก","Facebook"],
   "tracker:": ["Fashion","Food","Beauty","Household Items"],
 };
 const SUBGROUPS = {
   "report:sahagroup": ["THE TASTE MAKERS","THE MEMORY MAKERS","THE VIBE MAKERS","Fashion","Food","Beauty","Household Items"],
+  "report:sahagroup2027": ["THE TASTE MAKERS","THE MEMORY MAKERS","THE VIBE MAKERS","Fashion","Food","Beauty","Household Items"],
   "report:pao": [],
 };
 function hashColor(c){const P=['#6366f1','#10b981','#ec4899','#f59e0b','#06b6d4','#8b5cf6','#ef4444','#14b8a6'];let h=0;for(const ch of (c||''))h=(h*31+ch.charCodeAt(0))>>>0;return P[h%P.length];}
@@ -179,9 +183,10 @@ $("#addBtn").onclick = async ()=>{
 };
 $("#reload").onclick = load;
 function setNote(){
+  const label = {sahagroup:'Sahagroup 2026', sahagroup2027:'Sahagroup 2027', pao:'PAO'}[campaign] || campaign;
   $("#note").innerHTML = roster==="tracker"
     ? "หน้านี้คุม KOL ที่ระบบ scrape live (kols) — แยกจากรายงานแคมเปญ"
-    : `📌 แคมเปญ <b>${campaign==='sahagroup'?'Sahagroup':'PAO'}</b> · ใส่/แก้ <b>ลิงก์โพสต์</b> ของแต่ละ KOL แล้วไปหน้ารายงานกด <b>Refresh Data</b> (ติ๊ก active = รวมในรายงาน)`;
+    : `📌 แคมเปญ <b>${label}</b> · ใส่/แก้ <b>ลิงก์โพสต์</b> ของแต่ละ KOL แล้วไปหน้ารายงานกด <b>Refresh Data</b> (ติ๊ก active = รวมในรายงาน)`;
 }
 document.querySelectorAll(".seg").forEach(b=>b.onclick=()=>{
   document.querySelectorAll(".seg").forEach(x=>x.classList.remove("seg-active"));
