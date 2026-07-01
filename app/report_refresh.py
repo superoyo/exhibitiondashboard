@@ -83,6 +83,27 @@ _IG_SKIP = {"p", "reel", "reels", "tv", "stories", "explore"}
 _X_SKIP = {"i", "status", "home", "search", "hashtag", "intent"}
 
 
+def post_id_from_url(platform: str, url: Optional[str]) -> str:
+    """The post's own id from its URL — the reliable key to match a scraped post
+    back to the link that requested it (works even when the account handle isn't
+    in the URL, e.g. IG /reel/<code>, YT /shorts/<id>, X /status/<id>)."""
+    import re as _re
+    u = url or ""
+    if platform == "tiktok":
+        m = _re.search(r"/video/(\d+)", u)
+    elif platform == "instagram":
+        m = _re.search(r"/(?:p|reel|reels|tv)/([A-Za-z0-9_-]+)", u)
+    elif platform == "youtube":
+        m = _re.search(r"(?:shorts/|v=|youtu\.be/)([A-Za-z0-9_-]{6,})", u)
+    elif platform == "x":
+        m = _re.search(r"/status/(\d+)", u)
+    elif platform == "facebook":
+        m = _re.search(r"(?:/posts/|/videos/|/reel/|story_fbid=|/permalink/)(\d+)", u)
+    else:
+        m = None
+    return m.group(1) if m else ""
+
+
 def handle_from_url(url: Optional[str]) -> str:
     """Best-effort account handle from a post URL (for matching scraped posts).
     Skips generic path segments (story.php, /p/, /status, ...) that aren't handles."""
@@ -136,7 +157,8 @@ def _parse_ig_items(items):
     posts = []
     for it in items:
         handle = (it.get("ownerUsername") or "").strip().lower()
-        vid = str(it.get("id") or it.get("shortCode") or "")
+        # shortCode is what appears in the post URL — use it as the match key
+        vid = str(it.get("shortCode") or it.get("id") or "")
         if not vid:
             continue
         sc = it.get("shortCode")
@@ -420,11 +442,23 @@ def refresh_report(campaign: str = "pao") -> dict:
                 cost += meta["cost_usd"]
             if meta.get("partial"):
                 partial = True
-            idx = index.setdefault(plat, {})
+            slot = index.setdefault(plat, {"id": {}, "handle": {}})
             for p in posts:
+                vid = str(p.get("video_id") or "")
+                if vid and (vid not in slot["id"] or p["views"] > slot["id"][vid]["views"]):
+                    slot["id"][vid] = p
                 h = (p.get("username") or "").lower()
-                if h and (h not in idx or p["views"] > idx[h]["views"]):
-                    idx[h] = p
+                if h and (h not in slot["handle"] or p["views"] > slot["handle"][h]["views"]):
+                    slot["handle"][h] = p
+
+        def _match(plat_, url_, handle_):
+            slot = index.get(plat_)
+            if not slot:
+                return None
+            pid = post_id_from_url(plat_, url_)
+            if pid and pid in slot["id"]:
+                return slot["id"][pid]
+            return slot["handle"].get((handle_ or "").lower())
 
         for plat, urls in urls_by_plat.items():
             if plat in ("line", "website", "other") or not urls:
@@ -441,7 +475,7 @@ def refresh_report(campaign: str = "pao") -> dict:
         plat_counts: Dict[str, int] = {}
         for uname, links in roster:
             for ln in links:
-                post = (index.get(ln["platform"]) or {}).get(ln["handle"])
+                post = _match(ln["platform"], ln["url"], ln["handle"])
                 if post:
                     rows.append((uname, ln["platform"], post, ln["url"]))
                     refreshed_users.add(uname)
@@ -469,7 +503,7 @@ def refresh_report(campaign: str = "pao") -> dict:
                             k.followers = pr["followers"]
                         if pr.get("nick") and (not k.display or k.display == k.username):
                             k.display = pr["nick"]
-                    post = (index.get(ln["platform"]) or {}).get(ln["handle"])
+                    post = _match(ln["platform"], ln["url"], ln["handle"])
                     if post and post.get("avatar_url"):
                         k.avatar_url = post["avatar_url"]
 
@@ -487,7 +521,13 @@ def refresh_report(campaign: str = "pao") -> dict:
 
         breakdown = " · ".join(f"{_PLATFORM_LABELS.get(p, p)} {c}"
                                for p, c in plat_counts.items()) or "—"
+        # platforms that returned data but matched 0 posts → likely actor field
+        # mismatch or unresolvable link (surfaced so it can be tuned)
+        unmatched = [_PLATFORM_LABELS.get(p, p) for p, s in index.items()
+                     if s.get("id") and plat_counts.get(p, 0) == 0]
         msg = f"อัปเดต {n_posts} โพสต์ จาก {len(refreshed_users)}/{len(roster)} KOL · {breakdown}"
+        if unmatched:
+            msg += " · จับคู่ไม่ได้: " + ", ".join(unmatched)
         if partial:
             msg += " ⚠️ บางลิงก์ล้มเหลวบางส่วน แต่เก็บข้อมูลที่ดึงได้แล้ว"
         if scrape_errors:
