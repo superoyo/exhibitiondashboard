@@ -435,10 +435,23 @@ def create_campaign(body: CampaignIn, session: Session = Depends(db_dependency))
     key = _slugify_key(raw_key)
     if not key or not _KEY_RE.match(key):
         raise HTTPException(400, "key ต้องเป็น a-z 0-9 หรือ - เท่านั้น (3–32 ตัวอักษร)")
-    if session.get(Campaign, key):
-        raise HTTPException(409, f"มีแคมเปญ key='{key}' อยู่แล้ว")
     if not (body.name or "").strip():
         raise HTTPException(400, "name ห้ามว่าง")
+    existing = session.get(Campaign, key)
+    if existing:
+        if existing.active:
+            raise HTTPException(409, f"มีแคมเปญ key='{key}' อยู่แล้ว")
+        # Revive a previously-deleted (archived) campaign instead of erroring —
+        # its old KOL roster/posts come back with it.
+        existing.name = body.name.strip()
+        existing.emoji = (body.emoji or "📊").strip()[:8] or "📊"
+        existing.subtitle = (body.subtitle or "").strip() or None
+        existing.groups_json = json.dumps(body.groups or [], ensure_ascii=False)
+        existing.subgroups_json = json.dumps(body.subgroups or [], ensure_ascii=False)
+        existing.active = True
+        session.commit()
+        session.refresh(existing)
+        return _campaign_dict(existing)
     c = Campaign(
         key=key,
         name=body.name.strip(),

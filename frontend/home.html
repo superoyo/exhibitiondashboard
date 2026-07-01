@@ -26,6 +26,9 @@ a{color:inherit;text-decoration:none}
 .emoji-pick{display:grid;grid-template-columns:repeat(8,1fr);gap:.35rem}
 .emoji-pick button{padding:.4rem;border:1px solid var(--line);border-radius:8px;font-size:1.2rem;background:#fff;cursor:pointer}
 .emoji-pick button.on{background:#0f172a;border-color:#0f172a}
+.del-btn{position:absolute;top:.6rem;right:.6rem;z-index:2;width:32px;height:32px;border:1px solid var(--line);background:#fff;border-radius:8px;font-size:.95rem;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#dc2626;transition:.12s}
+.del-btn:hover{background:#fee2e2;border-color:#fecaca}
+.del-btn:disabled{opacity:.5;cursor:default}
 </style></head><body class="min-h-screen">
 <div class="max-w-6xl mx-auto px-3 sm:px-5 py-5">
 <nav class="nav">
@@ -109,30 +112,52 @@ function fmtDate(iso){if(!iso)return '';try{return new Date(iso).toLocaleDateStr
 function esc(s){return (s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
 function cardHTML(c){
+  const key=esc(c.key), name=esc(c.name);
   return `
-    <a href="/c/${encodeURIComponent(c.key)}" class="card p-5 block">
-      <div class="flex items-start justify-between gap-2">
-        <div class="text-4xl">${esc(c.emoji||'📊')}</div>
-        <div class="text-right">
-          <div class="text-xs" style="color:var(--muted)">${fmtDate(c.created_at)}</div>
-          <div class="text-xs mt-1" style="color:var(--muted)">${c.roster_count||0} KOLs</div>
+    <div class="card relative">
+      <button class="del-btn" data-key="${key}" data-name="${name}" title="ลบแคมเปญนี้" aria-label="ลบแคมเปญ ${name}">🗑</button>
+      <a href="/c/${encodeURIComponent(c.key)}" class="block p-5">
+        <div class="flex items-start justify-between gap-2" style="padding-right:2.2rem">
+          <div class="text-4xl">${esc(c.emoji||'📊')}</div>
+          <div class="text-right">
+            <div class="text-xs" style="color:var(--muted)">${fmtDate(c.created_at)}</div>
+            <div class="text-xs mt-1" style="color:var(--muted)">${c.roster_count||0} KOLs</div>
+          </div>
         </div>
-      </div>
-      <div class="mt-2 font-bold text-lg leading-tight">${esc(c.name)}</div>
-      <div class="text-xs mt-1" style="color:var(--muted)">/c/${esc(c.key)}</div>
-      ${c.subtitle?`<div class="text-sm mt-2" style="color:#334155">${esc(c.subtitle)}</div>`:''}
-      <div class="mt-3">${(c.groups||[]).slice(0,4).map(g=>`<span class="chip">${esc(g)}</span>`).join('')}${(c.groups||[]).length>4?`<span class="chip">+${(c.groups||[]).length-4}</span>`:''}</div>
-      <div class="text-xs mt-3 flex items-center justify-between" style="color:var(--muted)">
-        <span>${c.refreshed_at?'🔄 อัปเดต '+fmtDate(c.refreshed_at):'ยังไม่มีข้อมูล'}</span>
-        <span class="font-semibold" style="color:#2563eb">เปิดรายงาน →</span>
-      </div>
-    </a>`;
+        <div class="mt-2 font-bold text-lg leading-tight">${name}</div>
+        <div class="text-xs mt-1" style="color:var(--muted)">/c/${key}</div>
+        ${c.subtitle?`<div class="text-sm mt-2" style="color:#334155">${esc(c.subtitle)}</div>`:''}
+        <div class="mt-3">${(c.groups||[]).slice(0,4).map(g=>`<span class="chip">${esc(g)}</span>`).join('')}${(c.groups||[]).length>4?`<span class="chip">+${(c.groups||[]).length-4}</span>`:''}</div>
+        <div class="text-xs mt-3 flex items-center justify-between" style="color:var(--muted)">
+          <span>${c.refreshed_at?'🔄 อัปเดต '+fmtDate(c.refreshed_at):'ยังไม่มีข้อมูล'}</span>
+          <span class="font-semibold" style="color:#2563eb">เปิดรายงาน →</span>
+        </div>
+      </a>
+    </div>`;
 }
 function renderCards(list, emptyHTML){
   const grid=document.getElementById('grid');
   if(!list.length){ grid.innerHTML=emptyHTML; return; }
   grid.innerHTML=list.map(cardHTML).join('');
 }
+
+// Delete a campaign (with confirmation). The 🗑 button sits outside the card's
+// <a>, so a click never navigates — we still confirm before hitting the API.
+document.getElementById('grid').addEventListener('click', async (ev)=>{
+  const btn=ev.target.closest('.del-btn');
+  if(!btn) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const key=btn.dataset.key, name=btn.dataset.name;
+  if(!confirm(`ต้องการลบแคมเปญ "${name}" (/c/${key}) ออกจากระบบใช่ไหม?\n\nแคมเปญจะหายไปจากหน้า Home ทันที (ข้อมูล KOL ยังถูกเก็บไว้ในระบบ กู้คืนได้ภายหลัง)`)) return;
+  btn.disabled=true; const old=btn.textContent; btn.textContent='⏳';
+  try{
+    const r=await fetch('/api/campaigns/'+encodeURIComponent(key),{method:'DELETE'});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(d.detail||('HTTP '+r.status));
+    toast(`ลบแคมเปญ "${name}" แล้ว`);
+    loadGrid(); // refresh grid + invalidate search cache
+  }catch(e){ toast('ลบไม่สำเร็จ: '+e.message,false); btn.disabled=false; btn.textContent=old; }
+});
 
 let LATEST=[];        // 15 newest (default view)
 let SEARCH_CACHE=null; // all campaigns (lazy-loaded on first search)
