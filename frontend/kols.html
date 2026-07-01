@@ -282,7 +282,7 @@ function parseWorkbook(wb){
       if(/https?:|\//.test(username)) username = handleFromUrl(username);
       if(!username) username = handleFromUrl(url);
       if(!username){ const at=row.map(_n).find(v=>/^@[\w.]+$/.test(v)); if(at) username=at.slice(1).toLowerCase(); }
-      if(!username) continue;
+      if(!username && !url) continue;  // keep url-only rows — handle resolved from the link later
       const colGrp = cGrp>=0 ? _n(row[cGrp]) : '';
       let group, subgroup = cSub>=0 ? _n(row[cSub]) : '';
       if(multi){ group = _n(sheetName) || 'KOL'; if(!subgroup && colGrp) subgroup=colGrp; }
@@ -300,8 +300,23 @@ async function importKols(kols){
     st.innerHTML='⚠️ ไม่พบรายชื่อ KOL — ต้องมีคอลัมน์ที่เป็น <b>ลิงก์ TikTok/Facebook</b> หรือ <b>@username</b> อย่างน้อย 1 คอลัมน์<br>ระบบอ่านเจอ: '+(parseWorkbook._dbg||'(ว่าง)');
     return;
   }
+  // Rows that only have a post link -> fetch the posting account's @handle
+  const need=[...new Set(kols.filter(k=>!k.username && k.url).map(k=>k.url))];
+  if(need.length){
+    st.textContent=`กำลังดึง @username จากลิงก์ลงงาน ${need.length} รายการ…`;
+    try{
+      const r=await fetch('/api/resolve-handles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({urls:need})});
+      const d=await r.json(); const map=d.handles||{};
+      kols.forEach(k=>{ if(!k.username && k.url && map[k.url]) k.username=map[k.url]; });
+    }catch(e){/* unresolved rows are dropped below */}
+  }
+  const dropped = kols.filter(k=>!k.username).length;
+  kols = kols.filter(k=>k.username);
+  kols.forEach(k=>{ if(!k.display) k.display=k.username; });
+  if(!kols.length){ st.textContent='⚠️ ดึง @username จากลิงก์ไม่สำเร็จเลย — ตรวจว่าลิงก์เปิดดูได้/เป็นลิงก์โพสต์จริง'; return; }
   const groups=[...new Set(kols.map(k=>k.group))];
-  if(!confirm(`พบ ${kols.length} KOL\nกลุ่ม: ${groups.join(', ')}\n\n⚠️ การนำเข้าจะ "ลบรายชื่อเดิมทั้งหมด" ของแคมเปญนี้แล้วแทนที่ด้วยรายการใหม่ ยืนยันหรือไม่?`)) return;
+  const extra = dropped ? `\n(ดึง @handle จากลิงก์ไม่ได้ ${dropped} รายการ — จะข้ามไป)` : '';
+  if(!confirm(`พบ ${kols.length} KOL\nกลุ่ม: ${groups.join(', ')}${extra}\n\n⚠️ การนำเข้าจะ "ลบรายชื่อเดิมทั้งหมด" ของแคมเปญนี้แล้วแทนที่ด้วยรายการใหม่ ยืนยันหรือไม่?`)) return;
   st.textContent='กำลังนำเข้า…';
   try{
     const r=await fetch('/api/roster/report/bulk?campaign='+encodeURIComponent(campaign),

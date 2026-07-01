@@ -287,6 +287,69 @@ def sheet_fetch(url: str = Query(...)):
 
 
 # ----------------------------------------------------------------------------
+# Resolve the posting account's @handle from a post link — used by bulk import
+# when a row has a post URL but no username (incl. vt.tiktok.com short links).
+# Uses redirect-following + page HTML, no Apify credits.
+# ----------------------------------------------------------------------------
+
+_RE_TT = re.compile(r"tiktok\.com/@([^/?#\s]+)", re.I)
+_RE_FB = re.compile(r"(?:facebook\.com|fb\.com)/([^/?#\s]+)", re.I)
+_RE_IG = re.compile(r"instagram\.com/([^/?#\s]+)", re.I)
+_RE_UNIQ = re.compile(r'"uniqueId":"([^"]+)"')
+_FB_SKIP = {"watch", "story.php", "permalink.php", "profile.php", "share", "reel", "photo", "video"}
+
+
+def _handle_from_url(s: str) -> str:
+    m = _RE_TT.search(s or "")
+    if m:
+        return m.group(1).lower()
+    m = _RE_FB.search(s or "")
+    if m and m.group(1).lower() not in _FB_SKIP:
+        return m.group(1).lower()
+    m = _RE_IG.search(s or "")
+    if m:
+        return m.group(1).lower()
+    return ""
+
+
+def _handle_from_html(html: str) -> str:
+    m = _RE_UNIQ.search(html or "")
+    if m:
+        return m.group(1).lower()
+    m = _RE_TT.search(html or "")
+    if m:
+        return m.group(1).lower()
+    return ""
+
+
+class ResolveIn(BaseModel):
+    urls: list[str]
+
+
+@router.post("/resolve-handles")
+def resolve_handles(body: ResolveIn):
+    """Map each post URL -> the posting account's @handle. Direct extraction
+    first; for short links, follow the redirect and read the page HTML."""
+    urls = [u for u in dict.fromkeys(body.urls) if u][:300]
+    out: dict = {}
+    import httpx as _httpx
+    headers = {"User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                              "AppleWebKit/537.36 (KHTML, like Gecko) "
+                              "Chrome/125.0.0.0 Safari/537.36")}
+    with _httpx.Client(follow_redirects=True, timeout=12, headers=headers) as client:
+        for u in urls:
+            h = _handle_from_url(u)
+            if not h:
+                try:
+                    r = client.get(u)
+                    h = _handle_from_url(str(r.url)) or _handle_from_html(r.text)
+                except Exception:  # noqa: BLE001 — unresolvable links just map to ""
+                    h = ""
+            out[u] = h
+    return {"handles": out}
+
+
+# ----------------------------------------------------------------------------
 # Report data + Refresh Data button (scrape 7-day window for active report KOLs)
 # ----------------------------------------------------------------------------
 
