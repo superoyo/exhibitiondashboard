@@ -54,8 +54,11 @@ def is_fb(url: Optional[str]) -> bool:
 
 
 def platform_of(url: Optional[str]) -> str:
-    """Classify a post URL into a platform key."""
+    """Classify a post URL into a platform key. Any real URL that isn't a known
+    social platform is treated as a Website (advertorials on media sites, etc.)."""
     u = (url or "").lower()
+    if not u.strip():
+        return "other"
     if "tiktok.com" in u:
         return "tiktok"
     if "facebook.com" in u or "fb.watch" in u or "fb.com" in u:
@@ -68,19 +71,38 @@ def platform_of(url: Optional[str]) -> str:
         return "x"
     if "line.me" in u:
         return "line"
+    if u.startswith(("http://", "https://")) or "www." in u or "." in u:
+        return "website"
     return "other"
 
 
+# Generic path segments that are NOT account handles.
+_FB_SKIP = {"story.php", "permalink.php", "profile.php", "watch", "reel", "share",
+            "photo", "video", "groups", "events", "media", "pages", "p"}
+_IG_SKIP = {"p", "reel", "reels", "tv", "stories", "explore"}
+_X_SKIP = {"i", "status", "home", "search", "hashtag", "intent"}
+
+
 def handle_from_url(url: Optional[str]) -> str:
-    """Best-effort account handle from a post URL (for matching scraped posts)."""
+    """Best-effort account handle from a post URL (for matching scraped posts).
+    Skips generic path segments (story.php, /p/, /status, ...) that aren't handles."""
     import re as _re
     u = url or ""
-    for pat in (r"tiktok\.com/@([^/?#\s]+)", r"(?:facebook\.com|fb\.com)/([^/?#\s]+)",
-                r"instagram\.com/([^/?#\s]+)", r"(?:x\.com|twitter\.com)/([^/?#\s]+)",
-                r"youtube\.com/@([^/?#\s]+)"):
-        m = _re.search(pat, u, _re.I)
-        if m:
-            return m.group(1).lower()
+    m = _re.search(r"tiktok\.com/@([^/?#\s]+)", u, _re.I)
+    if m:
+        return m.group(1).lower()
+    m = _re.search(r"(?:facebook\.com|fb\.com)/([^/?#\s]+)", u, _re.I)
+    if m and m.group(1).lower() not in _FB_SKIP:
+        return m.group(1).lower()
+    m = _re.search(r"instagram\.com/([^/?#\s]+)", u, _re.I)
+    if m and m.group(1).lower() not in _IG_SKIP:
+        return m.group(1).lower()
+    m = _re.search(r"(?:x\.com|twitter\.com)/([^/?#\s]+)", u, _re.I)
+    if m and m.group(1).lower() not in _X_SKIP:
+        return m.group(1).lower()
+    m = _re.search(r"youtube\.com/@([^/?#\s]+)", u, _re.I)
+    if m:
+        return m.group(1).lower()
     return ""
 
 
@@ -339,7 +361,8 @@ def fetch_profiles(campaign: str = "sahagroup") -> dict:
 
 
 _PLATFORM_LABELS = {"tiktok": "TikTok", "facebook": "Facebook", "instagram": "Instagram",
-                    "youtube": "YouTube", "x": "X", "line": "LINE", "other": "อื่นๆ"}
+                    "youtube": "YouTube", "x": "X", "line": "LINE", "website": "Website",
+                    "other": "ลิงก์"}
 
 
 def refresh_report(campaign: str = "pao") -> dict:
@@ -404,7 +427,7 @@ def refresh_report(campaign: str = "pao") -> dict:
                     idx[h] = p
 
         for plat, urls in urls_by_plat.items():
-            if plat in ("line", "other") or not urls:
+            if plat in ("line", "website", "other") or not urls:
                 continue
             try:
                 _scrape(plat, urls)

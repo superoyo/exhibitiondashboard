@@ -251,13 +251,16 @@ function platformOf(u){ u=(u||'').toLowerCase();
   if(u.includes('youtube.com')||u.includes('youtu.be'))return 'youtube';
   if(u.includes('x.com')||u.includes('twitter.com'))return 'x';
   if(u.includes('line.me'))return 'line';
-  return 'other'; }
+  return 'website'; }  // any non-social link = website (advertorial etc.)
+const _FB_SKIP=['story.php','permalink.php','profile.php','watch','reel','share','photo','video','groups','events','media','pages','p'];
+const _IG_SKIP=['p','reel','reels','tv','stories','explore'];
+const _X_SKIP=['i','status','home','search','hashtag','intent'];
 function handleFromUrl(u){
   u=_n(u);
   let m=u.match(/tiktok\.com\/@([^\/\?#\s]+)/i); if(m) return m[1].toLowerCase();
-  m=u.match(/(?:facebook\.com|fb\.com)\/([^\/\?#\s]+)/i); if(m) return m[1].toLowerCase();
-  m=u.match(/instagram\.com\/([^\/\?#\s]+)/i); if(m) return m[1].toLowerCase();
-  m=u.match(/(?:x\.com|twitter\.com)\/([^\/\?#\s]+)/i); if(m) return m[1].toLowerCase();
+  m=u.match(/(?:facebook\.com|fb\.com)\/([^\/\?#\s]+)/i); if(m){const h=m[1].toLowerCase(); if(!_FB_SKIP.includes(h)) return h;}
+  m=u.match(/instagram\.com\/([^\/\?#\s]+)/i); if(m){const h=m[1].toLowerCase(); if(!_IG_SKIP.includes(h)) return h;}
+  m=u.match(/(?:x\.com|twitter\.com)\/([^\/\?#\s]+)/i); if(m){const h=m[1].toLowerCase(); if(!_X_SKIP.includes(h)) return h;}
   m=u.match(/youtube\.com\/@([^\/\?#\s]+)/i); if(m) return m[1].toLowerCase();
   return '';
 }

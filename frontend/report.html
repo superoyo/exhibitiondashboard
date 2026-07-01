@@ -109,7 +109,7 @@ function CATC(c){if(_cc[c])return _cc[c];let h=0;for(const ch of (c||''))h=(h*31
 // Route TikTok images through our cache proxy so expiring CDN URLs stay alive.
 const IMG=u=>u?('/api/img?u='+encodeURIComponent(u)):'';
 // Per-platform badge (records are one row per platform a KOL posted on).
-const PLAT={tiktok:['TikTok','#111'],facebook:['Facebook','#1877f2'],instagram:['Instagram','#c13584'],youtube:['YouTube','#ff0000'],x:['X','#111'],line:['LINE','#06c755'],other:['ลิงก์','#64748b']};
+const PLAT={tiktok:['TikTok','#111'],facebook:['Facebook','#1877f2'],instagram:['Instagram','#c13584'],youtube:['YouTube','#ff0000'],x:['X','#111'],line:['LINE','#06c755'],website:['Website','#0ea5e9'],other:['ลิงก์','#64748b']};
 function platBadge(r){const p=PLAT[r.platform]||PLAT.other;return `<span class="chip" style="background:${p[1]}">${p[0]}</span>`;}
 
 function render(DATA){
