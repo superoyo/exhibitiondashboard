@@ -301,27 +301,48 @@ def get_report_sheet(campaign: str = "pao"):
     return {"url": get_setting(f"sheet_url:{campaign}") or ""}
 
 
+def _to_download_url(u: str) -> str:
+    """Turn a share link from various hosts into a direct file-download URL so
+    the browser can parse it. Supports Google Sheets/Drive, OneDrive/SharePoint,
+    Dropbox; otherwise assumes the URL is already a direct file link."""
+    low = u.lower()
+    m = re.search(r"docs\.google\.com/spreadsheets/d/([a-zA-Z0-9-_]+)", u)
+    if m:
+        return f"https://docs.google.com/spreadsheets/d/{m.group(1)}/export?format=xlsx"
+    m = (re.search(r"drive\.google\.com/(?:file/d/|open\?id=|uc\?id=)([a-zA-Z0-9-_]+)", u)
+         or re.search(r"drive\.google\.com/.*[?&]id=([a-zA-Z0-9-_]+)", u))
+    if m:
+        return f"https://drive.google.com/uc?export=download&id={m.group(1)}"
+    if "dropbox.com" in low:
+        base = u.split("?")[0]
+        return base + "?dl=1"
+    if "sharepoint.com" in low or "1drv.ms" in low or "onedrive.live.com" in low:
+        return u + ("&download=1" if "?" in u else "?download=1")
+    return u  # assume a direct .xlsx/.csv URL
+
+
 @router.get("/sheet/fetch")
 def sheet_fetch(url: str = Query(...)):
-    """Proxy a public Google Sheet's xlsx export so the browser can parse it
-    (client-side fetch is blocked by CORS). Returns the raw .xlsx bytes."""
-    m = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", url)
-    if not m:
-        raise HTTPException(400, "ลิงก์ Google Sheet ไม่ถูกต้อง")
-    export = f"https://docs.google.com/spreadsheets/d/{m.group(1)}/export?format=xlsx"
+    """Proxy a public spreadsheet from an online host (Google Sheet/Drive,
+    OneDrive/SharePoint, Dropbox, or a direct file link) so the browser can
+    parse it (client-side fetch is blocked by CORS). Returns the raw bytes."""
+    dl = _to_download_url(url.strip())
     try:
         import httpx as _httpx
-        r = _httpx.get(export, timeout=30, follow_redirects=True)
+        r = _httpx.get(dl, timeout=45, follow_redirects=True, headers={
+            "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                           "AppleWebKit/537.36 (KHTML, like Gecko) "
+                           "Chrome/125.0.0.0 Safari/537.36")})
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(400, f"ดึง Google Sheet ไม่สำเร็จ: {exc}")
+        raise HTTPException(400, f"ดึงไฟล์ไม่สำเร็จ: {exc}")
     ctype = (r.headers.get("content-type") or "").lower()
-    if r.status_code != 200 or "html" in ctype:
+    if r.status_code != 200:
+        raise HTTPException(400, "ดึงไฟล์ไม่สำเร็จ — ตรวจว่าตั้งแชร์เป็น 'ใครก็ตามที่มีลิงก์ (ผู้อ่าน)'")
+    # An HTML page means we hit a login/preview wall, not the actual file
+    if "html" in ctype and b"<html" in (r.content[:1024].lower()):
         raise HTTPException(
-            400, "ดึง Google Sheet ไม่สำเร็จ — ตั้งค่าแชร์เป็น 'ใครก็ตามที่มีลิงก์ (ผู้อ่าน)' ก่อน")
-    return Response(
-        content=r.content,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
+            400, "ลิงก์นี้ยังเปิด public ไม่ได้ (เจอหน้า login/พรีวิว) — ตั้งแชร์เป็น 'ใครก็ตามที่มีลิงก์ ผู้อ่าน' ก่อน")
+    return Response(content=r.content, media_type="application/octet-stream")
 
 
 # ----------------------------------------------------------------------------

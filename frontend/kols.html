@@ -64,14 +64,15 @@
           <input id="fileInput" type="file" accept=".xlsx,.xls,.csv" class="inp" />
         </div>
         <div>
-          <div class="text-xs font-semibold mb-1">แบบที่ 2 · ลิงก์ Google Sheet (แชร์ผู้อ่าน)</div>
+          <div class="text-xs font-semibold mb-1">แบบที่ 2 · ลิงก์ไฟล์ออนไลน์ (Google Sheet / Drive / OneDrive / Dropbox)</div>
           <div class="flex gap-2">
-            <input id="gsheetUrl" class="inp" placeholder="วางลิงก์ Google Sheet…" />
+            <input id="gsheetUrl" class="inp" placeholder="วางลิงก์ Google Sheet / Drive / OneDrive / Dropbox…" />
             <button id="gsheetBtn" class="btn btn-primary whitespace-nowrap">นำเข้า</button>
           </div>
+          <div class="text-xs mt-1" style="color:var(--muted)">รองรับลิงก์ที่ตั้งแชร์เป็น "ใครก็ตามที่มีลิงก์ (ผู้อ่าน)"</div>
           <div id="sheetLinked" class="text-xs mt-1" style="color:var(--muted);display:none">
-            🔗 เชื่อมกับ Sheet นี้แล้ว —
-            <button id="syncBtn" class="btn" style="padding:.15rem .5rem;font-size:.75rem">🔄 ดึงรายชื่อจาก Sheet ใหม่</button>
+            🔗 เชื่อมกับไฟล์ออนไลน์นี้แล้ว —
+            <button id="syncBtn" class="btn" style="padding:.15rem .5rem;font-size:.75rem">🔄 ดึงรายชื่อจากไฟล์ใหม่</button>
           </div>
         </div>
       </div>
