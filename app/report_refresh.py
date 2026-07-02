@@ -137,7 +137,9 @@ def _needs_resolve(url: Optional[str]) -> bool:
 
 
 def _resolve_link(url: str) -> str:
-    """Follow the redirect of a short/share link to its canonical URL."""
+    """Follow the redirect of a short/share link to its canonical URL. FB share
+    links dead-end at a login wall, so also dig the real post URL out of the
+    page's og:url / canonical meta tags (FB embeds them for link previews)."""
     try:
         import httpx as _httpx
         with _httpx.Client(follow_redirects=True, timeout=12, headers={
@@ -145,7 +147,20 @@ def _resolve_link(url: str) -> str:
                                "AppleWebKit/537.36 (KHTML, like Gecko) "
                                "Chrome/125.0.0.0 Safari/537.36")}) as c:
             r = c.get(url)
-            return str(r.url) or url
+            final = str(r.url) or url
+            low = final.lower()
+            if "/share/" not in low and "login" not in low and "checkpoint" not in low:
+                return final
+            html = r.text or ""
+            for pat in (r'rel=["\']canonical["\'][^>]*href=["\']([^"\']+)["\']',
+                        r'property=["\']og:url["\'][^>]*content=["\']([^"\']+)["\']',
+                        r'"canonical_url":"([^"]+)"'):
+                m = re.search(pat, html, re.I)
+                if m:
+                    cand = m.group(1).replace("\\/", "/").replace("&amp;", "&")
+                    if "facebook.com" in cand and "/share/" not in cand:
+                        return cand
+            return final
     except Exception:  # noqa: BLE001 — keep the original url on any failure
         return url
 
