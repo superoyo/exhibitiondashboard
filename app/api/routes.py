@@ -254,6 +254,7 @@ class BulkKolIn(BaseModel):
 
 class BulkRosterIn(BaseModel):
     kols: list[BulkKolIn]
+    sheet_url: Optional[str] = None  # remember the source Google Sheet for re-sync
 
 
 @router.post("/roster/report/bulk")
@@ -287,7 +288,17 @@ def bulk_replace_report(body: BulkRosterIn, campaign: str = "pao",
             active=True,
         ))
     session.commit()
+    if body.sheet_url is not None:
+        from app.settings import set_setting
+        set_setting(f"sheet_url:{campaign}", body.sheet_url.strip())
     return {"status": "replaced", "count": len(seen)}
+
+
+@router.get("/roster/report/sheet")
+def get_report_sheet(campaign: str = "pao"):
+    """The Google Sheet URL last imported for this campaign (for re-sync)."""
+    from app.settings import get_setting
+    return {"url": get_setting(f"sheet_url:{campaign}") or ""}
 
 
 @router.get("/sheet/fetch")

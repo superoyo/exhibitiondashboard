@@ -69,6 +69,10 @@
             <input id="gsheetUrl" class="inp" placeholder="วางลิงก์ Google Sheet…" />
             <button id="gsheetBtn" class="btn btn-primary whitespace-nowrap">นำเข้า</button>
           </div>
+          <div id="sheetLinked" class="text-xs mt-1" style="color:var(--muted);display:none">
+            🔗 เชื่อมกับ Sheet นี้แล้ว —
+            <button id="syncBtn" class="btn" style="padding:.15rem .5rem;font-size:.75rem">🔄 ดึงรายชื่อจาก Sheet ใหม่</button>
+          </div>
         </div>
       </div>
       <div id="importStatus" class="text-xs mt-2" style="color:var(--muted)"></div>
@@ -235,6 +239,7 @@ async function bootstrap(){
   renderCampaignLabel();
   setNote();
   load();
+  loadSheetLink();
 }
 bootstrap();
 
@@ -317,7 +322,7 @@ function parseWorkbook(wb){
   parseWorkbook._dbg = dbg.join('  ·  ');
   return out;
 }
-async function importKols(kols){
+async function importKols(kols, sheetUrl){
   const st=$("#importStatus");
   if(!kols || !kols.length){
     st.innerHTML='⚠️ ไม่พบรายชื่อ KOL — ต้องมี <b>ลิงก์โพสต์</b> (TikTok/FB/IG/YT/X) หรือ <b>@username</b> อย่างน้อย 1 อย่าง<br>ระบบอ่านเจอ: '+(parseWorkbook._dbg||'(ว่าง)');
@@ -344,11 +349,12 @@ async function importKols(kols){
   if(!confirm(`พบ ${kols.length} KOL · ${totalLinks} ลิงก์ (หลายแพลตฟอร์ม)\nกลุ่ม: ${groups.join(', ')}${extra}\n\n⚠️ การนำเข้าจะ "ลบรายชื่อเดิมทั้งหมด" ของแคมเปญนี้แล้วแทนที่ด้วยรายการใหม่ ยืนยันหรือไม่?`)) return;
   st.textContent='กำลังนำเข้า…';
   try{
+    const body={kols}; if(sheetUrl) body.sheet_url=sheetUrl;
     const r=await fetch('/api/roster/report/bulk?campaign='+encodeURIComponent(campaign),
-      {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kols})});
+      {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const d=await r.json(); if(!r.ok) throw new Error(d.detail||('HTTP '+r.status));
     st.textContent=`✅ นำเข้าแล้ว ${d.count} รายชื่อ (${totalLinks} ลิงก์) — แทนที่ของเดิม · ไปกด Refresh Data เพื่อดึงสถิติ`;
-    toast(`นำเข้า ${d.count} รายชื่อแล้ว`); load();
+    toast(`นำเข้า ${d.count} รายชื่อแล้ว`); if(sheetUrl) loadSheetLink(); load();
   }catch(e){ st.textContent='⚠️ '+e.message; toast(e.message,false); }
 }
 $("#fileInput").onchange=async(e)=>{
@@ -358,15 +364,25 @@ $("#fileInput").onchange=async(e)=>{
   catch(err){ $("#importStatus").textContent='อ่านไฟล์ไม่สำเร็จ: '+err.message; }
   e.target.value='';
 };
-$("#gsheetBtn").onclick=async()=>{
-  const url=$("#gsheetUrl").value.trim(); if(!url){ $("#importStatus").textContent='วางลิงก์ Google Sheet ก่อน'; return; }
+async function importFromSheet(url){
+  if(!url){ $("#importStatus").textContent='วางลิงก์ Google Sheet ก่อน'; return; }
   $("#importStatus").textContent='กำลังดึง Google Sheet…';
   try{
     const resp=await fetch('/api/sheet/fetch?url='+encodeURIComponent(url));
     if(!resp.ok){ const d=await resp.json().catch(()=>({})); throw new Error(d.detail||'ดึงไม่สำเร็จ'); }
-    const wb=XLSX.read(await resp.arrayBuffer(),{type:'array'}); await importKols(parseWorkbook(wb));
+    const wb=XLSX.read(await resp.arrayBuffer(),{type:'array'}); await importKols(parseWorkbook(wb), url);
   }catch(err){ $("#importStatus").textContent='⚠️ '+err.message; }
-};
+}
+$("#gsheetBtn").onclick=()=>importFromSheet($("#gsheetUrl").value.trim());
+$("#syncBtn").onclick=()=>{ if(confirm('ดึงรายชื่อ+ลิงก์จาก Google Sheet ที่เชื่อมไว้ใหม่ (แทนที่รายชื่อเดิมทั้งหมด)?')) importFromSheet($("#gsheetUrl").value.trim()); };
+// remember + show the campaign's linked Google Sheet
+async function loadSheetLink(){
+  try{
+    const d=await (await fetch('/api/roster/report/sheet?campaign='+encodeURIComponent(campaign))).json();
+    if(d.url){ $("#gsheetUrl").value=d.url; $("#sheetLinked").style.display=''; }
+    else { $("#sheetLinked").style.display='none'; }
+  }catch(e){}
+}
 </script>
 </body>
 </html>
