@@ -104,9 +104,11 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 
 <script>
 const fmt=n=>n>=1e6?(n/1e6).toFixed(2)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':(''+n);
-const _cc={Entertain:'#6366f1','Micro Local':'#10b981','คู่รัก':'#ec4899',Fashion:'#6366f1',Food:'#f59e0b',Beauty:'#ec4899','Household Items':'#10b981'};
-const PALETTE=['#6366f1','#10b981','#ec4899','#f59e0b','#06b6d4','#8b5cf6','#ef4444','#14b8a6'];
-function CATC(c){if(_cc[c])return _cc[c];let h=0;for(const ch of (c||''))h=(h*31+ch.charCodeAt(0))>>>0;return PALETTE[h%PALETTE.length];}
+// Distinct color per category — assigned by index (built in render) so no two
+// categories in a chart ever share a colour (old hash approach collided).
+const BIGPALETTE=['#6366f1','#10b981','#ec4899','#f59e0b','#06b6d4','#8b5cf6','#ef4444','#14b8a6','#3b82f6','#84cc16','#f43f5e','#a855f7','#0ea5e9','#eab308','#22c55e','#fb7185'];
+let CAT_COLOR={};
+function CATC(c){return CAT_COLOR[c]||'#94a3b8';}
 // Route TikTok images through our cache proxy so expiring CDN URLs stay alive.
 const IMG=u=>u?('/api/img?u='+encodeURIComponent(u)):'';
 // Per-platform badge (records are one row per platform a KOL posted on).
@@ -131,6 +133,7 @@ function render(DATA){
  document.getElementById('engbreak').innerHTML=[ebk('❤️','Likes','likes'),ebk('💬','Comments','comments'),ebk('🔁','Shares','shares'),ebk('🔖','Saves','saves')].join('');
 
  const cats=[...new Set(E.map(r=>r.category))];
+ CAT_COLOR={}; cats.forEach((c,i)=>{CAT_COLOR[c]=BIGPALETTE[i%BIGPALETTE.length];});
  const GROUPS=['ทั้งหมด',...cats];
  const plats=[...new Set(E.map(r=>r.platform))];
  const PLATS=[{v:'ทั้งหมด',l:'ทั้งหมด'},...plats.map(p=>({v:p,l:(PLAT[p]?PLAT[p][0]:p)}))];
