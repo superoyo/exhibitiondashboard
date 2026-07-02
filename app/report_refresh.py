@@ -487,36 +487,32 @@ def refresh_report(campaign: str = "pao") -> dict:
                         if h:
                             ln["handle"] = h
 
-        # group post URLs by platform (dedup)
-        urls_by_plat: Dict[str, list] = {}
-        for _u, links in roster:
-            for ln in links:
-                bucket = urls_by_plat.setdefault(ln["platform"], [])
-                if ln["url"] not in bucket:
-                    bucket.append(ln["url"])
-
         cost = 0.0
         partial = False
         scrape_errors: List[str] = []
         profile: Dict[str, Dict] = {}          # tiktok/fb: handle -> {followers,nick}
-        index: Dict[str, Dict[str, Dict]] = {}  # platform -> handle -> best post
+        index: Dict[str, Dict[str, Dict]] = {}  # platform -> {"id":{}, "handle":{}}
+        SCRAPEABLE = ("tiktok", "facebook", "instagram", "youtube", "x")
 
-        def _scrape(plat: str, urls: list):
-            nonlocal cost, partial
+        def _scrape_platform(plat: str, urls: list):
+            """Run the right actor + parser → (posts, meta, profile_dict)."""
             if plat == "tiktok":
                 items, meta = run_scrape_posts(urls, tolerate_failure=True)
-                posts, pr = _parse_report_items(items); profile.update(pr)
-            elif plat == "facebook":
+                posts, pr = _parse_report_items(items); return posts, meta, pr
+            if plat == "facebook":
                 items, meta = run_scrape_fb(urls, tolerate_failure=True)
-                posts, pr = _parse_fb_items(items); profile.update(pr)
-            elif plat == "instagram":
-                items, meta = run_scrape_ig(urls, tolerate_failure=True); posts = _parse_ig_items(items)
-            elif plat == "youtube":
-                items, meta = run_scrape_yt(urls, tolerate_failure=True); posts = _parse_yt_items(items)
-            elif plat == "x":
-                items, meta = run_scrape_x(urls, tolerate_failure=True); posts = _parse_x_items(items)
-            else:
-                return  # line / other → link only, no scrape
+                posts, pr = _parse_fb_items(items); return posts, meta, pr
+            if plat == "instagram":
+                items, meta = run_scrape_ig(urls, tolerate_failure=True); return _parse_ig_items(items), meta, {}
+            if plat == "youtube":
+                items, meta = run_scrape_yt(urls, tolerate_failure=True); return _parse_yt_items(items), meta, {}
+            if plat == "x":
+                items, meta = run_scrape_x(urls, tolerate_failure=True); return _parse_x_items(items), meta, {}
+            return [], {}, {}
+
+        def _absorb(plat, posts, meta, pr):
+            nonlocal cost, partial
+            profile.update(pr or {})
             if meta.get("cost_usd"):
                 cost += meta["cost_usd"]
             if meta.get("partial"):
@@ -530,35 +526,91 @@ def refresh_report(campaign: str = "pao") -> dict:
                 if h and (h not in slot["handle"] or p["views"] > slot["handle"][h]["views"]):
                     slot["handle"][h] = p
 
-        def _match(plat_, url_, handle_):
-            slot = index.get(plat_)
-            if not slot:
-                return None
-            pid = post_id_from_url(plat_, url_)
-            if pid and pid in slot["id"]:
-                return slot["id"][pid]
-            return slot["handle"].get((handle_ or "").lower())
+        def _url_key(plat, url):
+            """A reliable match key from the URL (post id, or a handle that is IN
+            the URL). Empty → 'unkeyable' (e.g. a FB share link) → must be
+            scraped on its own and associated directly."""
+            return post_id_from_url(plat, url) or handle_from_url(url)
 
-        for plat, urls in urls_by_plat.items():
-            if plat in ("line", "website", "other") or not urls:
-                continue
+        # split links: keyable (batchable) vs unkeyable (scrape one-by-one)
+        keyable_urls: Dict[str, list] = {}
+        unkeyable = []
+        for uname, links in roster:
+            for ln in links:
+                plat = ln["platform"]
+                if plat not in SCRAPEABLE:
+                    continue
+                if _url_key(plat, ln["url"]):
+                    bucket = keyable_urls.setdefault(plat, [])
+                    if ln["url"] not in bucket:
+                        bucket.append(ln["url"])
+                else:
+                    unkeyable.append((uname, ln))
+
+        for plat, urls in keyable_urls.items():
             try:
-                _scrape(plat, urls)
+                _absorb(plat, *_scrape_platform(plat, urls))
             except (ApifyError, httpx.HTTPError) as exc:
-                log.error("Refresh[%s] %s failed: %s", campaign, plat, exc)
+                log.error("Refresh[%s] %s batch failed: %s", campaign, plat, exc)
                 scrape_errors.append(f"{_PLATFORM_LABELS.get(plat, plat)}: {_redact(exc)}")
 
-        # match each KOL link back to a scraped post by that platform's handle
         rows = []
         refreshed_users = set()
         plat_counts: Dict[str, int] = {}
+
+        def _add_row(uname, plat, post, link_url):
+            rows.append((uname, plat, post, link_url))
+            refreshed_users.add(uname)
+            plat_counts[plat] = plat_counts.get(plat, 0) + 1
+
+        # match keyable links against the batch results (post id, then handle)
         for uname, links in roster:
             for ln in links:
-                post = _match(ln["platform"], ln["url"], ln["handle"])
+                plat = ln["platform"]
+                if plat not in SCRAPEABLE or not _url_key(plat, ln["url"]):
+                    continue
+                slot = index.get(plat) or {"id": {}, "handle": {}}
+                pid = post_id_from_url(plat, ln["url"])
+                post = (slot["id"].get(pid) if pid else None) or slot["handle"].get(handle_from_url(ln["url"]))
                 if post:
-                    rows.append((uname, ln["platform"], post, ln["url"]))
-                    refreshed_users.add(uname)
-                    plat_counts[ln["platform"]] = plat_counts.get(ln["platform"], 0) + 1
+                    _add_row(uname, plat, post, ln["url"])
+
+        # unkeyable links (FB share links, etc.): scrape each on its own and
+        # attach the result straight to that KOL — no shared key needed
+        if unkeyable:
+            st.update(message=f"กำลังดึงลิงก์แบบเจาะจง {len(unkeyable)} รายการ…")
+        for uname, ln in unkeyable[:80]:
+            plat = ln["platform"]
+            try:
+                posts, meta, pr = _scrape_platform(plat, [ln["url"]])
+                profile.update(pr or {})
+                if meta.get("cost_usd"):
+                    cost += meta["cost_usd"]
+                if posts:
+                    best = max(posts, key=lambda p: (p.get("views", 0) + p.get("likes", 0)))
+                    _add_row(uname, plat, best, ln["url"])
+                    canon = best.get("url")  # persist canonical URL → keyable next time
+                    if canon:
+                        ln["url"] = canon
+                        ln["platform"] = platform_of(canon)
+                        h = handle_from_url(canon)
+                        if h:
+                            ln["handle"] = h
+            except (ApifyError, httpx.HTTPError) as exc:
+                log.error("Refresh[%s] %s single failed: %s", campaign, plat, exc)
+                scrape_errors.append(f"{_PLATFORM_LABELS.get(plat, plat)}: {_redact(exc)}")
+
+        # per-KOL followers / nick / avatar aggregated from the matched posts
+        followers_by_user, nick_by_user, avatar_by_user = {}, {}, {}
+        for uname, plat, post, link_url in rows:
+            pr = profile.get((post.get("username") or "").lower())
+            if pr:
+                if pr.get("followers"):
+                    followers_by_user.setdefault(uname, pr["followers"])
+                if pr.get("nick"):
+                    nick_by_user.setdefault(uname, pr["nick"])
+            if post.get("avatar_url"):
+                avatar_by_user.setdefault(uname, post["avatar_url"])
 
         with session_scope() as session:
             if refreshed_users:
@@ -575,20 +627,18 @@ def refresh_report(campaign: str = "pao") -> dict:
                 ))
             kmap = {u: links for u, links in roster}
             for k in session.scalars(select(ReportKol).where(ReportKol.campaign == campaign)).all():
-                links_now = kmap.get(k.username.lower())
+                u = k.username.lower()
+                links_now = kmap.get(u)
                 if links_now:  # persist resolved canonical URLs so next refresh is fast
                     k.links_json = json.dumps(links_now, ensure_ascii=False)
-                for ln in (links_now or []):
-                    pr = profile.get(ln["handle"])
-                    if pr:
-                        if pr.get("followers"):
-                            k.followers = pr["followers"]
-                        if pr.get("nick") and (not k.display or k.display == k.username):
-                            k.display = pr["nick"]
-                    post = _match(ln["platform"], ln["url"], ln["handle"])
-                    if post and post.get("avatar_url"):
-                        k.avatar_url = post["avatar_url"]
+                if followers_by_user.get(u):
+                    k.followers = followers_by_user[u]
+                if nick_by_user.get(u) and (not k.display or k.display == k.username):
+                    k.display = nick_by_user[u]
+                if avatar_by_user.get(u):
+                    k.avatar_url = avatar_by_user[u]
 
+        scrape_errors = list(dict.fromkeys(scrape_errors))  # dedup repeats
         n_posts = len(rows)
         if scrape_errors and n_posts == 0:
             joined = " · ".join(scrape_errors)
