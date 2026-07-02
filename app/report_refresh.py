@@ -175,12 +175,33 @@ def kol_links(k) -> list:
     return []
 
 
+def _first_num(it: dict, keys) -> int:
+    """First non-zero numeric value across candidate field names. Sums a dict
+    value (e.g. a reactions breakdown {like:.., love:..}). Robust to the many
+    field names different Apify actors use for the same metric."""
+    for k in keys:
+        v = it.get(k)
+        if isinstance(v, dict):
+            s = sum(_to_int(x) for x in v.values())
+            if s:
+                return s
+        elif v not in (None, "", 0, "0"):
+            n = _to_int(v)
+            if n:
+                return n
+    return 0
+
+
+_IG_VIEWS = ["videoViewCount", "videoPlayCount", "viewCount", "playCount", "igPlayCount", "viewsCount", "views"]
+_IG_LIKES = ["likesCount", "likeCount", "likes"]
+_IG_CMTS = ["commentsCount", "commentCount", "comments"]
+
+
 def _parse_ig_items(items):
     posts = []
     for it in items:
         handle = (it.get("ownerUsername") or "").strip().lower()
-        # shortCode is what appears in the post URL — use it as the match key
-        vid = str(it.get("shortCode") or it.get("id") or "")
+        vid = str(it.get("shortCode") or it.get("id") or "")  # shortCode = URL key
         if not vid:
             continue
         sc = it.get("shortCode")
@@ -189,11 +210,16 @@ def _parse_ig_items(items):
             "url": it.get("url") or (f"https://www.instagram.com/p/{sc}/" if sc else None),
             "cover_url": it.get("displayUrl") or it.get("thumbnailUrl"), "avatar_url": None,
             "posted_at": _parse_posted_at(it.get("timestamp")),
-            "views": _to_int(it.get("videoViewCount") or it.get("videoPlayCount") or 0),
-            "likes": _to_int(it.get("likesCount")), "comments": _to_int(it.get("commentsCount")),
-            "shares": 0, "saves": 0,
+            "views": _first_num(it, _IG_VIEWS), "likes": _first_num(it, _IG_LIKES),
+            "comments": _first_num(it, _IG_CMTS), "shares": 0,
+            "saves": _first_num(it, ["savesCount", "saveCount"]),
         })
     return posts
+
+
+_YT_VIEWS = ["viewCount", "views", "numberOfViews", "viewCountInt"]
+_YT_LIKES = ["likes", "likeCount", "numberOfLikes"]
+_YT_CMTS = ["commentsCount", "commentCount", "numberOfComments"]
 
 
 def _parse_yt_items(items):
@@ -205,10 +231,10 @@ def _parse_yt_items(items):
             continue
         posts.append({
             "username": handle, "video_id": vid, "url": it.get("url"),
-            "cover_url": it.get("thumbnailUrl"), "avatar_url": None,
+            "cover_url": it.get("thumbnailUrl") or it.get("thumbnail"), "avatar_url": None,
             "posted_at": _parse_posted_at(it.get("date") or it.get("uploadDate")),
-            "views": _to_int(it.get("viewCount")), "likes": _to_int(it.get("likes")),
-            "comments": _to_int(it.get("commentsCount")), "shares": 0, "saves": 0,
+            "views": _first_num(it, _YT_VIEWS), "likes": _first_num(it, _YT_LIKES),
+            "comments": _first_num(it, _YT_CMTS), "shares": 0, "saves": 0,
         })
     return posts
 
@@ -226,35 +252,52 @@ def _parse_x_items(items):
             "url": it.get("url") or it.get("twitterUrl"),
             "cover_url": None, "avatar_url": au.get("profilePicture"),
             "posted_at": _parse_posted_at(it.get("createdAt")),
-            "views": _to_int(it.get("viewCount")), "likes": _to_int(it.get("likeCount")),
-            "comments": _to_int(it.get("replyCount")), "shares": _to_int(it.get("retweetCount")),
-            "saves": _to_int(it.get("bookmarkCount")),
+            "views": _first_num(it, ["viewCount", "views", "viewsCount"]),
+            "likes": _first_num(it, ["likeCount", "favoriteCount", "likes"]),
+            "comments": _first_num(it, ["replyCount", "replies", "commentCount"]),
+            "shares": _first_num(it, ["retweetCount", "retweets", "shareCount", "quoteCount"]),
+            "saves": _first_num(it, ["bookmarkCount", "bookmarks"]),
         })
     return posts
 
 
+# Facebook field names vary a lot across actor versions — try every plausible one.
+_FB_VIEWS = ["viewsCount", "videoViewCount", "viewCount", "videoViewsCount", "playCount",
+             "videoPlayCount", "views", "videoViews", "videoView"]
+_FB_LIKES = ["likes", "likesCount", "reactionsCount", "reactionCount", "reactions",
+             "reactionLikeCount", "totalReactionsCount"]
+_FB_CMTS = ["comments", "commentsCount", "commentCount"]
+_FB_SHARES = ["shares", "sharesCount", "shareCount", "reshareCount"]
+
+
 def _parse_fb_items(items):
-    """Parse Facebook actor items → (posts, profile). FB has no views/saves;
-    engagement = likes + comments + shares. Matched to the roster by pageName."""
+    """Parse Facebook actor items → (posts, profile). Pulls every metric the
+    actor exposes (views only for videos; reactions/comments/shares otherwise).
+    Matched to the roster by pageName / post id."""
     posts, profile = [], {}
     for it in items:
-        page = (it.get("pageName") or "").strip().lower()
+        page = (it.get("pageName") or it.get("pageUsername") or "").strip().lower()
         if not page:
             continue
         user = it.get("user") or {}
-        profile[page] = {"followers": 0, "nick": user.get("name") or it.get("pageName")}
+        media = it.get("media") or []
+        cover = (it.get("thumbnailUrl") or it.get("previewImage")
+                 or (media[0].get("thumbnail") if media and isinstance(media[0], dict) else None)
+                 or user.get("profilePic"))
+        profile[page] = {"followers": _first_num(it, ["pageLikes", "pageFollowers", "followers"]),
+                         "nick": user.get("name") or it.get("pageName")}
         pid = str(it.get("postId") or "")
         posts.append({
             "username": page,
             "video_id": ("fb_" + pid)[:64] if pid else ("fb_" + page)[:64],
             "url": it.get("facebookUrl") or it.get("url"),
-            "cover_url": user.get("profilePic"),
+            "cover_url": cover,
             "avatar_url": user.get("profilePic"),
-            "posted_at": _parse_posted_at(it.get("time")),
-            "views": _to_int(it.get("viewsCount") or it.get("videoViewCount") or 0),
-            "likes": _to_int(it.get("likes")),
-            "comments": _to_int(it.get("comments")),
-            "shares": _to_int(it.get("shares")),
+            "posted_at": _parse_posted_at(it.get("time") or it.get("timestamp")),
+            "views": _first_num(it, _FB_VIEWS),
+            "likes": _first_num(it, _FB_LIKES),
+            "comments": _first_num(it, _FB_CMTS),
+            "shares": _first_num(it, _FB_SHARES),
             "saves": 0,
         })
     return posts, profile

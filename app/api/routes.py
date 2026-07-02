@@ -367,6 +367,31 @@ def resolve_handles(body: ResolveIn):
     return {"handles": out}
 
 
+@router.get("/scrape/inspect")
+def scrape_inspect(url: str = Query(...), platform: str = ""):
+    """Debug: run the matching actor on ONE post URL and return the raw item(s)
+    so its exact field names can be verified. Costs one small Apify scrape."""
+    from app import apify_client as ac
+    from app.report_refresh import _needs_resolve, _resolve_link, platform_of
+    if _needs_resolve(url):
+        url = _resolve_link(url)
+    plat = platform or platform_of(url)
+    fn = {"tiktok": ac.run_scrape_posts, "facebook": ac.run_scrape_fb,
+          "instagram": ac.run_scrape_ig, "youtube": ac.run_scrape_yt,
+          "x": ac.run_scrape_x}.get(plat)
+    if not fn:
+        raise HTTPException(400, f"platform '{plat}' ไม่รองรับการดึง stat")
+    try:
+        items, meta = fn([url], tolerate_failure=True)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, f"scrape failed: {exc}")
+    return {
+        "resolved_url": url, "platform": plat,
+        "meta": {k: meta.get(k) for k in ("status", "partial", "cost_usd")},
+        "count": len(items), "items": items[:2],
+    }
+
+
 # ----------------------------------------------------------------------------
 # Report data + Refresh Data button (scrape 7-day window for active report KOLs)
 # ----------------------------------------------------------------------------
