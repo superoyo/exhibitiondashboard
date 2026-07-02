@@ -3,6 +3,8 @@
 <title>PAO Super Perfume 2026 — Campaign Report</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="/static/import-sync.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#f4f6fa;--card:#fff;--line:#e5e7eb;--muted:#64748b;--text:#0f172a}
@@ -311,9 +313,19 @@ async function poll(){
  }catch(e){ btn.disabled=false; btn.innerHTML='🔄 Refresh Data'; }
 }
 btn.onclick=async()=>{
- if(!confirm('อัปเดตข้อมูลแคมเปญนี้ (เฉพาะ KOL ที่ติ๊ก active):\n• ดึงสถิติล่าสุดจากลิงก์โพสต์\n• อัปเดตรูปโปรไฟล์ + followers ของ KOL แต่ละคน\n(ใช้เครดิต Apify · อาจใช้เวลา ~1-2 นาที)')) return;
+ if(!confirm('อัปเดตข้อมูลแคมเปญนี้ (เฉพาะ KOL ที่ติ๊ก active):\n• ถ้าผูกไฟล์ออนไลน์ไว้ จะดึงรายชื่อ+ลิงก์ล่าสุดจากไฟล์ก่อน\n• แล้วดึงสถิติ + รูปโปรไฟล์จากทุกลิงก์\n(ใช้เครดิต Apify · อาจใช้เวลา ~1-2 นาที)')) return;
  btn.disabled=true; btn.innerHTML='<span class="spin"></span>เริ่ม…';
  try{
+  // If this campaign is linked to an online file, re-sync the roster from it
+  // first so edited/added links in the source file are picked up.
+  try{
+   const s=await (await fetch(`/api/roster/report/sheet?campaign=${CAMPAIGN}`)).json();
+   if(s.url && window.ImportSync){
+     setInfo('🔄 กำลังซิงก์รายชื่อจากไฟล์ต้นทาง…');
+     const n=await ImportSync.syncRosterFromUrl(CAMPAIGN, s.url, setInfo);
+     setInfo(`ซิงก์รายชื่อจากไฟล์แล้ว ${n} ราย · กำลังดึงสถิติ…`);
+   }
+  }catch(e){ setInfo('⚠️ ซิงก์จากไฟล์ไม่สำเร็จ ('+e.message+') — ดึงสถิติจากลิงก์เดิมต่อ'); }
   const r=await fetch(`/api/report/refresh?campaign=${CAMPAIGN}`,{method:'POST'});
   if(r.status===409){ alert('กำลังดึงข้อมูลอยู่แล้ว'); }
   poll();

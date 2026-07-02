@@ -48,7 +48,7 @@ def _seed_on_startup() -> None:
 @app.get("/api/version")
 def version():
     """Build marker — lets us confirm which commit Railway is actually running."""
-    return {"build": "campaign-hub-v46"}
+    return {"build": "campaign-hub-v47"}
 
 
 FRONTEND_DIR = pathlib.Path(__file__).resolve().parent.parent / "frontend"

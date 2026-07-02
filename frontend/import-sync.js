@@ -1,0 +1,99 @@
+// Shared roster-import helpers (used by the Edit KOL page and the report page's
+// auto-sync-on-refresh). Requires SheetJS (XLSX) to be loaded on the page.
+window.ImportSync = (function () {
+  const _n = s => (s == null ? '' : s).toString().trim();
+  const _low = s => _n(s).toLowerCase();
+  function pickCol(headers, keys) {
+    for (let i = 0; i < headers.length; i++) { const h = headers[i]; if (h && keys.some(k => h.includes(k))) return i; }
+    return -1;
+  }
+  function looksUrl(s) { return /https?:\/\/|www\.|tiktok\.com|facebook\.com|fb\.watch|instagram\.com|youtu/i.test(_n(s)); }
+  function platformOf(u) {
+    u = (u || '').toLowerCase();
+    if (u.includes('tiktok.com')) return 'tiktok';
+    if (u.includes('facebook.com') || u.includes('fb.watch') || u.includes('fb.com')) return 'facebook';
+    if (u.includes('instagram.com')) return 'instagram';
+    if (u.includes('youtube.com') || u.includes('youtu.be')) return 'youtube';
+    if (u.includes('x.com') || u.includes('twitter.com')) return 'x';
+    if (u.includes('line.me')) return 'line';
+    return 'website';
+  }
+  const _FB_SKIP = ['story.php', 'permalink.php', 'profile.php', 'watch', 'reel', 'share', 'photo', 'video', 'groups', 'events', 'media', 'pages', 'p'];
+  const _IG_SKIP = ['p', 'reel', 'reels', 'tv', 'stories', 'explore'];
+  const _X_SKIP = ['i', 'status', 'home', 'search', 'hashtag', 'intent'];
+  function handleFromUrl(u) {
+    u = _n(u);
+    let m = u.match(/tiktok\.com\/@([^\/\?#\s]+)/i); if (m) return m[1].toLowerCase();
+    m = u.match(/(?:facebook\.com|fb\.com)\/([^\/\?#\s]+)/i); if (m) { const h = m[1].toLowerCase(); if (!_FB_SKIP.includes(h)) return h; }
+    m = u.match(/instagram\.com\/([^\/\?#\s]+)/i); if (m) { const h = m[1].toLowerCase(); if (!_IG_SKIP.includes(h)) return h; }
+    m = u.match(/(?:x\.com|twitter\.com)\/([^\/\?#\s]+)/i); if (m) { const h = m[1].toLowerCase(); if (!_X_SKIP.includes(h)) return h; }
+    m = u.match(/youtube\.com\/@([^\/\?#\s]+)/i); if (m) return m[1].toLowerCase();
+    return '';
+  }
+  function urlsIn(text) { return (text.match(/https?:\/\/[^\s)]+/gi) || []).map(u => u.replace(/[.,;]+$/, '')); }
+
+  function parseWorkbook(wb) {
+    const out = []; const multi = wb.SheetNames.length > 1;
+    wb.SheetNames.forEach(sheetName => {
+      const ws = wb.Sheets[sheetName]; if (!ws) return;
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false, defval: '' });
+      if (!rows.length) return;
+      let hi = 0; for (let i = 0; i < rows.length; i++) { if (rows[i].filter(c => _n(c)).length >= 1) { hi = i; break; } }
+      const headers = rows[hi].map(_low);
+      let cU = pickCol(headers, ['username', 'handle', 'ผู้ใช้', 'บัญชี', 'user', 'ไอดี', 'ชื่อบัญชี', 'account', 'ช่อง', 'channel', 'kol', 'ชื่อ', 'name']);
+      const cGrp = pickCol(headers, ['หมวด', 'ประเภท', 'group', 'category', 'type', 'tier', 'กลุ่ม']);
+      const cSub = pickCol(headers, ['ย่อย', 'subgroup', 'sub']);
+      const cFol = pickCol(headers, ['follow', 'ติดตาม', 'fan']);
+      const headerIsData = rows[hi].some(c => looksUrl(c) || /^@[\w.]+$/.test(_n(c)));
+      let section = '';
+      for (let i = (headerIsData ? hi : hi + 1); i < rows.length; i++) {
+        const row = rows[i]; const filled = row.filter(c => _n(c)); if (!filled.length) continue;
+        const urls = [...new Set(urlsIn(row.map(_n).join('  ')))];
+        if (!urls.length && !multi && cGrp < 0 && filled.length <= 2) {
+          const t = filled.map(_n).find(v => v && !/^\d+$/.test(v) && !/^#/.test(v));
+          if (t) section = t;
+          continue;
+        }
+        let username = cU >= 0 ? _n(row[cU]).replace(/^@/, '') : '';
+        if (/https?:|\//.test(username)) username = handleFromUrl(username);
+        if (!username) { const at = filled.map(_n).find(v => /^@[\w.]+$/.test(v)); if (at) username = at.slice(1); }
+        if (!username && urls.length) username = handleFromUrl(urls.find(u => platformOf(u) === 'tiktok') || urls[0]);
+        if (!username && !urls.length) continue;
+        const links = urls.map(u => ({ platform: platformOf(u), url: u, handle: handleFromUrl(u) }));
+        const colGrp = cGrp >= 0 ? _n(row[cGrp]) : '';
+        let group, subgroup = cSub >= 0 ? _n(row[cSub]) : '';
+        if (colGrp) group = colGrp; else if (multi) group = _n(sheetName) || 'KOL'; else group = section || 'KOL';
+        let followers = 0; if (cFol >= 0) { const fv = parseInt(_n(row[cFol]).replace(/[^0-9]/g, '')); if (!isNaN(fv)) followers = fv; }
+        out.push({ username: (username || '').toLowerCase(), display: (cU >= 0 ? _n(row[cU]) : '') || username, group, subgroup, links, followers });
+      }
+    });
+    return out;
+  }
+
+  // Fetch the online file, parse it, resolve missing handles, and REPLACE the
+  // campaign roster. Returns the number of KOLs imported.
+  async function syncRosterFromUrl(campaign, url, onStatus) {
+    onStatus && onStatus('กำลังดึงไฟล์ต้นทาง…');
+    const resp = await fetch('/api/sheet/fetch?url=' + encodeURIComponent(url));
+    if (!resp.ok) { const d = await resp.json().catch(() => ({})); throw new Error(d.detail || 'ดึงไฟล์ไม่สำเร็จ'); }
+    const wb = XLSX.read(await resp.arrayBuffer(), { type: 'array' });
+    let kols = parseWorkbook(wb);
+    const need = [...new Set(kols.flatMap(k => (k.links || []).filter(l => !l.handle).map(l => l.url)))];
+    if (need.length) {
+      onStatus && onStatus('กำลังดึง @username จากลิงก์…');
+      try {
+        const map = (await (await fetch('/api/resolve-handles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ urls: need }) })).json()).handles || {};
+        kols.forEach(k => (k.links || []).forEach(l => { if (!l.handle && map[l.url]) l.handle = map[l.url]; }));
+      } catch (e) { /* leave unresolved */ }
+    }
+    kols.forEach(k => { if (!k.username) { const l = (k.links || []).find(x => x.handle); if (l) k.username = l.handle; } if (!k.display) k.display = k.username; });
+    kols = kols.filter(k => k.username);
+    if (!kols.length) throw new Error('ไม่พบรายชื่อในไฟล์');
+    onStatus && onStatus('กำลังอัปเดตรายชื่อ…');
+    const r = await fetch('/api/roster/report/bulk?campaign=' + encodeURIComponent(campaign), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kols, sheet_url: url }) });
+    const d = await r.json(); if (!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
+    return d.count;
+  }
+
+  return { syncRosterFromUrl, parseWorkbook, platformOf, handleFromUrl };
+})();
