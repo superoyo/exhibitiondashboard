@@ -77,7 +77,8 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 <h3 class="font-semibold text-lg">🏆 Top 3 KOL</h3>
 <div id="tpMetrics" class="flex flex-wrap gap-2"></div>
 </div>
-<div id="tpGroups" class="flex flex-wrap gap-2 mb-4"></div>
+<div id="tpGroups" class="flex flex-wrap gap-2 mb-2 items-center"></div>
+<div id="tpPlats" class="flex flex-wrap gap-2 mb-4 items-center"></div>
 <div id="podium" class="grid grid-cols-1 sm:grid-cols-3 gap-3"></div>
 </section>
 
@@ -131,11 +132,15 @@ function render(DATA){
 
  const cats=[...new Set(E.map(r=>r.category))];
  const GROUPS=['ทั้งหมด',...cats];
+ const plats=[...new Set(E.map(r=>r.platform))];
+ const PLATS=[{v:'ทั้งหมด',l:'ทั้งหมด'},...plats.map(p=>({v:p,l:(PLAT[p]?PLAT[p][0]:p)}))];
  const METRICS=[['views','Views',fmt],['engagement','Engagement',fmt],['er','ER%',v=>v.toFixed(2)+'%'],['likes','Likes',fmt],['saves','Saves',fmt]];
- let tpGroup='ทั้งหมด', tpMetric='views';
- function segs(id,items,cur,cb){const el=document.getElementById(id);el.innerHTML=items.map(it=>`<button class="seg" data-v="${it.v}" style="${it.v===cur?'background:#0f172a;color:#fff;border-color:#0f172a':''}">${it.l}</button>`).join('');el.querySelectorAll('button').forEach(b=>b.onclick=()=>cb(b.dataset.v));}
+ let tpGroup='ทั้งหมด', tpMetric='views', tpPlat='ทั้งหมด';
+ function segs(id,items,cur,cb,label){const el=document.getElementById(id);el.innerHTML=(label?`<span class="text-xs font-semibold mr-1" style="color:var(--muted)">${label}</span>`:'')+items.map(it=>`<button class="seg" data-v="${it.v}" style="${it.v===cur?'background:#0f172a;color:#fff;border-color:#0f172a':''}">${it.l}</button>`).join('');el.querySelectorAll('button').forEach(b=>b.onclick=()=>cb(b.dataset.v));}
  function podium(){
-  const pool=tpGroup==='ทั้งหมด'?E:E.filter(r=>r.category===tpGroup);
+  let pool=E;
+  if(tpGroup!=='ทั้งหมด') pool=pool.filter(r=>r.category===tpGroup);
+  if(tpPlat!=='ทั้งหมด') pool=pool.filter(r=>r.platform===tpPlat);
   const m=METRICS.find(x=>x[0]===tpMetric);
   const top=[...pool].sort((a,b)=>b[tpMetric]-a[tpMetric]).slice(0,3);
   const medal=['🥇','🥈','🥉'];
@@ -166,11 +171,17 @@ function render(DATA){
     ${r.url?`<a href="${r.url}" target="_blank" rel="noopener" class="post-link">🔗 ดูโพสต์ต้นทาง ↗</a>`:`<span class="post-link disabled">— ยังไม่มีลิงก์โพสต์ —</span>`}
    </div>
   </div>`).join('');
-  if(top.length===0){cards='<div class="text-sm" style="color:var(--muted)">ไม่มีข้อมูลในกลุ่มนี้</div>';}
-  else if(pool.length<3){cards+=`<div class="card p-4 flex flex-col items-center justify-center text-center" style="color:var(--muted);border-style:dashed"><div class="text-2xl mb-1">ℹ️</div><div class="text-sm">กลุ่ม "<b>${tpGroup}</b>" มี KOL แค่ <b>${pool.length}</b> ราย</div></div>`;}
+  const fltLabel=[tpGroup!=='ทั้งหมด'?tpGroup:null, tpPlat!=='ทั้งหมด'?(PLAT[tpPlat]?PLAT[tpPlat][0]:tpPlat):null].filter(Boolean).join(' + ')||'ทั้งหมด';
+  if(top.length===0){cards=`<div class="text-sm col-span-full" style="color:var(--muted)">ไม่มีโพสต์ในตัวกรอง "<b>${fltLabel}</b>"</div>`;}
+  else if(pool.length<3){cards+=`<div class="card p-4 flex flex-col items-center justify-center text-center" style="color:var(--muted);border-style:dashed"><div class="text-2xl mb-1">ℹ️</div><div class="text-sm">ตัวกรอง "<b>${fltLabel}</b>" มีแค่ <b>${pool.length}</b> โพสต์</div></div>`;}
   document.getElementById('podium').innerHTML=cards;
  }
- function drawTP(){segs('tpGroups',GROUPS.map(g=>({v:g,l:g})),tpGroup,v=>{tpGroup=v;drawTP();});segs('tpMetrics',METRICS.map(m=>({v:m[0],l:m[1]})),tpMetric,v=>{tpMetric=v;drawTP();});podium();}
+ function drawTP(){
+  segs('tpGroups',GROUPS.map(g=>({v:g,l:g})),tpGroup,v=>{tpGroup=v;drawTP();},'หมวด:');
+  segs('tpPlats',PLATS,tpPlat,v=>{tpPlat=v;drawTP();},'แพลตฟอร์ม:');
+  segs('tpMetrics',METRICS.map(m=>({v:m[0],l:m[1]})),tpMetric,v=>{tpMetric=v;drawTP();});
+  podium();
+ }
  drawTP();
 
  const AX={axisLine:{lineStyle:{color:'#cbd5e1'}},axisLabel:{color:'#64748b'},splitLine:{lineStyle:{color:'#eef2f7'}}};
