@@ -304,7 +304,9 @@ def _parse_fb_items(items):
         pid = str(it.get("postId") or "")
         posts.append({
             "username": page,
-            "video_id": ("fb_" + pid)[:64] if pid else ("fb_" + page)[:64],
+            # raw post id so it matches post_id_from_url('facebook', url) in the
+            # index (falls back to page name, else a constant)
+            "video_id": pid or page or "fb",
             "url": it.get("facebookUrl") or it.get("url"),
             "cover_url": cover,
             "avatar_url": user.get("profilePic"),
@@ -547,20 +549,15 @@ def refresh_report(campaign: str = "pao") -> dict:
             scraped on its own and associated directly."""
             return post_id_from_url(plat, url) or handle_from_url(url)
 
-        # split links: keyable (batchable) vs unkeyable (scrape one-by-one)
+        # batch-scrape the keyable links per platform (cheap, matched by id/handle)
         keyable_urls: Dict[str, list] = {}
-        unkeyable = []
         for uname, links in roster:
             for ln in links:
                 plat = ln["platform"]
-                if plat not in SCRAPEABLE:
-                    continue
-                if _url_key(plat, ln["url"]):
+                if plat in SCRAPEABLE and _url_key(plat, ln["url"]):
                     bucket = keyable_urls.setdefault(plat, [])
                     if ln["url"] not in bucket:
                         bucket.append(ln["url"])
-                else:
-                    unkeyable.append((uname, ln))
 
         for plat, urls in keyable_urls.items():
             try:
@@ -578,23 +575,25 @@ def refresh_report(campaign: str = "pao") -> dict:
             refreshed_users.add(uname)
             plat_counts[plat] = plat_counts.get(plat, 0) + 1
 
-        # match keyable links against the batch results (post id, then handle)
+        # match every scrapeable link against the batch results; anything still
+        # unmatched (FB share links, page-name mismatch, ...) is scraped alone
+        need_single = []
         for uname, links in roster:
             for ln in links:
                 plat = ln["platform"]
-                if plat not in SCRAPEABLE or not _url_key(plat, ln["url"]):
+                if plat not in SCRAPEABLE:
                     continue
                 slot = index.get(plat) or {"id": {}, "handle": {}}
                 pid = post_id_from_url(plat, ln["url"])
                 post = (slot["id"].get(pid) if pid else None) or slot["handle"].get(handle_from_url(ln["url"]))
                 if post:
                     _add_row(uname, plat, post, ln["url"])
+                else:
+                    need_single.append((uname, ln))
 
-        # unkeyable links (FB share links, etc.): scrape each on its own and
-        # attach the result straight to that KOL — no shared key needed
-        if unkeyable:
-            st.update(message=f"กำลังดึงลิงก์แบบเจาะจง {len(unkeyable)} รายการ…")
-        for uname, ln in unkeyable[:80]:
+        if need_single:
+            st.update(message=f"กำลังดึงลิงก์แบบเจาะจง {len(need_single)} รายการ…")
+        for uname, ln in need_single[:100]:
             plat = ln["platform"]
             try:
                 posts, meta, pr = _scrape_platform(plat, [ln["url"]])
