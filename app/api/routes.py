@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
 from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 import json
@@ -715,6 +715,43 @@ def delete_campaign(key: str, session: Session = Depends(db_dependency)):
     c.active = False
     session.commit()
     return {"status": "archived", "key": key}
+
+
+class CampaignRename(BaseModel):
+    new_key: str
+
+
+@router.post("/campaigns/{key}/rename")
+def rename_campaign(key: str, body: CampaignRename, session: Session = Depends(db_dependency)):
+    """Change a campaign's URL key everywhere (campaigns, report_kols,
+    report_posts, and its settings). The report URL becomes /c/<new_key>."""
+    import re as _re
+    from app.models import AppSetting
+    c = session.get(Campaign, key)
+    if not c:
+        raise HTTPException(404, f"ไม่พบแคมเปญ '{key}'")
+    nk = _re.sub(r"[^a-z0-9-]+", "-", (body.new_key or "").strip().lower()).strip("-")[:32]
+    if not nk or len(nk) < 2:
+        raise HTTPException(400, "รหัสต้องเป็น a-z 0-9 หรือ - เท่านั้น (2–32 ตัวอักษร)")
+    if nk == key:
+        return {"status": "unchanged", "key": key}
+    if session.get(Campaign, nk):
+        raise HTTPException(409, f"มีรหัส '{nk}' อยู่แล้ว")
+
+    session.execute(update(Campaign).where(Campaign.key == key).values(key=nk))
+    session.execute(update(ReportKol).where(ReportKol.campaign == key).values(campaign=nk))
+    session.execute(update(ReportPost).where(ReportPost.campaign == key).values(campaign=nk))
+    for pref in ("refresh_cost:", "sheet_url:"):
+        old_row = session.get(AppSetting, pref + key)
+        if old_row is not None:
+            new_row = session.get(AppSetting, pref + nk)
+            if new_row:
+                new_row.value = old_row.value
+            else:
+                session.add(AppSetting(key=pref + nk, value=old_row.value))
+            session.delete(old_row)
+    session.commit()
+    return {"status": "renamed", "key": nk}
 
 
 # ----------------------------------------------------------------------------

@@ -91,6 +91,11 @@ a{color:inherit;text-decoration:none}
         <span class="text-xs font-semibold" style="color:var(--muted)">คำอธิบาย (บอกว่าเป็นแคมเปญอะไร)</span>
         <input id="fSub" class="inp mt-1" placeholder="เช่น Mega KOL + Micro-Nano KOL · TikTok/FB">
       </label>
+      <label id="fKeyWrap" class="block" style="display:none">
+        <span class="text-xs font-semibold" style="color:var(--muted)">รหัส URL (ลิงก์รายงานคือ …/c/&lt;รหัส&gt;)</span>
+        <input id="fKey" class="inp mt-1" placeholder="เช่น 00001">
+        <span class="text-xs" style="color:var(--muted)">a-z 0-9 หรือ - · ⚠️ เปลี่ยนแล้วลิงก์เดิมของแคมเปญนี้จะเปลี่ยนตาม</span>
+      </label>
       <p id="createHint" class="text-xs" style="color:var(--muted)">รหัสแคมเปญ (เช่น 00001) ระบบจะสร้างให้อัตโนมัติตามลำดับ</p>
       <div class="flex items-center justify-end gap-2 mt-2">
         <button id="cancelBtn" class="btn">ยกเลิก</button>
@@ -224,14 +229,17 @@ function openModal(){
   document.getElementById('modalTitle').textContent='🆕 สร้างแคมเปญใหม่';
   document.getElementById('createBtn').textContent='สร้าง';
   document.getElementById('createHint').style.display='';
+  document.getElementById('fKeyWrap').style.display='none';
   document.getElementById('modalBack').style.display='flex';
   document.getElementById('fName').focus();
 }
 function openEditModal(c){
   editingKey=c.key;
-  document.getElementById('modalTitle').textContent='✏️ แก้ไขแคมเปญ ('+c.key+')';
+  document.getElementById('modalTitle').textContent='✏️ แก้ไขแคมเปญ';
   document.getElementById('createBtn').textContent='บันทึก';
   document.getElementById('createHint').style.display='none';
+  document.getElementById('fKeyWrap').style.display='';
+  document.getElementById('fKey').value=c.key;
   document.getElementById('fName').value=c.name||'';
   document.getElementById('fSub').value=c.subtitle||'';
   pickedEmoji=c.emoji||'📊'; renderEmojiPick();
@@ -239,7 +247,7 @@ function openEditModal(c){
   document.getElementById('modalBack').style.display='flex';
   document.getElementById('fName').focus();
 }
-function closeModal(){editingKey=null;document.getElementById('modalBack').style.display='none';['fName','fSub'].forEach(id=>document.getElementById(id).value='');pickedEmoji='📊';renderEmojiPick();document.getElementById('modalErr').textContent='';}
+function closeModal(){editingKey=null;document.getElementById('modalBack').style.display='none';['fName','fSub','fKey'].forEach(id=>document.getElementById(id).value='');pickedEmoji='📊';renderEmojiPick();document.getElementById('modalErr').textContent='';}
 document.getElementById('newBtn').onclick=openModal;
 document.getElementById('closeBtn').onclick=closeModal;
 document.getElementById('cancelBtn').onclick=closeModal;
@@ -257,8 +265,16 @@ document.getElementById('createBtn').onclick=async()=>{
   cb.disabled=true;
   try{
     if(editingKey){
-      // ---- edit mode: PATCH name/emoji/subtitle, stay on Home ----
-      const r=await fetch('/api/campaigns/'+encodeURIComponent(editingKey),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      // ---- edit mode: rename key first (if changed), then PATCH the rest ----
+      let targetKey=editingKey;
+      const newKey=(document.getElementById('fKey').value||'').trim().toLowerCase();
+      if(newKey && newKey!==editingKey){
+        const rr=await fetch('/api/campaigns/'+encodeURIComponent(editingKey)+'/rename',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({new_key:newKey})});
+        const rd=await rr.json();
+        if(!rr.ok){document.getElementById('modalErr').textContent=rd.detail||('HTTP '+rr.status);cb.disabled=false;return;}
+        targetKey=rd.key;
+      }
+      const r=await fetch('/api/campaigns/'+encodeURIComponent(targetKey),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       const d=await r.json();
       if(!r.ok){document.getElementById('modalErr').textContent=d.detail||('HTTP '+r.status);cb.disabled=false;return;}
       toast('บันทึกแคมเปญ "'+d.name+'" แล้ว');

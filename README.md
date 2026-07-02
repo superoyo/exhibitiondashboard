@@ -1,4 +1,11 @@
-# KOL TikTok Tracker — Sahagroup Fair 2026
+# Influencer Real Time Report
+
+> Multi-campaign KOL/Influencer report platform · **Live:** `https://fefl-kol-report.up.railway.app`
+> (Railway subdomain — set under Settings → Networking; not in code)
+
+---
+
+## เดิม: KOL TikTok Tracker — Sahagroup Fair 2026
 
 เว็บ dashboard ที่ **ดึงข้อมูล TikTok ของ KOL อัตโนมัติทุกเช้า 05:00 น. (เวลาไทย)** ผ่าน Apify
 เก็บลง Postgres แล้วแสดง KPI / กราฟ / ตาราง พร้อมแนวโน้มย้อนหลัง (trend) และ delta เทียบเมื่อวาน
