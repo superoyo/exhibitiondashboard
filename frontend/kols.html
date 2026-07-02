@@ -131,6 +131,7 @@ async function api(method, path, body){
   return data;
 }
 function esc(s){return (s||"").replace(/"/g,'&quot;');}
+function escT(s){return (s||"").replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function hasSub(){ return roster==="report" && subsFor().length>0; }
 async function load(){
   const isReport = roster==="report";
@@ -155,7 +156,7 @@ async function load(){
         <td><input class="inp f-display" value="${esc(k.display)}"></td>
         <td><input class="inp f-group" value="${esc(k.group)}" list="groupList" style="min-width:120px"></td>
         ${sub?`<td><input class="inp f-sub" value="${esc(k.subgroup)}" list="subList" style="min-width:130px"></td>`:''}
-        ${isReport?`<td><div class="flex items-center gap-1"><input class="inp f-url" style="min-width:220px" value="${esc(k.url)}" placeholder="วางลิงก์โพสต์ (ใส่ทีหลังได้)"><a href="${k.url||'#'}" target="_blank" title="เปิดโพสต์" class="btn" style="text-decoration:none">↗</a></div></td>`:''}
+        ${isReport?`<td><textarea class="inp f-links" rows="${Math.max(1,(k.links||[]).length)}" style="min-width:250px;font-size:.78rem;line-height:1.35" placeholder="1 บรรทัด = 1 ลิงก์ (TikTok / FB / IG / YT / X / เว็บ)">${escT((k.links||[]).map(l=>l.url).join('\n') || k.url || '')}</textarea></td>`:''}
         <td><label class="flex items-center gap-1 text-xs"><input type="checkbox" class="f-active" ${k.active?"checked":""}> <span class="pill" style="background:${hashColor(k.subgroup||k.group)};color:#fff">${k.active?'active':'ปิด'}</span></label></td>
         <td class="text-right whitespace-nowrap">
           <button class="btn btn-primary act-save">บันทึก</button>
@@ -172,7 +173,11 @@ $("#rows").addEventListener("click", async (ev)=>{
     try{
       const body = { display: tr.querySelector(".f-display").value, group: tr.querySelector(".f-group").value, active: tr.querySelector(".f-active").checked };
       const subEl=tr.querySelector(".f-sub"); if(subEl) body.subgroup=subEl.value.trim();
-      const urlEl=tr.querySelector(".f-url"); if(urlEl) body.url=urlEl.value.trim();
+      const linksEl=tr.querySelector(".f-links");
+      if(linksEl){
+        const urls=[...new Set(linksEl.value.split(/\n+/).map(s=>s.trim()).filter(Boolean))];
+        body.links = urls.map(u=>({platform:platformOf(u), url:u, handle:handleFromUrl(u)}));
+      }
       await api("PATCH","/"+id, body);
       toast("บันทึกแล้ว"); load();
     }catch(e){ toast(e.message,false); }

@@ -130,6 +130,7 @@ class KolPatch(BaseModel):
     subgroup: Optional[str] = None
     active: Optional[bool] = None
     url: Optional[str] = None
+    links: Optional[list[dict]] = None  # [{platform,url,handle}] — all channels
 
 
 def _serialize(k) -> dict:
@@ -142,6 +143,8 @@ def _serialize(k) -> dict:
     }
     if hasattr(k, "url"):
         out["url"] = k.url
+    if hasattr(k, "links_json"):
+        out["links"] = kol_links(k)  # [{platform,url,handle}], all platforms
     if hasattr(k, "subgroup"):
         out["subgroup"] = k.subgroup
     return out
@@ -196,7 +199,13 @@ def _roster_endpoints(model, is_report: bool):
             k.active = body.active
         if is_report and body.subgroup is not None:
             k.subgroup = body.subgroup.strip() or None
-        if is_report and body.url is not None:
+        if is_report and body.links is not None:
+            links = [{"platform": (l.get("platform") or ""), "url": (l.get("url") or "").strip(),
+                      "handle": (l.get("handle") or "")}
+                     for l in body.links if (l.get("url") or "").strip()]
+            k.links_json = json.dumps(links, ensure_ascii=False) if links else None
+            k.url = links[0]["url"] if links else None
+        elif is_report and body.url is not None:
             k.url = body.url.strip()
         session.commit()
         session.refresh(k)
