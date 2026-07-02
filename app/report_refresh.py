@@ -616,13 +616,18 @@ def refresh_report(campaign: str = "pao") -> dict:
             if refreshed_users:
                 session.execute(delete(ReportPost).where(
                     ReportPost.campaign == campaign, ReportPost.username.in_(refreshed_users)))
+            seen_vids = set()
             for uname, plat, post, link_url in rows:
                 # unique per (campaign, platform, KOL, link) — avoids collisions
                 # when a post has no real id (e.g. FB posts fall back to a hash)
                 vkey = hashlib.md5((uname + "|" + (link_url or post.get("video_id") or "")).encode()).hexdigest()
+                vid = f"{campaign}_{plat}_{vkey}"[:64]
+                if vid in seen_vids:  # same KOL pasted the same link twice — skip dup
+                    continue
+                seen_vids.add(vid)
                 session.add(ReportPost(
                     campaign=campaign, username=uname, platform=plat,
-                    video_id=f"{campaign}_{plat}_{vkey}"[:64],
+                    video_id=vid,
                     url=post.get("url") or link_url, cover_url=post.get("cover_url"),
                     avatar_url=post.get("avatar_url"), posted_at=post.get("posted_at"),
                     views=post["views"], likes=post["likes"], comments=post["comments"],
