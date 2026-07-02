@@ -7,6 +7,7 @@ counts. Runs in a background task; progress is exposed via REFRESH_STATE.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import logging
 import re
 from typing import Any, Dict, List, Optional
@@ -277,15 +278,14 @@ def _parse_fb_items(items):
     posts, profile = [], {}
     for it in items:
         page = (it.get("pageName") or it.get("pageUsername") or "").strip().lower()
-        if not page:
-            continue
         user = it.get("user") or {}
         media = it.get("media") or []
         cover = (it.get("thumbnailUrl") or it.get("previewImage")
                  or (media[0].get("thumbnail") if media and isinstance(media[0], dict) else None)
                  or user.get("profilePic"))
-        profile[page] = {"followers": _first_num(it, ["pageLikes", "pageFollowers", "followers"]),
-                         "nick": user.get("name") or it.get("pageName")}
+        if page:  # only pages can be matched by handle; keep pageless posts too
+            profile[page] = {"followers": _first_num(it, ["pageLikes", "pageFollowers", "followers"]),
+                             "nick": user.get("name") or it.get("pageName")}
         pid = str(it.get("postId") or "")
         posts.append({
             "username": page,
@@ -617,9 +617,12 @@ def refresh_report(campaign: str = "pao") -> dict:
                 session.execute(delete(ReportPost).where(
                     ReportPost.campaign == campaign, ReportPost.username.in_(refreshed_users)))
             for uname, plat, post, link_url in rows:
+                # unique per (campaign, platform, KOL, link) — avoids collisions
+                # when a post has no real id (e.g. FB posts fall back to a hash)
+                vkey = hashlib.md5((uname + "|" + (link_url or post.get("video_id") or "")).encode()).hexdigest()
                 session.add(ReportPost(
                     campaign=campaign, username=uname, platform=plat,
-                    video_id=f"{campaign}_{plat}_{post['video_id']}"[:64],
+                    video_id=f"{campaign}_{plat}_{vkey}"[:64],
                     url=post.get("url") or link_url, cover_url=post.get("cover_url"),
                     avatar_url=post.get("avatar_url"), posted_at=post.get("posted_at"),
                     views=post["views"], likes=post["likes"], comments=post["comments"],
