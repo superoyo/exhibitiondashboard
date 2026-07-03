@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import logging
 import pathlib
+import re
+from html import escape as _hesc
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import router as api_router
@@ -48,7 +50,7 @@ def _seed_on_startup() -> None:
 @app.get("/api/version")
 def version():
     """Build marker — lets us confirm which commit Railway is actually running."""
-    return {"build": "campaign-hub-v48"}
+    return {"build": "campaign-hub-v49"}
 
 
 FRONTEND_DIR = pathlib.Path(__file__).resolve().parent.parent / "frontend"
@@ -69,6 +71,35 @@ def _page(path: pathlib.Path):
     return JSONResponse({"error": f"{path.name} not found"}, status_code=404)
 
 
+def _report_with_og(campaign_key: str):
+    """Serve report.html with the correct per-campaign <title> + Open Graph tags
+    baked in, so link previews (LINE/Messenger/etc., which don't run JS) show the
+    right campaign name/description instead of the static default."""
+    if not REPORT.exists():
+        return JSONResponse({"error": "report.html not found"}, status_code=404)
+    html = REPORT.read_text(encoding="utf-8")
+    name, emoji, subtitle = campaign_key, "📊", ""
+    try:
+        from app.db import session_scope
+        from app.models import Campaign
+        with session_scope() as s:
+            c = s.get(Campaign, campaign_key)
+            if c:
+                name, emoji, subtitle = c.name, (c.emoji or "📊"), (c.subtitle or "")
+    except Exception as exc:  # noqa: BLE001 — preview must never break the page
+        log.warning("OG lookup failed for %s: %s", campaign_key, exc)
+    title = f"{emoji} {name} — Campaign Report"
+    desc = subtitle or "รายงานผล KOL/Influencer แบบเรียลไทม์"
+    og = (f'<meta property="og:title" content="{_hesc(title)}">'
+          f'<meta property="og:description" content="{_hesc(desc)}">'
+          f'<meta property="og:type" content="website">'
+          f'<meta name="description" content="{_hesc(desc)}">'
+          f'<meta name="twitter:card" content="summary">')
+    html = re.sub(r"<title>.*?</title>", f"<title>{_hesc(title)}</title>", html, count=1, flags=re.S)
+    html = html.replace("</head>", og + "</head>", 1)
+    return HTMLResponse(html, headers=_NO_CACHE)
+
+
 @app.get("/")
 def index():
     """Influencer Real Time Report — home page listing all campaigns."""
@@ -78,33 +109,33 @@ def index():
 @app.get("/c/{campaign_key}")
 def campaign_report(campaign_key: str):
     """Dynamic per-campaign report. All new campaigns use this URL pattern."""
-    return _page(REPORT)
+    return _report_with_og(campaign_key)
 
 
 @app.get("/v/{campaign_key}")
 def campaign_report_view(campaign_key: str):
     """Public, view-only campaign report (shareable link for clients). Same
     page as /c/<key> but the frontend hides all edit/refresh controls."""
-    return _page(REPORT)
+    return _report_with_og(campaign_key)
 
 
 # ---- legacy paths kept alive so old bookmarks + shared links still work ----
 @app.get("/report")
 def report():
     """Legacy: PAO Super Perfume campaign report (campaign=pao)."""
-    return _page(REPORT)
+    return _report_with_og("pao")
 
 
 @app.get("/sahagroup2027")
 def sahagroup2027():
     """Legacy: Sahagroup Fair 2027 report."""
-    return _page(REPORT)
+    return _report_with_og("sahagroup2027")
 
 
 @app.get("/sahagroup")
 def sahagroup2026():
     """Alias for the Sahagroup 2026 report (the old '/' before Campaign Hub)."""
-    return _page(REPORT)
+    return _report_with_og("sahagroup")
 
 
 @app.get("/tracker")
