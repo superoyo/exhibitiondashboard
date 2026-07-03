@@ -135,7 +135,7 @@ async function api(method, path, body){
   if(!r.ok) throw new Error(data.detail || ("HTTP "+r.status));
   return data;
 }
-function esc(s){return (s||"").replace(/"/g,'&quot;');}
+function esc(s){return (s||"").replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function escT(s){return (s||"").replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function hasSub(){ return roster==="report" && subsFor().length>0; }
 async function load(){
@@ -157,7 +157,7 @@ async function load(){
     else $("#rows").innerHTML = kols.map((k,i)=>`
       <tr data-id="${k.id}">
         <td style="color:var(--muted)">${i+1}</td>
-        <td class="font-medium">@${k.username}</td>
+        <td class="font-medium">@${esc(k.username)}</td>
         <td><input class="inp f-display" value="${esc(k.display)}"></td>
         <td><input class="inp f-group" value="${esc(k.group)}" list="groupList" style="min-width:120px"></td>
         ${sub?`<td><input class="inp f-sub" value="${esc(k.subgroup)}" list="subList" style="min-width:130px"></td>`:''}

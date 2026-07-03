@@ -141,6 +141,9 @@ def _resolve_link(url: str) -> str:
     links dead-end at a login wall, so also dig the real post URL out of the
     page's og:url / canonical meta tags (FB embeds them for link previews)."""
     try:
+        from app.netguard import is_public_http_url
+        if not is_public_http_url(url):  # SSRF guard for team-entered links
+            return url
         import httpx as _httpx
         with _httpx.Client(follow_redirects=True, timeout=12, headers={
                 "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -302,12 +305,14 @@ def _parse_fb_items(items):
             profile[page] = {"followers": _first_num(it, ["pageLikes", "pageFollowers", "followers"]),
                              "nick": user.get("name") or it.get("pageName")}
         pid = str(it.get("postId") or "")
+        fb_url = it.get("facebookUrl") or it.get("url") or ""
         posts.append({
             "username": page,
             # raw post id so it matches post_id_from_url('facebook', url) in the
-            # index (falls back to page name, else a constant)
-            "video_id": pid or page or "fb",
-            "url": it.get("facebookUrl") or it.get("url"),
+            # index; fall back to the post URL (unique per post) then page name,
+            # so two id-less posts never collapse into one index slot
+            "video_id": pid or fb_url[:64] or page or "fb",
+            "url": fb_url or None,
             "cover_url": cover,
             "avatar_url": user.get("profilePic"),
             "posted_at": _parse_posted_at(it.get("time") or it.get("timestamp")),
@@ -591,9 +596,13 @@ def refresh_report(campaign: str = "pao") -> dict:
                 else:
                     need_single.append((uname, ln))
 
+        MAX_SINGLE = 300
+        if len(need_single) > MAX_SINGLE:  # surface truncation, never drop silently
+            scrape_errors.append(
+                f"ลิงก์เจาะจงเกิน {MAX_SINGLE} รายการ — ข้ามไป {len(need_single) - MAX_SINGLE} ลิงก์")
         if need_single:
-            st.update(message=f"กำลังดึงลิงก์แบบเจาะจง {len(need_single)} รายการ…")
-        for uname, ln in need_single[:100]:
+            st.update(message=f"กำลังดึงลิงก์แบบเจาะจง {min(len(need_single), MAX_SINGLE)} รายการ…")
+        for uname, ln in need_single[:MAX_SINGLE]:
             plat = ln["platform"]
             try:
                 posts, meta, pr = _scrape_platform(plat, [ln["url"]])

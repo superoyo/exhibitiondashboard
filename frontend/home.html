@@ -115,7 +115,7 @@ let pickedEmoji='📊';
 function toast(msg, ok=true){const t=document.getElementById('toast');t.textContent=(ok?'✅ ':'⚠️ ')+msg;t.style.display='block';t.style.borderColor=ok?'#bbf7d0':'#fecaca';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',2600);}
 function fmt(n){return n>=1e6?(n/1e6).toFixed(2)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':(''+n);}
 function fmtDate(iso){if(!iso)return '';try{return new Date(iso).toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'numeric'});}catch(e){return '';}}
-function esc(s){return (s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
 function cardHTML(c){
   const key=esc(c.key), name=esc(c.name);

@@ -42,7 +42,10 @@ def resolve_date(session: Session, date_param: Optional[str]) -> Optional[dt.dat
     """'latest' / None -> latest available; 'YYYY-MM-DD' -> that date."""
     if not date_param or date_param == "latest":
         return latest_scrape_date(session)
-    return dt.date.fromisoformat(date_param)
+    try:
+        return dt.date.fromisoformat(date_param)
+    except ValueError:  # bad ?date= input must not 500 — treat as no data
+        return None
 
 
 def last_run(session: Session) -> Optional[ScrapeRun]:

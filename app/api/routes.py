@@ -11,7 +11,10 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, 
 from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import delete, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+
+from app.netguard import is_public_http_url
 
 import json
 
@@ -183,7 +186,11 @@ def _roster_endpoints(model, is_report: bool):
             if body.url:
                 k.url = body.url.strip()
         session.add(k)
-        session.commit()
+        try:
+            session.commit()
+        except IntegrityError:  # concurrent add of the same username → 409, not 500
+            session.rollback()
+            raise HTTPException(409, f"มี @{username} อยู่แล้ว")
         session.refresh(k)
         return _serialize(k)
 
@@ -327,6 +334,8 @@ def sheet_fetch(url: str = Query(...)):
     OneDrive/SharePoint, Dropbox, or a direct file link) so the browser can
     parse it (client-side fetch is blocked by CORS). Returns the raw bytes."""
     dl = _to_download_url(url.strip())
+    if not is_public_http_url(dl):  # SSRF guard
+        raise HTTPException(400, "ลิงก์ไฟล์ไม่ถูกต้อง")
     try:
         import httpx as _httpx
         r = _httpx.get(dl, timeout=45, follow_redirects=True, headers={
@@ -388,9 +397,12 @@ class ResolveIn(BaseModel):
 @router.post("/resolve-handles")
 def resolve_handles(body: ResolveIn):
     """Map each post URL -> the posting account's @handle. Direct extraction
-    first; for short links, follow the redirect and read the page HTML."""
+    first; for short links, follow the redirect and read the page HTML.
+    Hard 90s total budget so one request can't pin a worker for an hour."""
+    import time as _time
     urls = [u for u in dict.fromkeys(body.urls) if u][:300]
     out: dict = {}
+    deadline = _time.monotonic() + 90
     import httpx as _httpx
     headers = {"User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                               "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -398,7 +410,7 @@ def resolve_handles(body: ResolveIn):
     with _httpx.Client(follow_redirects=True, timeout=12, headers=headers) as client:
         for u in urls:
             h = _handle_from_url(u)
-            if not h:
+            if not h and _time.monotonic() < deadline and is_public_http_url(u):
                 try:
                     r = client.get(u)
                     h = _handle_from_url(str(r.url)) or _handle_from_html(r.text)
@@ -458,7 +470,14 @@ def report_data(campaign: str = "pao", session: Session = Depends(db_dependency)
     records = []
     with_data = 0
     for k in roster:
-        links = kol_links(k) or [{"platform": "other", "url": k.url or "", "handle": k.username.lower()}]
+        links = kol_links(k)
+        if not links:
+            # linkless KOL: surface its best existing post on ANY platform, so
+            # legacy/scraped data still shows instead of a permanent zero row
+            cands = [p for (u, _pl), p in posts_by.items() if u == k.username.lower()]
+            best = max(cands, key=lambda p: p.views) if cands else None
+            links = [{"platform": (best.platform if best else "other"),
+                      "url": k.url or "", "handle": k.username.lower()}]
         for ln in links:
             plat = ln["platform"]
             p = posts_by.get((k.username.lower(), plat))
@@ -678,7 +697,11 @@ def create_campaign(body: CampaignIn, session: Session = Depends(db_dependency))
         active=True,
     )
     session.add(c)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:  # two simultaneous creates raced to the same key
+        session.rollback()
+        raise HTTPException(409, "สร้างพร้อมกันหลายรายการ — ลองกดสร้างอีกครั้ง")
     session.refresh(c)
     return _campaign_dict(c, 0, None)
 
@@ -750,7 +773,11 @@ def rename_campaign(key: str, body: CampaignRename, session: Session = Depends(d
             else:
                 session.add(AppSetting(key=pref + nk, value=old_row.value))
             session.delete(old_row)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:  # concurrent rename raced to the same key
+        session.rollback()
+        raise HTTPException(409, f"มีรหัส '{nk}' อยู่แล้ว")
     return {"status": "renamed", "key": nk}
 
 
@@ -762,7 +789,7 @@ def rename_campaign(key: str, body: CampaignRename, session: Session = Depends(d
 
 @router.get("/img")
 def img_proxy(u: str = Query(...), session: Session = Depends(db_dependency)):
-    if not u.startswith(("http://", "https://")):
+    if not is_public_http_url(u):  # SSRF guard: no internal/metadata addresses
         raise HTTPException(400, "bad url")
     h = hashlib.sha256(u.encode("utf-8")).hexdigest()[:40]
     cache_headers = {"Cache-Control": "public, max-age=604800"}
