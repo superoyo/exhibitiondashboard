@@ -283,6 +283,44 @@ def _parse_x_items(items):
     return posts
 
 
+def _fb_cover_url(it: dict, user: dict) -> Optional[str]:
+    """The post's own image, wherever the FB actor put it (photo posts, albums
+    and videos all use different shapes). Page profile pic only as last resort."""
+    def pick(v):
+        if isinstance(v, str) and v.startswith("http"):
+            return v
+        if isinstance(v, dict):
+            for kk in ("uri", "src", "url", "image", "photo_image", "thumbnail",
+                       "thumbnailUrl", "preferred_thumbnail"):
+                r = pick(v.get(kk))
+                if r:
+                    return r
+        return None
+
+    for key in ("thumbnailUrl", "previewImage", "fullPicture", "full_picture",
+                "imageUrl", "photoUrl", "image", "picture", "photo"):
+        r = pick(it.get(key))
+        if r:
+            return r
+    media = it.get("media")
+    if isinstance(media, list):
+        for m in media:
+            r = pick(m)
+            if r:
+                return r
+    atts = it.get("attachments")
+    if isinstance(atts, list):
+        for a in atts:
+            r = pick(a)
+            if r:
+                return r
+    elif isinstance(atts, dict):
+        r = pick(atts)
+        if r:
+            return r
+    return (user or {}).get("profilePic")
+
+
 # Facebook field names vary a lot across actor versions — try every plausible one.
 _FB_VIEWS = ["viewsCount", "videoViewCount", "viewCount", "videoViewsCount", "playCount",
              "videoPlayCount", "views", "videoViews", "videoView"]
@@ -300,17 +338,15 @@ def _parse_fb_items(items):
     for it in items:
         page = (it.get("pageName") or it.get("pageUsername") or "").strip().lower()
         user = it.get("user") or {}
-        media = it.get("media") or []
-        cover = (it.get("thumbnailUrl") or it.get("previewImage")
-                 or (media[0].get("thumbnail") if media and isinstance(media[0], dict) else None)
-                 or user.get("profilePic"))
+        cover = _fb_cover_url(it, user)
         if page:  # only pages can be matched by handle; keep pageless posts too
             profile[page] = {"followers": _first_num(it, ["pageLikes", "pageFollowers", "followers"]),
                              "nick": user.get("name") or it.get("pageName")}
         pid = str(it.get("postId") or "")
         fb_url = it.get("facebookUrl") or it.get("url") or ""
         posts.append({
-            "caption": (it.get("text") or it.get("message") or "")[:2000] or None,
+            "caption": (it.get("text") or it.get("message") or it.get("postText")
+                        or it.get("content") or "")[:2000] or None,
             "username": page,
             # raw post id so it matches post_id_from_url('facebook', url) in the
             # index; fall back to the post URL (unique per post) then page name,
