@@ -227,6 +227,7 @@ def _parse_ig_items(items):
         posts.append({
             "username": handle, "video_id": vid,
             "url": it.get("url") or (f"https://www.instagram.com/p/{sc}/" if sc else None),
+            "caption": (it.get("caption") or "")[:2000] or None,
             "cover_url": it.get("displayUrl") or it.get("thumbnailUrl"), "avatar_url": None,
             "posted_at": _parse_posted_at(it.get("timestamp")),
             "views": _first_num(it, _IG_VIEWS), "likes": _first_num(it, _IG_LIKES),
@@ -250,6 +251,7 @@ def _parse_yt_items(items):
             continue
         posts.append({
             "username": handle, "video_id": vid, "url": it.get("url"),
+            "caption": (it.get("title") or "")[:2000] or None,
             "cover_url": it.get("thumbnailUrl") or it.get("thumbnail"), "avatar_url": None,
             "posted_at": _parse_posted_at(it.get("date") or it.get("uploadDate")),
             "views": _first_num(it, _YT_VIEWS), "likes": _first_num(it, _YT_LIKES),
@@ -269,6 +271,7 @@ def _parse_x_items(items):
         posts.append({
             "username": handle, "video_id": vid,
             "url": it.get("url") or it.get("twitterUrl"),
+            "caption": (it.get("text") or it.get("fullText") or "")[:2000] or None,
             "cover_url": None, "avatar_url": au.get("profilePicture"),
             "posted_at": _parse_posted_at(it.get("createdAt")),
             "views": _first_num(it, ["viewCount", "views", "viewsCount"]),
@@ -307,6 +310,7 @@ def _parse_fb_items(items):
         pid = str(it.get("postId") or "")
         fb_url = it.get("facebookUrl") or it.get("url") or ""
         posts.append({
+            "caption": (it.get("text") or it.get("message") or "")[:2000] or None,
             "username": page,
             # raw post id so it matches post_id_from_url('facebook', url) in the
             # index; fall back to the post URL (unique per post) then page name,
@@ -372,6 +376,7 @@ def _parse_report_items(items: List[Dict[str, Any]]):
             "username": username,
             "video_id": str(video_id),
             "url": it.get("webVideoUrl"),
+            "caption": (it.get("text") or "")[:2000] or None,
             "cover_url": (it.get("videoMeta") or {}).get("coverUrl"),
             "avatar_url": author.get("avatar") or author.get("originalAvatarUrl"),
             "posted_at": _parse_posted_at(it.get("createTimeISO")),
@@ -652,6 +657,7 @@ def refresh_report(campaign: str = "pao") -> dict:
                     campaign=campaign, username=uname, platform=plat,
                     video_id=vid,
                     url=post.get("url") or link_url, cover_url=post.get("cover_url"),
+                    caption=post.get("caption"),
                     avatar_url=post.get("avatar_url"), posted_at=post.get("posted_at"),
                     views=post["views"], likes=post["likes"], comments=post["comments"],
                     shares=post["shares"], saves=post["saves"],
