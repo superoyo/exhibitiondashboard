@@ -110,7 +110,7 @@ a{color:inherit;text-decoration:none}
 </div>
 
 <script>
-const EMOJIS=['📊','🛍️','🧴','🎬','🍜','💄','🏠','🎮','📱','⚽','✈️','🎨','🎵','📷','🚗','💼'];
+const EMOJIS=['📊','🧴','💄','🪥','🦷','👁️','🚿','🧼','🥛','🧃','🍊','☕','🍞','🍬','🥗','🍽️','🍜','🏃','🏋️','💪','🐶','🐱','🧺','👗','🛍️','🎬','🏠','🎮','📱','⚽','✈️','🎨','🎵','📷','🚗','💼'];
 let pickedEmoji='📊';
 function toast(msg, ok=true){const t=document.getElementById('toast');t.textContent=(ok?'✅ ':'⚠️ ')+msg;t.style.display='block';t.style.borderColor=ok?'#bbf7d0':'#fecaca';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',2600);}
 function fmt(n){return n>=1e6?(n/1e6).toFixed(2)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':(''+n);}
