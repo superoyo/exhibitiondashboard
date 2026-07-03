@@ -518,6 +518,26 @@ def report_data(campaign: str = "pao", session: Session = Depends(db_dependency)
     }
 
 
+@router.get("/report/pptx")
+def report_pptx(campaign: str = "pao"):
+    """Generate and download the campaign's PowerPoint report."""
+    from urllib.parse import quote
+
+    from fastapi.responses import StreamingResponse
+
+    from app.pptx_report import build_pptx
+    try:
+        buf, fname = build_pptx(campaign)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("pptx build failed for %s", campaign)
+        raise HTTPException(500, f"สร้างไฟล์ PowerPoint ไม่สำเร็จ: {exc}")
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(fname)}"},
+    )
+
+
 @router.post("/report/cost/reset")
 def report_cost_reset(campaign: str = "pao"):
     from app.settings import reset_cost

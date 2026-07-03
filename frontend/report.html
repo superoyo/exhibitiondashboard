@@ -53,6 +53,7 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 </div>
 </div>
 <div class="flex gap-2 justify-end flex-wrap">
+<button id="pptxBtn" class="btn-refresh" style="background:#b45309">📥 PowerPoint</button>
 <button id="shareBtn" class="btn-refresh" style="background:#2563eb">🔗 View Only for Client</button>
 <button id="refreshBtn" class="btn-refresh">🔄 Refresh Data</button>
 </div>
@@ -241,9 +242,15 @@ const VIEW_ONLY = /^\/v\//i.test(location.pathname) || new URLSearchParams(locat
  ['editLink','navEdit'].forEach(id=>{const el=document.getElementById(id); if(el) el.href=q;});}
 if(VIEW_ONLY){
  document.body.classList.add('view-only');
- ['refreshBtn','shareBtn','navEdit','costInfo','editLink'].forEach(id=>{const el=document.getElementById(id); if(el) el.style.display='none';});
+ ['refreshBtn','shareBtn','navEdit','costInfo','editLink','pptxBtn'].forEach(id=>{const el=document.getElementById(id); if(el) el.style.display='none';});
  const nav=document.querySelector('nav.nav'); if(nav) nav.style.display='none';
 }
+// "📥 PowerPoint" — download the generated campaign deck (owner view only)
+{const pb=document.getElementById('pptxBtn');
+ if(pb) pb.onclick=()=>{
+  setInfo('📥 กำลังสร้างไฟล์ PowerPoint… (อาจใช้เวลาสักครู่ถ้ารูปเยอะ)');
+  location.href='/api/report/pptx?campaign='+encodeURIComponent(CAMPAIGN);
+ };}
 // "สร้างลิงก์ลูกค้า" — copy the public view-only URL (owner view only)
 {const sb=document.getElementById('shareBtn');
  if(sb) sb.onclick=async()=>{
