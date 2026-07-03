@@ -164,6 +164,15 @@ def _platform_logo(plat: str) -> Optional[bytes]:
         return None
 
 
+def _fmt_short(n) -> str:
+    n = int(n or 0)
+    if n >= 1_000_000:
+        return f"{n/1_000_000:.1f}M".replace(".0M", "M")
+    if n >= 1_000:
+        return f"{n/1_000:.1f}K".replace(".0K", "K")
+    return str(n)
+
+
 def _wrap(draw, text, font, max_w, max_lines):
     """Greedy character wrap (Thai has no spaces); ellipsis past max_lines."""
     lines, cur = [], ""
@@ -186,10 +195,199 @@ def _wrap(draw, text, font, max_w, max_lines):
     return lines
 
 
+def _circle_img(img_bytes: bytes, side: int):
+    """Center-crop an image to a circle (profile pictures)."""
+    from PIL import Image, ImageDraw
+    im = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+    m = min(im.size)
+    im = im.crop(((im.width - m) // 2, (im.height - m) // 2,
+                  (im.width + m) // 2, (im.height + m) // 2)).resize((side, side))
+    mask = Image.new("L", (side, side), 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, side, side), fill=255)
+    im.putalpha(mask)
+    return im
+
+
+def _icon_heart(d, cx, cy, s, fill):
+    r = s * 0.30
+    d.ellipse((cx - s * 0.5, cy - s * 0.42, cx - s * 0.5 + 2 * r, cy - s * 0.42 + 2 * r), fill=fill)
+    d.ellipse((cx + s * 0.5 - 2 * r, cy - s * 0.42, cx + s * 0.5, cy - s * 0.42 + 2 * r), fill=fill)
+    d.polygon([(cx - s * 0.5, cy - s * 0.05), (cx + s * 0.5, cy - s * 0.05),
+               (cx, cy + s * 0.52)], fill=fill)
+    d.rectangle((cx - s * 0.5, cy - s * 0.18, cx + s * 0.5, cy - s * 0.02), fill=fill)
+
+
+def _icon_comment(d, cx, cy, s, fill):
+    d.ellipse((cx - s * 0.5, cy - s * 0.42, cx + s * 0.5, cy + s * 0.3), fill=fill)
+    d.polygon([(cx - s * 0.25, cy + s * 0.2), (cx - s * 0.02, cy + s * 0.52),
+               (cx + 0.12 * s, cy + s * 0.2)], fill=fill)
+
+
+def _icon_bookmark(d, cx, cy, s, fill):
+    d.polygon([(cx - s * 0.32, cy - s * 0.5), (cx + s * 0.32, cy - s * 0.5),
+               (cx + s * 0.32, cy + s * 0.5), (cx, cy + s * 0.22),
+               (cx - s * 0.32, cy + s * 0.5)], fill=fill)
+
+
+def _icon_share(d, cx, cy, s, fill):
+    d.polygon([(cx - s * 0.5, cy + s * 0.45), (cx + s * 0.05, cy - s * 0.05),
+               (cx + s * 0.05, cy + s * 0.18)], fill=fill)
+    d.polygon([(cx + s * 0.05, cy - s * 0.35), (cx + s * 0.5, cy),
+               (cx + s * 0.05, cy + s * 0.35)], fill=fill)
+    d.rectangle((cx - s * 0.12, cy - s * 0.12, cx + s * 0.12, cy + s * 0.12), fill=fill)
+
+
+def _icon_thumb(d, cx, cy, s, circle, fill):
+    d.ellipse((cx - s * 0.5, cy - s * 0.5, cx + s * 0.5, cy + s * 0.5), fill=circle)
+    d.rectangle((cx - s * 0.28, cy - s * 0.02, cx - s * 0.12, cy + s * 0.26), fill=fill)
+    d.rectangle((cx - s * 0.10, cy - s * 0.05, cx + s * 0.26, cy + s * 0.26), fill=fill)
+    d.rectangle((cx - s * 0.04, cy - s * 0.28, cx + s * 0.10, cy + s * 0.02), fill=fill)
+
+
+def _tiktok_card(cover: Optional[bytes], avatar: Optional[bytes], username: str,
+                 date_s: str, caption: Optional[str], likes, comments, saves,
+                 shares) -> Optional[io.BytesIO]:
+    """Mock TikTok screenshot: full-bleed video frame, right action rail with
+    like/comment/save/share counts, username + caption bottom-left."""
+    try:
+        from PIL import Image, ImageDraw
+        W, H = 720, 1250
+        card = Image.new("RGB", (W, H), (18, 18, 18))
+        if cover:
+            try:
+                im = Image.open(io.BytesIO(cover)).convert("RGB")
+                scale = max(W / im.width, H / im.height)
+                im = im.resize((int(im.width * scale) or W, int(im.height * scale) or H))
+                card.paste(im, ((W - im.width) // 2, (H - im.height) // 2))
+            except Exception:  # noqa: BLE001
+                pass
+        # bottom gradient for text legibility
+        grad = Image.new("L", (1, 320), 0)
+        for i in range(320):
+            grad.putpixel((0, i), int(190 * (i / 320)))
+        shade = Image.new("RGB", (W, 320), (0, 0, 0))
+        card.paste(shade, (0, H - 320), grad.resize((W, 320)))
+        d = ImageDraw.Draw(card)
+
+        # right action rail
+        rail_x = W - 76
+        y = int(H * 0.40)
+        wht = (255, 255, 255)
+        if avatar:
+            try:
+                av = _circle_img(avatar, 92)
+                card.paste(av, (rail_x - 46, y - 46), av)
+                d.ellipse((rail_x - 48, y - 48, rail_x + 48, y + 48),
+                          outline=wht, width=3)
+            except Exception:  # noqa: BLE001
+                pass
+        y += 128
+        f_cnt = _thai_font(26)
+        for icon, val in ((_icon_heart, likes), (_icon_comment, comments),
+                          (_icon_bookmark, saves), (_icon_share, shares)):
+            icon(d, rail_x, y, 56, wht)
+            t = _fmt_short(val)
+            d.text((rail_x - d.textlength(t, font=f_cnt) / 2, y + 40), t,
+                   font=f_cnt, fill=wht)
+            y += 128
+
+        # bottom-left: username · date + caption
+        f_user = _thai_font(30)
+        f_cap = _thai_font(25)
+        tx, ty = 28, H - 218
+        d.text((tx, ty), f"{username} · {date_s}", font=f_user, fill=wht,
+               stroke_width=1, stroke_fill=wht)
+        ty += 46
+        for lnn in _wrap(d, caption or "", f_cap, W - 150, 3):
+            d.text((tx, ty), lnn, font=f_cap, fill=wht)
+            ty += 34
+
+        out = io.BytesIO()
+        card.save(out, "PNG")
+        out.seek(0)
+        return out
+    except Exception:  # noqa: BLE001
+        log.exception("tiktok card failed")
+        return io.BytesIO(cover) if cover else None
+
+
+def _fb_card(avatar: Optional[bytes], page: str, date_s: str,
+             caption: Optional[str], media: Optional[bytes], likes, comments,
+             shares) -> Optional[io.BytesIO]:
+    """Mock Facebook post: page header, full caption, media, engagement bar."""
+    if not media and not caption:
+        return None
+    try:
+        from PIL import Image, ImageDraw
+        W, PAD = 760, 24
+        f_name = _thai_font(28)
+        f_date = _thai_font(21)
+        f_cap = _thai_font(25)
+        f_cnt = _thai_font(23)
+        probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+        cap_lines = _wrap(probe, caption or "", f_cap, W - 2 * PAD, 8)
+        head_h = 104
+        cap_h = (len(cap_lines) * 34 + 10) if cap_lines else 0
+        m_img = None
+        if media:
+            try:
+                m_img = Image.open(io.BytesIO(media)).convert("RGB")
+                mh = min(int(m_img.height * W / m_img.width), 860)
+                m_img = m_img.resize((W, mh))
+            except Exception:  # noqa: BLE001
+                m_img = None
+        media_h = m_img.height if m_img else 0
+        foot_h = 64
+        H = head_h + cap_h + media_h + foot_h
+
+        card = Image.new("RGB", (W, H), (255, 255, 255))
+        d = ImageDraw.Draw(card)
+        d.rectangle((0, 0, W - 1, H - 1), outline=(224, 228, 234), width=2)
+
+        # header: avatar circle + page name + date
+        x = PAD
+        if avatar:
+            try:
+                av = _circle_img(avatar, 60)
+                card.paste(av, (PAD, 22), av)
+                x = PAD + 60 + 14
+            except Exception:  # noqa: BLE001
+                pass
+        d.text((x, 22), page, font=f_name, fill=(5, 5, 5))
+        d.text((x, 60), date_s, font=f_date, fill=(101, 103, 107))
+
+        y = head_h
+        for lnn in cap_lines:
+            d.text((PAD, y), lnn, font=f_cap, fill=(5, 5, 5))
+            y += 34
+        if cap_lines:
+            y += 10
+        if m_img:
+            card.paste(m_img, (0, y))
+            y += m_img.height
+
+        # engagement bar
+        d.line((PAD, y + 6, W - PAD, y + 6), fill=(224, 228, 234), width=2)
+        cy = y + foot_h // 2 + 4
+        _icon_thumb(d, PAD + 16, cy, 34, (24, 119, 242), (255, 255, 255))
+        d.text((PAD + 42, cy - 14), _fmt_short(likes), font=f_cnt, fill=(101, 103, 107))
+        right = f"{_fmt_short(comments)} comments · {_fmt_short(shares)} shares"
+        d.text((W - PAD - d.textlength(right, font=f_cnt), cy - 14), right,
+               font=f_cnt, fill=(101, 103, 107))
+
+        out = io.BytesIO()
+        card.save(out, "PNG")
+        out.seek(0)
+        return out
+    except Exception:  # noqa: BLE001
+        log.exception("fb card failed")
+        return io.BytesIO(media) if media else None
+
+
 def _compose_post_card(logo: Optional[bytes], name: str, caption: Optional[str],
                        img: Optional[bytes]) -> Optional[io.BytesIO]:
-    """Compose a screenshot-like post card (header + caption + media), so the
-    slide shows the post the way the team's manual screen captures do."""
+    """Generic post card (header + caption + media) for platforms without a
+    dedicated mock (IG/YT/X/website)."""
     if not img and not caption:
         return None
     try:
@@ -401,6 +599,7 @@ def build_pptx(campaign_key: str) -> tuple[io.BytesIO, str]:
                 links = kol_links(k) or [{"platform": "tiktok", "url": k.url or "",
                                           "handle": k.username.lower()}]
                 links = sorted(links, key=lambda l: PLAT_ORDER.get(l["platform"], 9))
+                avatar = _image_bytes(session, k.avatar_url)
                 for ln in links:
                     plat = ln["platform"]
                     p = posts_by.get((k.username.lower(), plat))
@@ -420,10 +619,21 @@ def build_pptx(campaign_key: str) -> tuple[io.BytesIO, str]:
                     _txt(s, 1067397, 519577, 5681886, 536575,
                          f"Post Date: {posted}", 11, middle=True)
 
-                    # composed post screenshot (header + caption + image)
+                    # composed post screenshot, styled per platform
                     shot = _image_bytes(session, (p.cover_url if p else None))
-                    card = _compose_post_card(logo, name,
-                                              (p.caption if p else None), shot)
+                    cap = p.caption if p else None
+                    if plat == "tiktok":
+                        dt_s = (f"{p.posted_at.month}-{p.posted_at.day}"
+                                if p and p.posted_at else "")
+                        card = _tiktok_card(shot, avatar, k.username, dt_s, cap,
+                                            p.likes if p else 0, p.comments if p else 0,
+                                            p.saves if p else 0, p.shares if p else 0)
+                    elif plat == "facebook":
+                        card = _fb_card(avatar, name, posted, cap, shot,
+                                        p.likes if p else 0, p.comments if p else 0,
+                                        p.shares if p else 0)
+                    else:
+                        card = _compose_post_card(logo, name, cap, shot)
                     if card:
                         _fit_picture(s, card, 908482, 1349012, 2628527, 4569755)
 
