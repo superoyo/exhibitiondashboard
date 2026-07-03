@@ -280,8 +280,10 @@ function urlsIn(text){ return (text.match(/https?:\/\/[^\s)]+/gi)||[]).map(u=>u.
 // one cell — we grab every URL, classify by platform, and keep them as links[].
 // Grouping: explicit หมวด/group column > multi-sheet name > section-header rows.
 function parseWorkbook(wb){
-  const out=[]; const dbg=[];
+  const out=[]; const dbg=[]; const skipped=[];
   const multi = wb.SheetNames.length>1;
+  const SOCIAL=/(tiktok\.com|facebook\.com|fb\.watch|instagram\.com|youtu|x\.com|twitter\.com)/i;
+  const ADDR=['address','addr','ที่อยู่','จัดส่ง','ส่งของ','shipping','delivery','ไปรษณีย์','พัสดุ','tracking','ผู้รับ','เบอร์','โทร','ของรางวัล','เลขที่บ้าน'];
   wb.SheetNames.forEach(sheetName=>{
     const ws=wb.Sheets[sheetName]; if(!ws) return;
     const rows=XLSX.utils.sheet_to_json(ws,{header:1,blankrows:false,defval:''});
@@ -289,6 +291,11 @@ function parseWorkbook(wb){
     let hi=0; for(let i=0;i<rows.length;i++){ if(rows[i].filter(c=>_n(c)).length>=1){hi=i;break;} }
     const headers=rows[hi].map(_low);
     dbg.push('“'+sheetName+'” ['+headers.filter(Boolean).join(', ')+']');
+    // Skip non-work sheets (e.g. shipping-address sheets): no social post link
+    // anywhere + an address-ish sheet name/column.
+    const hasUrl=rows.some(r=>r.some(c=>SOCIAL.test(_n(c))));
+    const nmeta=_low(sheetName)+' '+headers.join(' ');
+    if(!hasUrl && ADDR.some(k=>nmeta.includes(k))){ skipped.push(sheetName); return; }
     let cU  =pickCol(headers,['username','handle','ผู้ใช้','บัญชี','user','ไอดี','ชื่อบัญชี','account','ช่อง','channel','kol','ชื่อ','name']);
     const cGrp=pickCol(headers,['หมวด','ประเภท','group','category','type','tier','กลุ่ม']);
     const cSub=pickCol(headers,['ย่อย','subgroup','sub']);
@@ -321,6 +328,7 @@ function parseWorkbook(wb){
     }
   });
   parseWorkbook._dbg = dbg.join('  ·  ');
+  parseWorkbook._skipped = skipped;
   return out;
 }
 async function importKols(kols, sheetUrl){
@@ -347,7 +355,8 @@ async function importKols(kols, sheetUrl){
   const groups=[...new Set(kols.map(k=>k.group))];
   const totalLinks=kols.reduce((s,k)=>s+(k.links||[]).length,0);
   const extra = dropped ? `\n(ระบุ KOL ไม่ได้ ${dropped} แถว — จะข้าม)` : '';
-  if(!confirm(`พบ ${kols.length} KOL · ${totalLinks} ลิงก์ (หลายแพลตฟอร์ม)\nกลุ่ม: ${groups.join(', ')}${extra}\n\n⚠️ การนำเข้าจะ "ลบรายชื่อเดิมทั้งหมด" ของแคมเปญนี้แล้วแทนที่ด้วยรายการใหม่ ยืนยันหรือไม่?`)) return;
+  const skip = (parseWorkbook._skipped||[]).length ? `\nข้ามชีตที่ไม่ใช่งานโพสต์: ${parseWorkbook._skipped.join(', ')}` : '';
+  if(!confirm(`พบ ${kols.length} KOL · ${totalLinks} ลิงก์ (หลายแพลตฟอร์ม)\nกลุ่ม: ${groups.join(', ')}${skip}${extra}\n\n⚠️ การนำเข้าจะ "ลบรายชื่อเดิมทั้งหมด" ของแคมเปญนี้แล้วแทนที่ด้วยรายการใหม่ ยืนยันหรือไม่?`)) return;
   st.textContent='กำลังนำเข้า…';
   try{
     const body={kols}; if(sheetUrl) body.sheet_url=sheetUrl;

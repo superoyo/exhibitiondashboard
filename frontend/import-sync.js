@@ -32,6 +32,8 @@ window.ImportSync = (function () {
   }
   function urlsIn(text) { return (text.match(/https?:\/\/[^\s)]+/gi) || []).map(u => u.replace(/[.,;]+$/, '')); }
 
+  const SOCIAL = /(tiktok\.com|facebook\.com|fb\.watch|instagram\.com|youtu|x\.com|twitter\.com)/i;
+  const ADDR = ['address', 'addr', 'ที่อยู่', 'จัดส่ง', 'ส่งของ', 'shipping', 'delivery', 'ไปรษณีย์', 'พัสดุ', 'tracking', 'ผู้รับ', 'เบอร์', 'โทร', 'ของรางวัล', 'เลขที่บ้าน'];
   function parseWorkbook(wb) {
     const out = []; const multi = wb.SheetNames.length > 1;
     wb.SheetNames.forEach(sheetName => {
@@ -40,6 +42,10 @@ window.ImportSync = (function () {
       if (!rows.length) return;
       let hi = 0; for (let i = 0; i < rows.length; i++) { if (rows[i].filter(c => _n(c)).length >= 1) { hi = i; break; } }
       const headers = rows[hi].map(_low);
+      // Skip non-work sheets (shipping-address etc.): no social link + address-ish
+      const hasUrl = rows.some(r => r.some(c => SOCIAL.test(_n(c))));
+      const nmeta = _low(sheetName) + ' ' + headers.join(' ');
+      if (!hasUrl && ADDR.some(k => nmeta.includes(k))) return;
       let cU = pickCol(headers, ['username', 'handle', 'ผู้ใช้', 'บัญชี', 'user', 'ไอดี', 'ชื่อบัญชี', 'account', 'ช่อง', 'channel', 'kol', 'ชื่อ', 'name']);
       const cGrp = pickCol(headers, ['หมวด', 'ประเภท', 'group', 'category', 'type', 'tier', 'กลุ่ม']);
       const cSub = pickCol(headers, ['ย่อย', 'subgroup', 'sub']);
