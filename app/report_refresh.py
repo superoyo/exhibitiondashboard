@@ -177,12 +177,22 @@ def kol_links(k) -> list:
     if raw:
         try:
             out = []
+            seen = set()
             for ln in json.loads(raw):
                 url = (ln.get("url") or "").strip()
                 if not url:
                     continue
+                plat = ln.get("platform") or platform_of(url)
+                # Dedupe by (platform, post id) — the same post often appears
+                # twice in a sheet with different tracking query strings, which
+                # duplicated every row/stat in the report.
+                key = (plat, post_id_from_url(plat, url)
+                       or url.split("?")[0].rstrip("/").lower())
+                if key in seen:
+                    continue
+                seen.add(key)
                 out.append({
-                    "platform": ln.get("platform") or platform_of(url),
+                    "platform": plat,
                     "url": url,
                     "handle": (ln.get("handle") or handle_from_url(url) or k.username).lower(),
                 })

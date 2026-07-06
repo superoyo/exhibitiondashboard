@@ -295,6 +295,26 @@ function isProfileUrl(u){
 }
 // header words that sometimes leak in as a "username" from table header rows
 const HEADER_WORDS=['name','ชื่อ','username','user','kol','influencer','influ','link','ลิงก์','no','ลำดับ','account','ช่อง','channel','handle','id'];
+function postIdOf(plat,u){let m;
+  if(plat==='tiktok')m=u.match(/\/video\/(\d+)/);
+  else if(plat==='instagram')m=u.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
+  else if(plat==='youtube')m=u.match(/(?:shorts\/|v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
+  else if(plat==='x')m=u.match(/\/status\/(\d+)/);
+  else if(plat==='facebook')m=u.match(/(?:\/posts\/|\/videos\/|\/reel\/|story_fbid=|\/permalink\/)([\w.-]+)/);
+  return m?m[1]:'';}
+// dedupe post links by (platform, post id) — the same post pasted twice with
+// different tracking params must not create two rows
+function dedupeLinks(urls){
+  const seen=new Set(), out=[];
+  for(const u of urls){
+    const plat=platformOf(u);
+    const key=plat+':'+(postIdOf(plat,u)||u.split('?')[0].replace(/\/$/,'').toLowerCase());
+    if(seen.has(key))continue;
+    seen.add(key);
+    out.push({platform:plat,url:u,handle:handleFromUrl(u)});
+  }
+  return out;
+}
 function urlsIn(text){ return (text.match(/https?:\/\/[^\s)]+/gi)||[]).map(u=>normalizeUrl(u.replace(/[.,;]+$/,''))).filter(u=>!NONWORK_URL.test(u)); }
 // Turn one workbook into a KOL list. Each row may hold MANY platform links in
 // one cell — we grab every URL, classify by platform, and keep them as links[].
@@ -343,7 +363,7 @@ function parseWorkbook(wb){
       if(!username && !workUrls.length) continue;   // nothing usable
       // a header row leaking through: "name"/"link"/ชื่อ… with no post link
       if(!workUrls.length && HEADER_WORDS.includes((username||'').toLowerCase())) continue;
-      const links = workUrls.map(u=>({platform:platformOf(u), url:u, handle:handleFromUrl(u)}));
+      const links = dedupeLinks(workUrls);
       const colGrp = cGrp>=0 ? _n(row[cGrp]) : '';
       let group, subgroup = cSub>=0 ? _n(row[cSub]) : '';
       if(colGrp) group=colGrp;

@@ -46,6 +46,26 @@ window.ImportSync = (function () {
     return false;
   }
   const HEADER_WORDS = ['name', 'ชื่อ', 'username', 'user', 'kol', 'influencer', 'influ', 'link', 'ลิงก์', 'no', 'ลำดับ', 'account', 'ช่อง', 'channel', 'handle', 'id'];
+  function postIdOf(plat, u) {
+    let m;
+    if (plat === 'tiktok') m = u.match(/\/video\/(\d+)/);
+    else if (plat === 'instagram') m = u.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
+    else if (plat === 'youtube') m = u.match(/(?:shorts\/|v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
+    else if (plat === 'x') m = u.match(/\/status\/(\d+)/);
+    else if (plat === 'facebook') m = u.match(/(?:\/posts\/|\/videos\/|\/reel\/|story_fbid=|\/permalink\/)([\w.-]+)/);
+    return m ? m[1] : '';
+  }
+  function dedupeLinks(urls) {
+    const seen = new Set(), out = [];
+    for (const u of urls) {
+      const plat = platformOf(u);
+      const key = plat + ':' + (postIdOf(plat, u) || u.split('?')[0].replace(/\/$/, '').toLowerCase());
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ platform: plat, url: u, handle: handleFromUrl(u) });
+    }
+    return out;
+  }
   function urlsIn(text) { return (text.match(/https?:\/\/[^\s)]+/gi) || []).map(u => normalizeUrl(u.replace(/[.,;]+$/, ''))).filter(u => !NONWORK_URL.test(u)); }
 
   const SOCIAL = /(tiktok\.com|facebook\.com|fb\.watch|instagram\.com|youtu|x\.com|twitter\.com)/i;
@@ -85,7 +105,7 @@ window.ImportSync = (function () {
         if (!username && workUrls.length) username = handleFromUrl(workUrls.find(u => platformOf(u) === 'tiktok') || workUrls[0]);
         if (!username && !workUrls.length) continue;
         if (!workUrls.length && HEADER_WORDS.includes((username || '').toLowerCase())) continue;
-        const links = workUrls.map(u => ({ platform: platformOf(u), url: u, handle: handleFromUrl(u) }));
+        const links = dedupeLinks(workUrls);
         const colGrp = cGrp >= 0 ? _n(row[cGrp]) : '';
         let group, subgroup = cSub >= 0 ? _n(row[cSub]) : '';
         if (colGrp) group = colGrp; else if (multi) group = _n(sheetName) || 'KOL'; else group = section || 'KOL';
