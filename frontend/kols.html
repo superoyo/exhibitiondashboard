@@ -383,16 +383,33 @@ async function importKols(kols, sheetUrl){
     st.innerHTML='⚠️ ไม่พบรายชื่อ KOL — ต้องมี <b>ลิงก์โพสต์</b> (TikTok/FB/IG/YT/X) หรือ <b>@username</b> อย่างน้อย 1 อย่าง<br>ระบบอ่านเจอ: '+(parseWorkbook._dbg||'(ว่าง)');
     return;
   }
-  // Resolve @handle for links that don't carry one in the URL (short links).
-  const need=[...new Set(kols.flatMap(k=>(k.links||[]).filter(l=>!l.handle).map(l=>l.url)))];
+  // Resolve short links (vt.tiktok.com, FB share, ...) to their FINAL URL so
+  // the system can tell a channel/profile link from a real post by itself.
+  const need=[...new Set(kols.flatMap(k=>(k.links||[]).filter(l=>!l.handle||!postIdOf(l.platform,l.url)).map(l=>l.url)))];
   if(need.length){
-    st.textContent=`กำลังดึง @username จากลิงก์ลงงาน ${need.length} รายการ (อาจใช้เวลาสักครู่)…`;
+    st.textContent=`กำลังตรวจลิงก์ ${need.length} รายการ (แยกลิงก์ช่อง/ลิงก์โพสต์)…`;
     try{
       const r=await fetch('/api/resolve-handles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({urls:need})});
-      const map=(await r.json()).handles||{};
-      kols.forEach(k=>(k.links||[]).forEach(l=>{ if(!l.handle && map[l.url]) l.handle=map[l.url]; }));
-    }catch(e){/* leave handles empty; those sub-rows just won't get stats */}
+      const d=await r.json(); const map=d.handles||{}; const res=d.resolved||{};
+      kols.forEach(k=>(k.links||[]).forEach(l=>{
+        if(!l.handle && map[l.url]) l.handle=map[l.url];
+        const fin=res[l.url];
+        if(fin && fin!==l.url){ l.url=normalizeUrl(fin); l.platform=platformOf(l.url); if(!l.handle) l.handle=handleFromUrl(l.url); }
+      }));
+    }catch(e){/* leave as-is; those sub-rows just won't get stats */}
   }
+  // After resolution: profile/channel & non-work links only name the KOL —
+  // they are never kept as post links; then re-dedupe by (platform, post id).
+  kols.forEach(k=>{
+    const prof=(k.links||[]).filter(l=>isProfileUrl(l.url)||NONWORK_URL.test(l.url));
+    k.links=(k.links||[]).filter(l=>!isProfileUrl(l.url)&&!NONWORK_URL.test(l.url));
+    if(!k.username){ const pl=prof.find(x=>x.handle||handleFromUrl(x.url)); if(pl) k.username=pl.handle||handleFromUrl(pl.url); }
+    const seen=new Set();
+    k.links=k.links.filter(l=>{
+      const key=l.platform+':'+(postIdOf(l.platform,l.url)||l.url.split('?')[0].replace(/\/$/,'').toLowerCase());
+      if(seen.has(key)) return false; seen.add(key); return true;
+    });
+  });
   // KOL username: from column, else the first link handle
   kols.forEach(k=>{ if(!k.username){ const l=(k.links||[]).find(x=>x.handle); if(l) k.username=l.handle; } if(!k.display) k.display=k.username; });
   const dropped = kols.filter(k=>!k.username).length;

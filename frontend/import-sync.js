@@ -124,14 +124,30 @@ window.ImportSync = (function () {
     if (!resp.ok) { const d = await resp.json().catch(() => ({})); throw new Error(d.detail || 'ดึงไฟล์ไม่สำเร็จ'); }
     const wb = XLSX.read(await resp.arrayBuffer(), { type: 'array' });
     let kols = parseWorkbook(wb);
-    const need = [...new Set(kols.flatMap(k => (k.links || []).filter(l => !l.handle).map(l => l.url)))];
+    const need = [...new Set(kols.flatMap(k => (k.links || []).filter(l => !l.handle || !postIdOf(l.platform, l.url)).map(l => l.url)))];
     if (need.length) {
-      onStatus && onStatus('กำลังดึง @username จากลิงก์…');
+      onStatus && onStatus('กำลังตรวจลิงก์ ' + need.length + ' รายการ (แยกลิงก์ช่อง/ลิงก์โพสต์)…');
       try {
-        const map = (await (await fetch('/api/resolve-handles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ urls: need }) })).json()).handles || {};
-        kols.forEach(k => (k.links || []).forEach(l => { if (!l.handle && map[l.url]) l.handle = map[l.url]; }));
+        const d = await (await fetch('/api/resolve-handles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ urls: need }) })).json();
+        const map = d.handles || {}; const res = d.resolved || {};
+        kols.forEach(k => (k.links || []).forEach(l => {
+          if (!l.handle && map[l.url]) l.handle = map[l.url];
+          const fin = res[l.url];
+          if (fin && fin !== l.url) { l.url = normalizeUrl(fin); l.platform = platformOf(l.url); if (!l.handle) l.handle = handleFromUrl(l.url); }
+        }));
       } catch (e) { /* leave unresolved */ }
     }
+    // post-resolution: profile/non-work links only name the KOL; then dedupe by post id
+    kols.forEach(k => {
+      const prof = (k.links || []).filter(l => isProfileUrl(l.url) || NONWORK_URL.test(l.url));
+      k.links = (k.links || []).filter(l => !isProfileUrl(l.url) && !NONWORK_URL.test(l.url));
+      if (!k.username) { const pl = prof.find(x => x.handle || handleFromUrl(x.url)); if (pl) k.username = pl.handle || handleFromUrl(pl.url); }
+      const seen = new Set();
+      k.links = k.links.filter(l => {
+        const key = l.platform + ':' + (postIdOf(l.platform, l.url) || l.url.split('?')[0].replace(/\/$/, '').toLowerCase());
+        if (seen.has(key)) return false; seen.add(key); return true;
+      });
+    });
     kols.forEach(k => { if (!k.username) { const l = (k.links || []).find(x => x.handle); if (l) k.username = l.handle; } if (!k.display) k.display = k.username; });
     kols = kols.filter(k => k.username);
     if (!kols.length) throw new Error('ไม่พบรายชื่อในไฟล์');

@@ -398,12 +398,14 @@ class ResolveIn(BaseModel):
 
 @router.post("/resolve-handles")
 def resolve_handles(body: ResolveIn):
-    """Map each post URL -> the posting account's @handle. Direct extraction
-    first; for short links, follow the redirect and read the page HTML.
+    """Map each post URL -> the posting account's @handle AND the canonical
+    final URL (short links like vt.tiktok.com hide whether they're a profile
+    or a post — the import needs the resolved URL to tell them apart).
     Hard 90s total budget so one request can't pin a worker for an hour."""
     import time as _time
     urls = [u for u in dict.fromkeys(body.urls) if u][:300]
     out: dict = {}
+    resolved: dict = {}
     deadline = _time.monotonic() + 90
     import httpx as _httpx
     headers = {"User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -412,14 +414,20 @@ def resolve_handles(body: ResolveIn):
     with _httpx.Client(follow_redirects=True, timeout=12, headers=headers) as client:
         for u in urls:
             h = _handle_from_url(u)
+            final = u
             if not h and _time.monotonic() < deadline and is_public_http_url(u):
                 try:
                     r = client.get(u)
-                    h = _handle_from_url(str(r.url)) or _handle_from_html(r.text)
+                    fin = str(r.url) or u
+                    low = fin.lower()
+                    if "login" not in low and "checkpoint" not in low:
+                        final = fin
+                    h = _handle_from_url(final) or _handle_from_html(r.text)
                 except Exception:  # noqa: BLE001 — unresolvable links just map to ""
                     h = ""
             out[u] = h
-    return {"handles": out}
+            resolved[u] = final
+    return {"handles": out, "resolved": resolved}
 
 
 @router.get("/scrape/inspect")
