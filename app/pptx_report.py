@@ -114,6 +114,22 @@ def _thai_font(size: int):
         return ImageFont.load_default()
 
 
+_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+       "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36")
+
+
+def _referer_for(url: str) -> Optional[str]:
+    """CDNs hotlink-check against their own site — a foreign Referer can 403."""
+    u = url.lower()
+    if "tiktok" in u:
+        return "https://www.tiktok.com/"
+    if "fbcdn" in u or "facebook" in u:
+        return "https://www.facebook.com/"
+    if "instagram" in u or "cdninstagram" in u:
+        return "https://www.instagram.com/"
+    return None
+
+
 def _image_bytes(session, url: Optional[str]) -> Optional[bytes]:
     if not url:
         return None
@@ -121,18 +137,19 @@ def _image_bytes(session, url: Optional[str]) -> Optional[bytes]:
     row = session.get(ImageCache, h)
     if row and row.data:
         return row.data
-    try:
-        import httpx
-        r = httpx.get(url, timeout=8, follow_redirects=True, headers={
-            "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                           "AppleWebKit/537.36 (KHTML, like Gecko) "
-                           "Chrome/125.0.0.0 Safari/537.36"),
-            "Referer": "https://www.tiktok.com/"})
-        ct = (r.headers.get("content-type") or "").lower()
-        if r.status_code == 200 and r.content and ct.startswith("image/"):
-            return r.content
-    except Exception:  # noqa: BLE001
-        pass
+    import httpx
+    for ref in (_referer_for(url), None):  # matching referer, then bare retry
+        try:
+            headers = {"User-Agent": _UA,
+                       "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"}
+            if ref:
+                headers["Referer"] = ref
+            r = httpx.get(url, timeout=8, follow_redirects=True, headers=headers)
+            ct = (r.headers.get("content-type") or "").lower()
+            if r.status_code == 200 and r.content and ct.startswith("image/"):
+                return r.content
+        except Exception:  # noqa: BLE001
+            continue
     return None
 
 

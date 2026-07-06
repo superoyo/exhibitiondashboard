@@ -829,30 +829,28 @@ def img_proxy(u: str = Query(...), session: Session = Depends(db_dependency)):
         return Response(content=row.data, media_type=row.content_type or "image/jpeg",
                         headers=cache_headers)
 
-    # Not cached yet — fetch server-side (no referrer, bypasses hotlink block),
-    # store the bytes, and serve. Best-effort: on any failure fall back to a
-    # redirect so behaviour is never worse than loading the URL directly.
-    try:
-        import httpx as _httpx
-        # Browser-like headers — TikTok's CDN returns 403 to bare requests, which
-        # is why cover/avatar images failed to fetch (and cache) server-side.
-        r = _httpx.get(u, timeout=15, follow_redirects=True, headers={
-            "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                           "AppleWebKit/537.36 (KHTML, like Gecko) "
-                           "Chrome/125.0.0.0 Safari/537.36"),
-            "Referer": "https://www.tiktok.com/",
-            "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-        })
-        ct = (r.headers.get("content-type") or "image/jpeg").split(";")[0].strip()
-        if r.status_code == 200 and r.content and ct.startswith("image/"):
-            try:
-                session.merge(ImageCache(hash=h, content_type=ct, data=r.content))
-                session.commit()
-            except Exception:  # noqa: BLE001 — caching is best-effort
-                session.rollback()
-            return Response(content=r.content, media_type=ct, headers=cache_headers)
-    except Exception:  # noqa: BLE001
-        pass
+    # Not cached yet — fetch server-side with a Referer matching the CDN's own
+    # site (a foreign referer can 403), retrying bare; store bytes and serve.
+    # Best-effort: on failure fall back to a redirect (never worse than direct).
+    from app.pptx_report import _UA, _referer_for
+    import httpx as _httpx
+    for ref in (_referer_for(u), None):
+        try:
+            headers = {"User-Agent": _UA,
+                       "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"}
+            if ref:
+                headers["Referer"] = ref
+            r = _httpx.get(u, timeout=15, follow_redirects=True, headers=headers)
+            ct = (r.headers.get("content-type") or "image/jpeg").split(";")[0].strip()
+            if r.status_code == 200 and r.content and ct.startswith("image/"):
+                try:
+                    session.merge(ImageCache(hash=h, content_type=ct, data=r.content))
+                    session.commit()
+                except Exception:  # noqa: BLE001 — caching is best-effort
+                    session.rollback()
+                return Response(content=r.content, media_type=ct, headers=cache_headers)
+        except Exception:  # noqa: BLE001
+            continue
     return RedirectResponse(u, status_code=302)
 
 
