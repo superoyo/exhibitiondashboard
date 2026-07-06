@@ -18,9 +18,9 @@ window.ImportSync = (function () {
     if (u.includes('line.me')) return 'line';
     return 'website';
   }
-  const _FB_SKIP = ['story.php', 'permalink.php', 'profile.php', 'watch', 'reel', 'share', 'photo', 'video', 'groups', 'events', 'media', 'pages', 'p'];
-  const _IG_SKIP = ['p', 'reel', 'reels', 'tv', 'stories', 'explore'];
-  const _X_SKIP = ['i', 'status', 'home', 'search', 'hashtag', 'intent'];
+  const _FB_SKIP = ['story.php', 'permalink.php', 'profile.php', 'watch', 'reel', 'share', 'photo', 'video', 'groups', 'events', 'media', 'pages', 'p', 'login', 'login.php', 'l.php', 'sharer', 'sharer.php', 'home.php', 'hashtag', 'help', 'privacy', 'policies', 'people', 'public', 'stories'];
+  const _IG_SKIP = ['p', 'reel', 'reels', 'tv', 'stories', 'explore', 'accounts'];
+  const _X_SKIP = ['i', 'status', 'home', 'search', 'hashtag', 'intent', 'login'];
   function handleFromUrl(u) {
     u = _n(u);
     let m = u.match(/tiktok\.com\/@([^\/\?#\s]+)/i); if (m) return m[1].toLowerCase();
@@ -30,7 +30,23 @@ window.ImportSync = (function () {
     m = u.match(/youtube\.com\/@([^\/\?#\s]+)/i); if (m) return m[1].toLowerCase();
     return '';
   }
-  function urlsIn(text) { return (text.match(/https?:\/\/[^\s)]+/gi) || []).map(u => u.replace(/[.,;]+$/, '')); }
+  const NONWORK_URL = /google\.[a-z.]+\/maps|maps\.app\.goo\.gl|goo\.gl\/maps|maps\.google|waze\.com|forms\.gle|docs\.google\.com\/forms/i;
+  function normalizeUrl(u) {
+    const m = u.match(/facebook\.com\/(?:login[^?]*|l\.php)\?(?:[^#]*&)?(?:next|u)=([^&#]+)/i);
+    if (m) { try { return decodeURIComponent(m[1]); } catch (e) { } }
+    return u;
+  }
+  function isProfileUrl(u) {
+    const plat = platformOf(u);
+    if (plat === 'tiktok') return /tiktok\.com\/@[^\/\?#\s]+\/?([?#]|$)/i.test(u);
+    if (plat === 'facebook') { return !!handleFromUrl(u) && !/(\/posts\/|\/videos\/|\/reel\/|\/watch|story_fbid=|\/permalink\/|\/share\/|fb\.watch)/i.test(u); }
+    if (plat === 'instagram') { return !!handleFromUrl(u) && !/\/(p|reel|reels|tv)\//i.test(u); }
+    if (plat === 'youtube') return /youtube\.com\/(@[^\/\?#\s]+\/?([?#]|$)|channel\/|c\/|user\/)/i.test(u);
+    if (plat === 'x') { return !!handleFromUrl(u) && !/\/status\//i.test(u); }
+    return false;
+  }
+  const HEADER_WORDS = ['name', 'ชื่อ', 'username', 'user', 'kol', 'influencer', 'influ', 'link', 'ลิงก์', 'no', 'ลำดับ', 'account', 'ช่อง', 'channel', 'handle', 'id'];
+  function urlsIn(text) { return (text.match(/https?:\/\/[^\s)]+/gi) || []).map(u => normalizeUrl(u.replace(/[.,;]+$/, ''))).filter(u => !NONWORK_URL.test(u)); }
 
   const SOCIAL = /(tiktok\.com|facebook\.com|fb\.watch|instagram\.com|youtu|x\.com|twitter\.com)/i;
   const ADDR = ['address', 'addr', 'ที่อยู่', 'จัดส่ง', 'ส่งของ', 'shipping', 'delivery', 'ไปรษณีย์', 'พัสดุ', 'tracking', 'ผู้รับ', 'เบอร์', 'โทร', 'ของรางวัล', 'เลขที่บ้าน'];
@@ -60,12 +76,16 @@ window.ImportSync = (function () {
           if (t) section = t;
           continue;
         }
+        const profUrls = urls.filter(isProfileUrl);
+        const workUrls = urls.filter(u => !isProfileUrl(u));
         let username = cU >= 0 ? _n(row[cU]).replace(/^@/, '') : '';
         if (/https?:|\//.test(username)) username = handleFromUrl(username);
         if (!username) { const at = filled.map(_n).find(v => /^@[\w.]+$/.test(v)); if (at) username = at.slice(1); }
-        if (!username && urls.length) username = handleFromUrl(urls.find(u => platformOf(u) === 'tiktok') || urls[0]);
-        if (!username && !urls.length) continue;
-        const links = urls.map(u => ({ platform: platformOf(u), url: u, handle: handleFromUrl(u) }));
+        if (!username && profUrls.length) username = handleFromUrl(profUrls[0]);
+        if (!username && workUrls.length) username = handleFromUrl(workUrls.find(u => platformOf(u) === 'tiktok') || workUrls[0]);
+        if (!username && !workUrls.length) continue;
+        if (!workUrls.length && HEADER_WORDS.includes((username || '').toLowerCase())) continue;
+        const links = workUrls.map(u => ({ platform: platformOf(u), url: u, handle: handleFromUrl(u) }));
         const colGrp = cGrp >= 0 ? _n(row[cGrp]) : '';
         let group, subgroup = cSub >= 0 ? _n(row[cSub]) : '';
         if (colGrp) group = colGrp; else if (multi) group = _n(sheetName) || 'KOL'; else group = section || 'KOL';

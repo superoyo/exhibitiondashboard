@@ -263,9 +263,9 @@ function platformOf(u){ u=(u||'').toLowerCase();
   if(u.includes('x.com')||u.includes('twitter.com'))return 'x';
   if(u.includes('line.me'))return 'line';
   return 'website'; }  // any non-social link = website (advertorial etc.)
-const _FB_SKIP=['story.php','permalink.php','profile.php','watch','reel','share','photo','video','groups','events','media','pages','p'];
-const _IG_SKIP=['p','reel','reels','tv','stories','explore'];
-const _X_SKIP=['i','status','home','search','hashtag','intent'];
+const _FB_SKIP=['story.php','permalink.php','profile.php','watch','reel','share','photo','video','groups','events','media','pages','p','login','login.php','l.php','sharer','sharer.php','home.php','hashtag','help','privacy','policies','people','public','stories'];
+const _IG_SKIP=['p','reel','reels','tv','stories','explore','accounts'];
+const _X_SKIP=['i','status','home','search','hashtag','intent','login'];
 function handleFromUrl(u){
   u=_n(u);
   let m=u.match(/tiktok\.com\/@([^\/\?#\s]+)/i); if(m) return m[1].toLowerCase();
@@ -275,7 +275,27 @@ function handleFromUrl(u){
   m=u.match(/youtube\.com\/@([^\/\?#\s]+)/i); if(m) return m[1].toLowerCase();
   return '';
 }
-function urlsIn(text){ return (text.match(/https?:\/\/[^\s)]+/gi)||[]).map(u=>u.replace(/[.,;]+$/,'')); }
+// links that are NOT campaign work: shipping addresses (Google Maps), forms
+const NONWORK_URL=/google\.[a-z.]+\/maps|maps\.app\.goo\.gl|goo\.gl\/maps|maps\.google|waze\.com|forms\.gle|docs\.google\.com\/forms/i;
+// unwrap facebook login/l.php redirect wrappers to the real destination
+function normalizeUrl(u){
+  const m=u.match(/facebook\.com\/(?:login[^?]*|l\.php)\?(?:[^#]*&)?(?:next|u)=([^&#]+)/i);
+  if(m){ try{ return decodeURIComponent(m[1]); }catch(e){} }
+  return u;
+}
+// A profile/channel URL identifies the KOL but is NOT a post to track
+function isProfileUrl(u){
+  const plat=platformOf(u);
+  if(plat==='tiktok') return /tiktok\.com\/@[^\/\?#\s]+\/?([?#]|$)/i.test(u);
+  if(plat==='facebook'){ return !!handleFromUrl(u) && !/(\/posts\/|\/videos\/|\/reel\/|\/watch|story_fbid=|\/permalink\/|\/share\/|fb\.watch)/i.test(u); }
+  if(plat==='instagram'){ return !!handleFromUrl(u) && !/\/(p|reel|reels|tv)\//i.test(u); }
+  if(plat==='youtube') return /youtube\.com\/(@[^\/\?#\s]+\/?([?#]|$)|channel\/|c\/|user\/)/i.test(u);
+  if(plat==='x'){ return !!handleFromUrl(u) && !/\/status\//i.test(u); }
+  return false;
+}
+// header words that sometimes leak in as a "username" from table header rows
+const HEADER_WORDS=['name','ชื่อ','username','user','kol','influencer','influ','link','ลิงก์','no','ลำดับ','account','ช่อง','channel','handle','id'];
+function urlsIn(text){ return (text.match(/https?:\/\/[^\s)]+/gi)||[]).map(u=>normalizeUrl(u.replace(/[.,;]+$/,''))).filter(u=>!NONWORK_URL.test(u)); }
 // Turn one workbook into a KOL list. Each row may hold MANY platform links in
 // one cell — we grab every URL, classify by platform, and keep them as links[].
 // Grouping: explicit หมวด/group column > multi-sheet name > section-header rows.
@@ -312,12 +332,18 @@ function parseWorkbook(wb){
         if(t){ section=t; }
         continue;
       }
+      // profile/channel links identify the KOL; only real post links are work
+      const profUrls=urls.filter(isProfileUrl);
+      const workUrls=urls.filter(u=>!isProfileUrl(u));
       let username = cU>=0 ? _n(row[cU]).replace(/^@/,'') : '';
       if(/https?:|\//.test(username)) username = handleFromUrl(username);
       if(!username){ const at=filled.map(_n).find(v=>/^@[\w.]+$/.test(v)); if(at) username=at.slice(1); }
-      if(!username && urls.length) username = handleFromUrl(urls.find(u=>platformOf(u)==='tiktok')||urls[0]);
-      if(!username && !urls.length) continue;   // nothing usable
-      const links = urls.map(u=>({platform:platformOf(u), url:u, handle:handleFromUrl(u)}));
+      if(!username && profUrls.length) username = handleFromUrl(profUrls[0]);
+      if(!username && workUrls.length) username = handleFromUrl(workUrls.find(u=>platformOf(u)==='tiktok')||workUrls[0]);
+      if(!username && !workUrls.length) continue;   // nothing usable
+      // a header row leaking through: "name"/"link"/ชื่อ… with no post link
+      if(!workUrls.length && HEADER_WORDS.includes((username||'').toLowerCase())) continue;
+      const links = workUrls.map(u=>({platform:platformOf(u), url:u, handle:handleFromUrl(u)}));
       const colGrp = cGrp>=0 ? _n(row[cGrp]) : '';
       let group, subgroup = cSub>=0 ? _n(row[cSub]) : '';
       if(colGrp) group=colGrp;

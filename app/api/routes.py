@@ -364,7 +364,9 @@ _RE_TT = re.compile(r"tiktok\.com/@([^/?#\s]+)", re.I)
 _RE_FB = re.compile(r"(?:facebook\.com|fb\.com)/([^/?#\s]+)", re.I)
 _RE_IG = re.compile(r"instagram\.com/([^/?#\s]+)", re.I)
 _RE_UNIQ = re.compile(r'"uniqueId":"([^"]+)"')
-_FB_SKIP = {"watch", "story.php", "permalink.php", "profile.php", "share", "reel", "photo", "video"}
+_FB_SKIP = {"watch", "story.php", "permalink.php", "profile.php", "share", "reel",
+            "photo", "video", "login", "login.php", "l.php", "sharer", "sharer.php",
+            "home.php", "hashtag", "help", "privacy", "policies", "people", "public"}
 
 
 def _handle_from_url(s: str) -> str:

@@ -79,9 +79,11 @@ def platform_of(url: Optional[str]) -> str:
 
 # Generic path segments that are NOT account handles.
 _FB_SKIP = {"story.php", "permalink.php", "profile.php", "watch", "reel", "share",
-            "photo", "video", "groups", "events", "media", "pages", "p"}
-_IG_SKIP = {"p", "reel", "reels", "tv", "stories", "explore"}
-_X_SKIP = {"i", "status", "home", "search", "hashtag", "intent"}
+            "photo", "video", "groups", "events", "media", "pages", "p",
+            "login", "login.php", "l.php", "sharer", "sharer.php", "home.php",
+            "hashtag", "help", "privacy", "policies", "people", "public", "stories"}
+_IG_SKIP = {"p", "reel", "reels", "tv", "stories", "explore", "accounts"}
+_X_SKIP = {"i", "status", "home", "search", "hashtag", "intent", "login"}
 
 
 def post_id_from_url(platform: str, url: Optional[str]) -> str:
