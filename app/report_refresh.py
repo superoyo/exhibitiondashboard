@@ -296,14 +296,22 @@ def _parse_x_items(items):
 
 
 def _fb_cover_url(it: dict, user: dict) -> Optional[str]:
-    """The post's own image, wherever the FB actor put it (photo posts, albums
-    and videos all use different shapes). Page profile pic only as last resort."""
+    """The post's own IMAGE, wherever the FB actor put it (photo posts, albums
+    and videos all use different shapes). Must be an actual image file (fbcdn/
+    scontent) — facebook.com PAGE links (media[].url points at the photo
+    viewer page, not the file) are rejected. Profile pic only as last resort."""
+    def _is_img(v) -> bool:
+        if not (isinstance(v, str) and v.startswith("http")):
+            return False
+        # page/permalink URLs live on facebook.com — real images are on the CDN
+        return "facebook.com/" not in v.split("//", 1)[-1].split("?")[0]
+
     def pick(v):
-        if isinstance(v, str) and v.startswith("http"):
+        if _is_img(v):
             return v
         if isinstance(v, dict):
-            for kk in ("uri", "src", "url", "image", "photo_image", "thumbnail",
-                       "thumbnailUrl", "preferred_thumbnail"):
+            for kk in ("thumbnail", "thumbnailUrl", "uri", "src", "photo_image",
+                       "image", "preferred_thumbnail", "url"):
                 r = pick(v.get(kk))
                 if r:
                     return r
