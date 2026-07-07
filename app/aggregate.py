@@ -31,6 +31,11 @@ def _parse_posted_at(v: Any) -> Optional[dt.datetime]:
         # Apify returns e.g. "2026-06-10T08:30:00.000Z"
         return dt.datetime.fromisoformat(str(v).replace("Z", "+00:00"))
     except ValueError:
+        pass
+    try:
+        # X/Twitter createdAt e.g. "Tue Jul 01 05:30:00 +0000 2026"
+        return dt.datetime.strptime(str(v), "%a %b %d %H:%M:%S %z %Y")
+    except ValueError:
         return None
 
 
