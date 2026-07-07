@@ -21,7 +21,9 @@ from app import config
 from app.apify_client import (
     ApifyError,
     run_scrape_fb,
+    run_scrape_fb_pages,
     run_scrape_ig,
+    run_scrape_ig_profiles,
     run_scrape_posts,
     run_scrape_profiles,
     run_scrape_x,
@@ -191,11 +193,17 @@ def kol_links(k) -> list:
                 if key in seen:
                     continue
                 seen.add(key)
-                out.append({
+                d = {
                     "platform": plat,
                     "url": url,
                     "handle": (ln.get("handle") or handle_from_url(url) or k.username).lower(),
-                })
+                }
+                # per-link follower count (filled by refresh from the FB-page /
+                # IG-profile scrape) — carried through so the report can show
+                # each platform's own audience size
+                if _to_int(ln.get("followers")):
+                    d["followers"] = _to_int(ln.get("followers"))
+                out.append(d)
             if out:
                 return out
         except Exception:  # noqa: BLE001 — malformed json falls back to url
@@ -636,8 +644,8 @@ def refresh_report(campaign: str = "pao") -> dict:
         refreshed_users = set()
         plat_counts: Dict[str, int] = {}
 
-        def _add_row(uname, plat, post, link_url):
-            rows.append((uname, plat, post, link_url))
+        def _add_row(uname, plat, post, ln):
+            rows.append((uname, plat, post, ln))  # ln = the roster link dict
             refreshed_users.add(uname)
             plat_counts[plat] = plat_counts.get(plat, 0) + 1
 
@@ -653,7 +661,7 @@ def refresh_report(campaign: str = "pao") -> dict:
                 pid = post_id_from_url(plat, ln["url"])
                 post = (slot["id"].get(pid) if pid else None) or slot["handle"].get(handle_from_url(ln["url"]))
                 if post:
-                    _add_row(uname, plat, post, ln["url"])
+                    _add_row(uname, plat, post, ln)
                 else:
                     need_single.append((uname, ln))
 
@@ -672,7 +680,7 @@ def refresh_report(campaign: str = "pao") -> dict:
                     cost += meta["cost_usd"]
                 if posts:
                     best = max(posts, key=lambda p: (p.get("views", 0) + p.get("likes", 0)))
-                    _add_row(uname, plat, best, ln["url"])
+                    _add_row(uname, plat, best, ln)
                     canon = best.get("url")  # persist canonical URL → keyable next time
                     if canon:
                         ln["url"] = canon
@@ -684,15 +692,81 @@ def refresh_report(campaign: str = "pao") -> dict:
                 log.error("Refresh[%s] %s single failed: %s", campaign, plat, exc)
                 scrape_errors.append(f"{_PLATFORM_LABELS.get(plat, plat)}: {_redact(exc)}")
 
-        # per-KOL followers / nick / avatar aggregated from the matched posts
+        # FB pages / IG accounts don't expose follower counts on post items —
+        # scrape the pages/profiles themselves so ER-by-followers works for
+        # photo posts. Only the handles that actually posted are scraped.
+        ig_handles = sorted({(post.get("username") or "").lower()
+                             for _u, plat, post, _l in rows if plat == "instagram"} - {""})
+        fb_pages: Dict[str, str] = {}
+        for _u, plat, post, ln in rows:
+            if plat != "facebook":
+                continue
+            h = handle_from_url(ln["url"]) or (post.get("username") or "").lower()
+            if h and h not in fb_pages:
+                fb_pages[h] = f"https://www.facebook.com/{h}"
+        if ig_handles:
+            try:
+                st.update(message=f"กำลังดึง followers โปรไฟล์ Instagram {len(ig_handles)} บัญชี…")
+                items, meta = run_scrape_ig_profiles(ig_handles, tolerate_failure=True)
+                if meta.get("cost_usd"):
+                    cost += meta["cost_usd"]
+                for it in items:
+                    h = (it.get("username") or "").lower()
+                    if not h:
+                        continue
+                    d = profile.setdefault(h, {})
+                    f = _first_num(it, ["followersCount", "followers"])
+                    if f:
+                        d["followers"] = f
+                    if it.get("fullName") and not d.get("nick"):
+                        d["nick"] = it.get("fullName")
+                    av = it.get("profilePicUrlHD") or it.get("profilePicUrl")
+                    if av and not d.get("avatar"):
+                        d["avatar"] = av
+            except (ApifyError, httpx.HTTPError) as exc:
+                log.error("Refresh[%s] IG profiles failed: %s", campaign, exc)
+                scrape_errors.append(f"IG followers: {_redact(exc)}")
+        if fb_pages:
+            try:
+                st.update(message=f"กำลังดึง followers เพจ Facebook {len(fb_pages)} เพจ…")
+                items, meta = run_scrape_fb_pages(list(fb_pages.values()), tolerate_failure=True)
+                if meta.get("cost_usd"):
+                    cost += meta["cost_usd"]
+                for it in items:
+                    h = (handle_from_url(it.get("pageUrl") or it.get("facebookUrl")
+                                         or it.get("url") or "")
+                         or (it.get("pageName") or "").strip().lower())
+                    if not h:
+                        continue
+                    f = _first_num(it, ["followers", "followersCount", "followerCount", "likes"])
+                    av = it.get("profilePictureUrl") or it.get("profilePhoto") or it.get("pageLogo")
+                    for key in {h, (it.get("pageName") or "").strip().lower()} - {""}:
+                        d = profile.setdefault(key, {})
+                        if f:
+                            d["followers"] = f
+                        if it.get("title") and not d.get("nick"):
+                            d["nick"] = it.get("title")
+                        if av and not d.get("avatar"):
+                            d["avatar"] = av
+            except (ApifyError, httpx.HTTPError) as exc:
+                log.error("Refresh[%s] FB pages failed: %s", campaign, exc)
+                scrape_errors.append(f"FB followers: {_redact(exc)}")
+
+        # per-KOL followers / nick / avatar aggregated from the matched posts;
+        # each link also remembers its own platform's follower count
         followers_by_user, nick_by_user, avatar_by_user = {}, {}, {}
-        for uname, plat, post, link_url in rows:
-            pr = profile.get((post.get("username") or "").lower())
+        for uname, plat, post, ln in rows:
+            pr = (profile.get((post.get("username") or "").lower())
+                  or profile.get(handle_from_url(ln["url"]) or "")
+                  or profile.get((ln.get("handle") or "").lower()))
             if pr:
                 if pr.get("followers"):
                     followers_by_user.setdefault(uname, pr["followers"])
+                    ln["followers"] = pr["followers"]
                 if pr.get("nick"):
                     nick_by_user.setdefault(uname, pr["nick"])
+                if pr.get("avatar"):
+                    avatar_by_user.setdefault(uname, pr["avatar"])
             if post.get("avatar_url"):
                 avatar_by_user.setdefault(uname, post["avatar_url"])
 
@@ -701,7 +775,8 @@ def refresh_report(campaign: str = "pao") -> dict:
                 session.execute(delete(ReportPost).where(
                     ReportPost.campaign == campaign, ReportPost.username.in_(refreshed_users)))
             seen_vids = set()
-            for uname, plat, post, link_url in rows:
+            for uname, plat, post, ln in rows:
+                link_url = ln["url"]
                 # unique per (campaign, platform, KOL, link) — avoids collisions
                 # when a post has no real id (e.g. FB posts fall back to a hash)
                 vkey = hashlib.md5((uname + "|" + (link_url or post.get("video_id") or "")).encode()).hexdigest()

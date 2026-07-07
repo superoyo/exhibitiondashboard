@@ -129,7 +129,9 @@ function render(DATA){
  const erTxt=r=>r.erNA?'—':r.er.toFixed(2)+'%'+(r.erByFol?'*':'');
  const sum=k=>E.reduce((s,r)=>s+(r[k]||0),0);
  const tv=sum('views'), te=sum('engagement');
- const reach=[...new Map(E.map(r=>[r.username,r.followers||0])).values()].reduce((a,b)=>a+b,0);
+ // followers can differ per platform row of the same KOL — count each KOL once at their largest audience
+ const fmax={};E.forEach(r=>{fmax[r.username]=Math.max(fmax[r.username]||0,r.followers||0);});
+ const reach=Object.values(fmax).reduce((a,b)=>a+b,0);
  const kpi=(l,v,s)=>`<div class="card p-3"><div class="text-xs" style="color:var(--muted)">${l}</div><div class="text-xl sm:text-2xl font-bold mt-1">${v}</div><div class="text-xs mt-1" style="color:var(--muted)">${s||''}</div></div>`;
  document.getElementById('kpis').innerHTML=[
   kpi('Total Views',fmt(tv),E.length+' โพสต์'),

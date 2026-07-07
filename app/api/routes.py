@@ -500,7 +500,9 @@ def report_data(campaign: str = "pao", session: Session = Depends(db_dependency)
                 "platform_label": _PLATFORM_LABELS.get(plat, plat),
                 "category": k.subgroup or k.content_group,
                 "biggroup": k.content_group,
-                "followers": k.followers,
+                # per-platform audience when the refresh captured it (FB page /
+                # IG profile scrape) — falls back to the KOL-level count
+                "followers": ln.get("followers") or k.followers,
                 "views": p.views if p else 0,
                 "likes": p.likes if p else 0,
                 "comments": p.comments if p else 0,

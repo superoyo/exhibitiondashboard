@@ -146,6 +146,28 @@ def run_scrape_yt(
                     tolerate_failure=tolerate_failure)
 
 
+def run_scrape_ig_profiles(
+    usernames: List[str], *, poll_interval: float = 8.0, timeout_s: float = 300.0,
+    tolerate_failure: bool = False,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Scrape Instagram PROFILES by username (followers/avatar/full name)."""
+    payload = {"usernames": list(usernames)}
+    return _execute(payload, actor_id=config.IG_PROFILE_ACTOR_ID,
+                    poll_interval=poll_interval, timeout_s=timeout_s,
+                    tolerate_failure=tolerate_failure)
+
+
+def run_scrape_fb_pages(
+    page_urls: List[str], *, poll_interval: float = 8.0, timeout_s: float = 300.0,
+    tolerate_failure: bool = False,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Scrape Facebook PAGES by URL (followers/likes/avatar)."""
+    payload = {"startUrls": [{"url": u} for u in page_urls]}
+    return _execute(payload, actor_id=config.FB_PAGES_ACTOR_ID,
+                    poll_interval=poll_interval, timeout_s=timeout_s,
+                    tolerate_failure=tolerate_failure)
+
+
 def run_scrape_x(
     post_urls: List[str], *, poll_interval: float = 8.0, timeout_s: float = 300.0,
     tolerate_failure: bool = False,

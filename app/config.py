@@ -41,6 +41,10 @@ FB_ACTOR_ID: str = "apify~facebook-posts-scraper"  # campaign report Facebook po
 IG_ACTOR_ID: str = os.getenv("IG_ACTOR_ID", "apify~instagram-scraper")
 YT_ACTOR_ID: str = os.getenv("YT_ACTOR_ID", "streamers~youtube-scraper")
 X_ACTOR_ID: str = os.getenv("X_ACTOR_ID", "apidojo~tweet-scraper")
+# Profile/page-level scrapers — fill follower counts that post items lack
+# (FB pages + IG accounts), so ER-by-followers works for photo posts.
+IG_PROFILE_ACTOR_ID: str = os.getenv("IG_PROFILE_ACTOR_ID", "apify~instagram-profile-scraper")
+FB_PAGES_ACTOR_ID: str = os.getenv("FB_PAGES_ACTOR_ID", "apify~facebook-pages-scraper")
 RESULTS_PER_PAGE: int = 20
 LOOKBACK_DAYS: int = 7  # oldestPostDateUnified = today - LOOKBACK_DAYS
 
