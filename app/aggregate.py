@@ -27,6 +27,12 @@ def _to_int(v: Any) -> int:
 def _parse_posted_at(v: Any) -> Optional[dt.datetime]:
     if not v:
         return None
+    if isinstance(v, (int, float)) or (isinstance(v, str) and v.isdigit()):
+        try:
+            # unix epoch (e.g. FB creation_time)
+            return dt.datetime.fromtimestamp(int(v), tz=dt.timezone.utc)
+        except (ValueError, OSError, OverflowError):
+            return None
     try:
         # Apify returns e.g. "2026-06-10T08:30:00.000Z"
         return dt.datetime.fromisoformat(str(v).replace("Z", "+00:00"))

@@ -214,6 +214,17 @@ def kol_links(k) -> list:
     return []
 
 
+def _txt(v) -> str:
+    """Coerce an actor text field to a plain string. Some FB item shapes (video
+    share links) return message/caption as {'text': ..., 'ranges': [...]} dicts —
+    slicing those crashed the whole refresh (unhashable type: 'slice')."""
+    if isinstance(v, dict):
+        v = v.get("text") or v.get("value") or ""
+    if isinstance(v, (list, tuple)):
+        v = " ".join(str(x) for x in v if x)
+    return v if isinstance(v, str) else ("" if v is None else str(v))
+
+
 def _first_num(it: dict, keys) -> int:
     """First non-zero numeric value across candidate field names. Sums a dict
     value (e.g. a reactions breakdown {like:.., love:..}). Robust to the many
@@ -247,7 +258,7 @@ def _parse_ig_items(items):
         posts.append({
             "username": handle, "video_id": vid,
             "url": it.get("url") or (f"https://www.instagram.com/p/{sc}/" if sc else None),
-            "caption": (it.get("caption") or "")[:2000] or None,
+            "caption": _txt(it.get("caption"))[:2000] or None,
             "cover_url": it.get("displayUrl") or it.get("thumbnailUrl"), "avatar_url": None,
             "posted_at": _parse_posted_at(it.get("timestamp")),
             "views": _first_num(it, _IG_VIEWS), "likes": _first_num(it, _IG_LIKES),
@@ -271,7 +282,7 @@ def _parse_yt_items(items):
             continue
         posts.append({
             "username": handle, "video_id": vid, "url": it.get("url"),
-            "caption": (it.get("title") or "")[:2000] or None,
+            "caption": _txt(it.get("title"))[:2000] or None,
             "cover_url": it.get("thumbnailUrl") or it.get("thumbnail"), "avatar_url": None,
             "posted_at": _parse_posted_at(it.get("date") or it.get("uploadDate")),
             "views": _first_num(it, _YT_VIEWS), "likes": _first_num(it, _YT_LIKES),
@@ -291,7 +302,7 @@ def _parse_x_items(items):
         posts.append({
             "username": handle, "video_id": vid,
             "url": it.get("url") or it.get("twitterUrl"),
-            "caption": (it.get("text") or it.get("fullText") or "")[:2000] or None,
+            "caption": _txt(it.get("text") or it.get("fullText"))[:2000] or None,
             "cover_url": None, "avatar_url": au.get("profilePicture"),
             "posted_at": _parse_posted_at(it.get("createdAt")),
             "views": _first_num(it, ["viewCount", "views", "viewsCount"]),
@@ -364,32 +375,40 @@ def _parse_fb_items(items):
     Matched to the roster by pageName / post id."""
     posts, profile = [], {}
     for it in items:
-        page = (it.get("pageName") or it.get("pageUsername") or "").strip().lower()
-        user = it.get("user") or {}
-        cover = _fb_cover_url(it, user)
-        if page:  # only pages can be matched by handle; keep pageless posts too
-            profile[page] = {"followers": _first_num(it, ["pageLikes", "pageFollowers", "followers"]),
-                             "nick": user.get("name") or it.get("pageName")}
-        pid = str(it.get("postId") or "")
-        fb_url = it.get("facebookUrl") or it.get("url") or ""
-        posts.append({
-            "caption": (it.get("text") or it.get("message") or it.get("postText")
-                        or it.get("content") or "")[:2000] or None,
-            "username": page,
-            # raw post id so it matches post_id_from_url('facebook', url) in the
-            # index; fall back to the post URL (unique per post) then page name,
-            # so two id-less posts never collapse into one index slot
-            "video_id": pid or fb_url[:64] or page or "fb",
-            "url": fb_url or None,
-            "cover_url": cover,
-            "avatar_url": user.get("profilePic"),
-            "posted_at": _parse_posted_at(it.get("time") or it.get("timestamp")),
-            "views": _first_num(it, _FB_VIEWS),
-            "likes": _first_num(it, _FB_LIKES),
-            "comments": _first_num(it, _FB_CMTS),
-            "shares": _first_num(it, _FB_SHARES),
-            "saves": 0,
-        })
+        try:
+            if it.get("error"):  # actor placeholder ("no_items" / private post)
+                continue
+            page = _txt(it.get("pageName") or it.get("pageUsername")).strip().lower()
+            user = it.get("user") or {}
+            cover = _fb_cover_url(it, user)
+            if page:  # only pages can be matched by handle; keep pageless posts too
+                profile[page] = {"followers": _first_num(it, ["pageLikes", "pageFollowers", "followers"]),
+                                 "nick": user.get("name") or it.get("pageName")}
+            # video-share links come back in a raw GraphQL-ish shape: post id in
+            # post_id, caption in message.text, unix creation_time, no metrics
+            pid = str(it.get("postId") or it.get("post_id") or "")
+            fb_url = _txt(it.get("facebookUrl") or it.get("url"))
+            posts.append({
+                "caption": _txt(it.get("text") or it.get("message") or it.get("postText")
+                                or it.get("content"))[:2000] or None,
+                "username": page,
+                # raw post id so it matches post_id_from_url('facebook', url) in the
+                # index; fall back to the post URL (unique per post) then page name,
+                # so two id-less posts never collapse into one index slot
+                "video_id": pid or fb_url[:64] or page or "fb",
+                "url": fb_url or None,
+                "cover_url": cover,
+                "avatar_url": user.get("profilePic"),
+                "posted_at": _parse_posted_at(it.get("time") or it.get("timestamp")
+                                              or it.get("creation_time")),
+                "views": _first_num(it, _FB_VIEWS),
+                "likes": _first_num(it, _FB_LIKES),
+                "comments": _first_num(it, _FB_CMTS),
+                "shares": _first_num(it, _FB_SHARES),
+                "saves": 0,
+            })
+        except Exception as exc:  # noqa: BLE001 — one odd item must never kill the batch
+            log.warning("Skipping unparsable FB item: %s", exc)
     return posts, profile
 
 # Single-worker in-memory progress for the UI to poll.
@@ -440,7 +459,7 @@ def _parse_report_items(items: List[Dict[str, Any]]):
             "username": username,
             "video_id": str(video_id),
             "url": it.get("webVideoUrl"),
-            "caption": (it.get("text") or "")[:2000] or None,
+            "caption": _txt(it.get("text"))[:2000] or None,
             "cover_url": (it.get("videoMeta") or {}).get("coverUrl"),
             "avatar_url": author.get("avatar") or author.get("originalAvatarUrl"),
             "posted_at": _parse_posted_at(it.get("createTimeISO")),
