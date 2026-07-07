@@ -1,6 +1,6 @@
 # Influencer Real Time Report
 
-> Multi-campaign KOL/Influencer report platform · **Live:** `https://fefl-kol-report.up.railway.app`
+> Multi-campaign KOL/Influencer report platform · **Live:** `https://exhibitiondashboard-production.up.railway.app`
 > (Railway subdomain — set under Settings → Networking; not in code)
 
 ---

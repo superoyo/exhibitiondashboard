@@ -101,7 +101,7 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 <th class="pr-3 text-right" data-k="shares">🔁 Share</th><th class="pr-3 text-right" data-k="saves">🔖 Save</th>
 <th class="pr-3 text-right" data-k="er">ER%</th><th class="pr-3" data-k="posted">โพสต์เมื่อ</th><th>ลิงก์</th></tr></thead><tbody id="tb"></tbody></table></div>
 </div>
-<footer class="text-xs mt-5" style="color:var(--muted)">ER = engagement(like+cmt+share+save)/views · ข้อมูลดึงจากลิงก์โพสต์แคมเปญผ่าน Apify (เฉพาะ KOL ที่ active) · กด Refresh Data เพื่ออัปเดต</footer>
+<footer class="text-xs mt-5" style="color:var(--muted)">ER = engagement(like+cmt+share+save)/views · โพสต์ที่ไม่มียอด views (เช่น รูปภาพบน Facebook/IG) ใช้ engagement/followers แทน (มี * กำกับ) · — = คำนวณไม่ได้ (ไม่มีทั้ง views และ followers) · ข้อมูลดึงจากลิงก์โพสต์แคมเปญผ่าน Apify (เฉพาะ KOL ที่ active) · กด Refresh Data เพื่ออัปเดต</footer>
 </div>
 </div>
 
@@ -121,7 +121,12 @@ const PLAT={tiktok:['TikTok','#111'],facebook:['Facebook','#1877f2'],instagram:[
 function platBadge(r){const p=PLAT[r.platform]||PLAT.other;return `<span class="chip" style="background:${p[1]}">${p[0]}</span>`;}
 
 function render(DATA){
- const E=DATA.map(r=>{const eng=r.likes+r.comments+r.shares+(r.saves||0);return {...r,engagement:eng,er:r.views?eng/r.views*100:0};});
+ // ER = eng/views; photo posts (FB/IG) expose no view count → fall back to
+ // eng/followers (*), and show — when neither basis exists (never a fake 0.00%)
+ const E=DATA.map(r=>{const eng=r.likes+r.comments+r.shares+(r.saves||0);
+  const byFol=!r.views&&eng>0&&r.followers>0;
+  return {...r,engagement:eng,er:r.views?eng/r.views*100:(byFol?eng/r.followers*100:0),erByFol:byFol,erNA:!r.views&&eng>0&&!r.followers};});
+ const erTxt=r=>r.erNA?'—':r.er.toFixed(2)+'%'+(r.erByFol?'*':'');
  const sum=k=>E.reduce((s,r)=>s+(r[k]||0),0);
  const tv=sum('views'), te=sum('engagement');
  const reach=[...new Map(E.map(r=>[r.username,r.followers||0])).values()].reduce((a,b)=>a+b,0);
@@ -174,7 +179,7 @@ function render(DATA){
     <div class="text-xs" style="color:var(--muted)">${m[1]}</div>
     <div class="grid grid-cols-3 gap-y-1 mt-3 text-xs" style="color:#334155">
      <div>👁 ${fmt(r.views)}</div><div>❤️ ${fmt(r.likes)}</div><div>💬 ${fmt(r.comments)}</div>
-     <div>🔁 ${fmt(r.shares)}</div><div>🔖 ${fmt(r.saves||0)}</div><div>📊 ${r.er.toFixed(2)}%</div>
+     <div>🔁 ${fmt(r.shares)}</div><div>🔖 ${fmt(r.saves||0)}</div><div>📊 ${erTxt(r)}</div>
     </div>
     ${r.url?`<a href="${H(r.url)}" target="_blank" rel="noopener" class="post-link">🔗 ดูโพสต์ต้นทาง ↗</a>`:`<span class="post-link disabled">— ยังไม่มีลิงก์โพสต์ —</span>`}
    </div>
@@ -210,7 +215,7 @@ function render(DATA){
   <td class="pr-3 font-medium"><span style="display:inline-flex;align-items:center;gap:8px">${r.avatar?`<img src="${IMG(r.avatar)}" referrerpolicy="no-referrer" loading="lazy" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex:none;background:#e2e8f0" onerror="this.style.display='none'">`:''}@${H(r.username||'')} ${platBadge(r)}</span></td><td class="pr-3 text-right">${fmt(r.followers)}</td>
   <td class="pr-3 text-right font-semibold">${(r.views||0).toLocaleString()}</td><td class="pr-3 text-right">${(r.likes||0).toLocaleString()}</td>
   <td class="pr-3 text-right">${(r.comments||0).toLocaleString()}</td><td class="pr-3 text-right">${(r.shares||0).toLocaleString()}</td>
-  <td class="pr-3 text-right">${(r.saves||0).toLocaleString()}</td><td class="pr-3 text-right">${r.er.toFixed(2)}%</td>
+  <td class="pr-3 text-right">${(r.saves||0).toLocaleString()}</td><td class="pr-3 text-right">${erTxt(r)}</td>
   <td class="pr-3" style="color:var(--muted)">${r.posted||''}</td><td>${r.url?`<a href="${H(r.url)}" target="_blank">เปิด ↗</a>`:''}</td></tr>`).join('');}
  document.querySelectorAll('#tbl th').forEach(th=>th.onclick=()=>{const k=th.dataset.k;if(k){asc=sortK===k?!asc:false;sortK=k;table();}});
  table();

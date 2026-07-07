@@ -151,8 +151,9 @@ def run_scrape_x(
     tolerate_failure: bool = False,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Scrape specific X/Twitter posts by URL (best-effort)."""
-    payload = {"startUrls": post_urls, "maxItems": len(post_urls) or 1,
-               "tweetLanguage": None}
+    # NOTE: no "tweetLanguage" key — the actor's schema declares it a plain
+    # string (not nullable), so sending null fails input validation (400).
+    payload = {"startUrls": post_urls, "maxItems": len(post_urls) or 1}
     return _execute(payload, actor_id=config.X_ACTOR_ID,
                     poll_interval=poll_interval, timeout_s=timeout_s,
                     tolerate_failure=tolerate_failure)

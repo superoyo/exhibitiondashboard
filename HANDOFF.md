@@ -2,7 +2,7 @@
 
 คู่มือย้ายไปทำต่อบนเครื่องใหม่ / ส่งต่อโปรเจกต์ (อัปเดต 2026-07)
 
-> **เว็บที่รันจริง:** `https://fefl-kol-report.up.railway.app` (ตั้งชื่อ subdomain ที่ Railway → Settings → Networking)
+> **เว็บที่รันจริง:** `https://exhibitiondashboard-production.up.railway.app` (ตั้งชื่อ subdomain ที่ Railway → Settings → Networking)
 > ตั้งค่าที่ Railway เท่านั้น — ไม่มีในโค้ด · path ในระบบ: หน้าแรก `/` · รายงาน `/c/<รหัส>` · ลิงก์ลูกค้า `/v/<รหัส>`
 
 ---
@@ -12,7 +12,7 @@
 | ส่วน | ที่อยู่ | หมายเหตุ |
 |---|---|---|
 | โค้ด + config (รายชื่อ KOL ทุกแคมเปญ) | GitHub: `github.com/superoyo/exhibitiondashboard` | source of truth |
-| เว็บที่รันจริง | Railway: `https://fefl-kol-report.up.railway.app` (subdomain ตั้งได้ที่ Railway) | auto-deploy จาก GitHub `main` |
+| เว็บที่รันจริง | Railway: `https://exhibitiondashboard-production.up.railway.app` (subdomain ตั้งได้ที่ Railway) | auto-deploy จาก GitHub `main` |
 | ฐานข้อมูล | Railway Postgres plugin | inject `DATABASE_URL` ให้อัตโนมัติ |
 | Secrets | Railway → Variables | `APIFY_TOKEN`, `ADMIN_KEY` |
 
