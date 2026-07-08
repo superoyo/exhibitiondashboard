@@ -34,6 +34,42 @@ log = logging.getLogger("api")
 router = APIRouter(prefix="/api")
 
 
+class LoginIn(BaseModel):
+    username: str
+    password: str
+
+
+@router.post("/auth/login")
+def auth_login(body: LoginIn):
+    """Proxy Wazzup login (avoids browser CORS). Returns only what the client
+    session needs — never the password, never hrPassword."""
+    from app.auth import wazzup_login
+    try:
+        d = wazzup_login((body.username or "").strip(), body.password or "")
+    except ValueError:
+        raise HTTPException(401, "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
+    except RuntimeError:
+        raise HTTPException(502, "เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง")
+    keys = ("empThaiName", "empEngName", "nickName", "positionName",
+            "departmentName", "profileURL", "email", "access_token", "expiration")
+    return {k: d.get(k) for k in keys}
+
+
+@router.get("/auth/profile")
+def auth_profile(authorization: Optional[str] = Header(None)):
+    """Proxy Get Profile with the caller's bearer token."""
+    from app.auth import wazzup_profile
+    token = ""
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization[7:].strip()
+    if not token:
+        raise HTTPException(401, "missing token")
+    data = wazzup_profile(token)
+    if data is None:
+        raise HTTPException(401, "invalid or expired token")
+    return data
+
+
 @router.get("/health")
 def health(session: Session = Depends(db_dependency)):
     run = queries.last_run(session)

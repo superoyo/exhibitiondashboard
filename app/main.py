@@ -6,9 +6,10 @@ import pathlib
 import re
 from html import escape as _hesc
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 
 from app.api.routes import router as api_router
 
@@ -18,6 +19,44 @@ log = logging.getLogger("main")
 
 app = FastAPI(title="KOL TikTok Tracker", version="1.0.0")
 app.include_router(api_router)
+
+
+# ---------------------------------------------------------------------------
+# Auth gate (Wazzup bearer token) for mutating / costly / internal API calls.
+# View-only client pages must keep working WITHOUT login, so the endpoints
+# they read stay open. Pages themselves are guarded client-side (/static/auth.js).
+# ---------------------------------------------------------------------------
+
+_OPEN_API_PREFIXES = (
+    "/api/auth/",           # login/profile proxy
+    "/api/img",             # image cache (view pages)
+    "/api/report/data",     # report stats (view pages)
+    "/api/summary", "/api/trend", "/api/posts", "/api/kols/",  # legacy tracker reads
+)
+_OPEN_API_EXACT = {"/api/version", "/api/health", "/api/scrape/run"}  # scrape/run has X-ADMIN-KEY
+
+
+def _needs_auth(method: str, path: str) -> bool:
+    if not path.startswith("/api/"):
+        return False
+    if path in _OPEN_API_EXACT or path.startswith(_OPEN_API_PREFIXES):
+        return False
+    # single-campaign metadata is read by view-only pages for the title
+    if method == "GET" and re.fullmatch(r"/api/campaigns/[^/]+", path):
+        return False
+    return True
+
+
+@app.middleware("http")
+async def _auth_guard(request: Request, call_next):
+    if _needs_auth(request.method, request.url.path):
+        auth = request.headers.get("authorization", "")
+        token = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+        from app.auth import validate_token
+        ok = bool(token) and await run_in_threadpool(validate_token, token)
+        if not ok:
+            return JSONResponse({"detail": "unauthorized — กรุณาเข้าสู่ระบบ"}, status_code=401)
+    return await call_next(request)
 
 
 @app.on_event("startup")
@@ -50,7 +89,7 @@ def _seed_on_startup() -> None:
 @app.get("/api/version")
 def version():
     """Build marker — lets us confirm which commit Railway is actually running."""
-    return {"build": "campaign-hub-v67"}
+    return {"build": "campaign-hub-v68"}
 
 
 FRONTEND_DIR = pathlib.Path(__file__).resolve().parent.parent / "frontend"
@@ -59,6 +98,7 @@ REPORT = FRONTEND_DIR / "report.html"
 KOLS_PAGE = FRONTEND_DIR / "kols.html"
 TOKEN_PAGE = FRONTEND_DIR / "token.html"
 HOME_PAGE = FRONTEND_DIR / "home.html"
+LOGIN_PAGE = FRONTEND_DIR / "login.html"
 
 # HTML pages must always revalidate — otherwise browsers serve a stale shell
 # after a deploy (e.g. the old report before the dynamic rewrite).
@@ -152,8 +192,14 @@ def kols_page():
 
 @app.get("/token")
 def token_page():
-    """Apify token viewer/editor — open, no auth."""
+    """Apify token viewer/editor (page guarded client-side; API guarded server-side)."""
     return _page(TOKEN_PAGE)
+
+
+@app.get("/login")
+def login_page():
+    """Sign-in page (Wazzup / Fareast Fameline identity)."""
+    return _page(LOGIN_PAGE)
 
 
 # Serve any other static assets placed in frontend/ (kept minimal; SPA is one file).

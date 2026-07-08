@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>เข้าสู่ระบบ — Influencer Real Time Report</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root { --line:#e5e7eb; --muted:#64748b; --text:#0f172a; }
+    html{ background:#fff; }
+    body{ margin:0; background:radial-gradient(125% 88% at 50% 132%,#f6cb38 0%,#fadd6a 18%,#fcea9f 36%,#fef6da 56%,#ffffff 76%) no-repeat fixed; background-color:#fff; color:var(--text); font-family:'Noto Sans Thai',system-ui,sans-serif; min-height:100vh; display:flex; align-items:center; justify-content:center; }
+    .card{ background:#fff; border:1px solid var(--line); border-radius:16px; box-shadow:0 10px 30px rgba(15,23,42,.08); padding:2rem; width:100%; max-width:380px; margin:1rem; }
+    h1{ font-size:1.25rem; margin:0 0 .25rem; }
+    p.sub{ font-size:.85rem; color:var(--muted); margin:0 0 1.4rem; }
+    label{ display:block; font-size:.8rem; font-weight:600; color:var(--muted); margin-bottom:.3rem; }
+    input{ width:100%; box-sizing:border-box; border:1px solid var(--line); border-radius:10px; padding:.6rem .8rem; font-size:.95rem; font-family:inherit; margin-bottom:1rem; }
+    input:focus{ outline:2px solid #f6cb38; border-color:#f6cb38; }
+    button{ width:100%; background:#0f172a; color:#fff; border:none; border-radius:10px; padding:.7rem; font-size:.95rem; font-weight:700; cursor:pointer; font-family:inherit; }
+    button:disabled{ opacity:.6; cursor:not-allowed; }
+    #err{ color:#dc2626; font-size:.85rem; margin:.8rem 0 0; min-height:1.2em; }
+    .logo{ display:flex; flex-direction:column; line-height:.98; font-weight:800; font-size:.95rem; color:#0f172a; letter-spacing:-.02em; font-family:system-ui,'Segoe UI',Arial,sans-serif; margin-bottom:1.2rem; }
+    .logo .lw{ position:relative; display:inline-block; }
+    .logo .ldot{ position:absolute; top:.08em; right:-.5em; width:.32em; height:.32em; border-radius:50%; background:#f5c518; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo" role="img" aria-label="Far East Fame Line">
+      <span class="lw">Far<i class="ldot"></i></span><span class="lw">East</span><span class="lw">Fame</span><span class="lw">Line</span>
+    </div>
+    <h1>🎯 Influencer Real Time Report</h1>
+    <p class="sub">เข้าสู่ระบบด้วยบัญชีพนักงาน (Wazzup)</p>
+    <form id="f">
+      <label for="u">ชื่อผู้ใช้</label>
+      <input id="u" autocomplete="username" required autofocus>
+      <label for="p">รหัสผ่าน</label>
+      <input id="p" type="password" autocomplete="current-password" required>
+      <button id="btn" type="submit">เข้าสู่ระบบ</button>
+      <p id="err"></p>
+    </form>
+  </div>
+<script>
+// already signed in with a live session? go straight in
+try{
+  const s=JSON.parse(localStorage.getItem('wz_session')||'null');
+  if(s && s.access_token && (!s.expiration || new Date(s.expiration)>new Date())){
+    location.replace(nextUrl());
+  }
+}catch(e){}
+function nextUrl(){
+  const n=new URLSearchParams(location.search).get('next')||'/';
+  return (n.startsWith('/')&&!n.startsWith('//'))?n:'/';  // same-origin only
+}
+document.getElementById('f').onsubmit=async function(ev){
+  ev.preventDefault();
+  const btn=document.getElementById('btn'), err=document.getElementById('err');
+  err.textContent=''; btn.disabled=true; btn.textContent='กำลังเข้าสู่ระบบ…';
+  try{
+    const r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({username:document.getElementById('u').value.trim(),password:document.getElementById('p').value})});
+    const d=await r.json().catch(()=>({}));
+    if(r.status===401){ err.textContent='ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง'; return; }
+    if(!r.ok || !d.access_token){ err.textContent='เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'; return; }
+    localStorage.setItem('wz_session', JSON.stringify(d));  // token + expiration + display fields (no password)
+    location.replace(nextUrl());
+  }catch(e){ err.textContent='เชื่อมต่อไม่ได้ กรุณาลองใหม่อีกครั้ง'; }
+  finally{ btn.disabled=false; btn.textContent='เข้าสู่ระบบ'; }
+};
+</script>
+</body>
+</html>

@@ -4,6 +4,10 @@
 
 > **เว็บที่รันจริง:** `https://exhibitiondashboard-production.up.railway.app` (ตั้งชื่อ subdomain ที่ Railway → Settings → Networking)
 > ตั้งค่าที่ Railway เท่านั้น — ไม่มีในโค้ด · path ในระบบ: หน้าแรก `/` · รายงาน `/c/<รหัส>` · ลิงก์ลูกค้า `/v/<รหัส>`
+>
+> **การเข้าถึง:** ทุกหน้าทำงานต้อง login ที่ `/login` ด้วยบัญชีพนักงาน Wazzup
+> (identity backend ตั้งได้ผ่าน env `WAZZUP_BASE_URL`, default `https://api.fareastfamelineddb.com`)
+> · ลิงก์ลูกค้า `/v/<รหัส>` เปิดดูได้โดยไม่ต้อง login · API ฝั่งเขียน/สั่งงานตรวจ bearer token ที่เซิร์ฟเวอร์
 
 ---
 
