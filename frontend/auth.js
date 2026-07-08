@@ -45,15 +45,29 @@
     });
   };
 
-  // user chip + logout in the nav
+  // user chip (photo + real full name) + logout in the nav
   function mountChip() {
     const nav = document.querySelector('nav.nav');
     if (!nav) return;
-    const name = s.nickName || s.empThaiName || s.empEngName || s.email || '';
+    const name = s.displayName || s.empThaiName || s.empEngName || s.nickName || s.email || '';
     const wrap = document.createElement('div');
     wrap.style.cssText = 'display:flex;align-items:center;gap:.45rem;font-size:.78rem;color:#475569;margin-left:.4rem';
+    if (s.photo) {
+      const img = document.createElement('img');
+      img.src = s.photo;
+      img.alt = name;
+      img.referrerPolicy = 'no-referrer';
+      img.style.cssText = 'width:28px;height:28px;border-radius:50%;object-fit:cover;background:#e2e8f0;border:1px solid #e5e7eb;flex:none';
+      img.onerror = function () { this.remove(); };
+      wrap.appendChild(img);
+    } else {
+      const ph = document.createElement('span');
+      ph.textContent = '👤';
+      wrap.appendChild(ph);
+    }
     const who = document.createElement('span');
-    who.textContent = '👤 ' + name;
+    who.textContent = name;
+    who.style.cssText = 'font-weight:600;color:#334155;white-space:nowrap';
     const btn = document.createElement('button');
     btn.textContent = 'ออกจากระบบ';
     btn.style.cssText = 'border:1px solid #e5e7eb;background:#fff;border-radius:999px;padding:.25rem .7rem;cursor:pointer;font-size:.72rem;font-family:inherit;color:#475569';
