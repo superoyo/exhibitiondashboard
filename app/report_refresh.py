@@ -22,6 +22,7 @@ from app.apify_client import (
     ApifyError,
     run_scrape_fb,
     run_scrape_fb_pages,
+    run_scrape_fb_reels,
     run_scrape_ig,
     run_scrape_ig_profiles,
     run_scrape_posts,
@@ -242,7 +243,9 @@ def _first_num(it: dict, keys) -> int:
     return 0
 
 
-_IG_VIEWS = ["videoViewCount", "videoPlayCount", "viewCount", "playCount", "igPlayCount", "viewsCount", "views"]
+_IG_VIEWS = ["videoViewCount", "videoPlayCount", "viewCount", "playCount", "igPlayCount",
+             "viewsCount", "views", "video_play_count", "video_view_count",
+             "ig_play_count", "reelPlayCount", "playsCount", "videoViews"]
 _IG_LIKES = ["likesCount", "likeCount", "likes"]
 _IG_CMTS = ["commentsCount", "commentCount", "comments"]
 
@@ -358,6 +361,47 @@ def _fb_cover_url(it: dict, user: dict) -> Optional[str]:
         if r:
             return r
     return (user or {}).get("profilePic")
+
+
+def _is_fb_reel(url: Optional[str]) -> bool:
+    u = (url or "").lower()
+    return ("facebook.com" in u or "fb.com" in u) and ("/reel/" in u or "/reels/" in u)
+
+
+_FB_REEL_VIEWS = ["viewsCount", "playCount", "videoViewCount", "playsCount",
+                  "views", "plays", "videoPlayCount"]
+
+
+def _parse_fb_reel_items(items):
+    """Parse the Facebook REELS actor output → (posts, profile). Field names
+    are probed tolerantly (actor versions differ); views ARE available here."""
+    posts, profile = [], {}
+    for it in items:
+        user = it.get("user") or it.get("author") or {}
+        page = (it.get("pageName") or it.get("pageUsername")
+                or it.get("profileName") or user.get("name") or "").strip().lower()
+        if page:
+            profile[page] = {"followers": _first_num(it, ["pageLikes", "pageFollowers", "followers"]),
+                             "nick": user.get("name") or it.get("pageName") or it.get("profileName")}
+        pid = str(it.get("postId") or it.get("id") or "")
+        url = it.get("url") or it.get("facebookUrl") or it.get("topLevelUrl") or ""
+        posts.append({
+            "username": page,
+            "video_id": pid or url[:64] or page or "fbreel",
+            "url": url or None,
+            "caption": (it.get("text") or it.get("description") or it.get("title") or "")[:2000] or None,
+            "cover_url": _fb_cover_url(it, user if isinstance(user, dict) else {}),
+            "avatar_url": (user.get("profilePic") or user.get("profilePicture")
+                           if isinstance(user, dict) else None),
+            "posted_at": _parse_posted_at(it.get("time") or it.get("timestamp")
+                                          or it.get("createdAt")),
+            "views": _first_num(it, _FB_REEL_VIEWS),
+            "likes": _first_num(it, _FB_LIKES),
+            "comments": _first_num(it, _FB_CMTS),
+            "shares": _first_num(it, _FB_SHARES),
+            "saves": 0,
+        })
+    return posts, profile
 
 
 # Facebook field names vary a lot across actor versions — try every plausible one.
@@ -610,8 +654,25 @@ def refresh_report(campaign: str = "pao") -> dict:
                 items, meta = run_scrape_posts(urls, tolerate_failure=True)
                 posts, pr = _parse_report_items(items); return posts, meta, pr
             if plat == "facebook":
-                items, meta = run_scrape_fb(urls, tolerate_failure=True)
-                posts, pr = _parse_fb_items(items); return posts, meta, pr
+                # Reels go to the dedicated reels actor (posts scraper has no
+                # view counts for reels); everything else to the posts actor.
+                reels = [u for u in urls if _is_fb_reel(u)]
+                normal = [u for u in urls if u not in reels]
+                posts, pr = [], {}
+                cost_sum, part = 0.0, False
+                if normal:
+                    items, meta = run_scrape_fb(normal, tolerate_failure=True)
+                    p2, pr2 = _parse_fb_items(items)
+                    posts += p2; pr.update(pr2)
+                    cost_sum += meta.get("cost_usd") or 0.0
+                    part = part or bool(meta.get("partial"))
+                if reels:
+                    items, meta = run_scrape_fb_reels(reels, tolerate_failure=True)
+                    p2, pr2 = _parse_fb_reel_items(items)
+                    posts += p2; pr.update(pr2)
+                    cost_sum += meta.get("cost_usd") or 0.0
+                    part = part or bool(meta.get("partial"))
+                return posts, {"cost_usd": cost_sum or None, "partial": part}, pr
             if plat == "instagram":
                 items, meta = run_scrape_ig(urls, tolerate_failure=True); return _parse_ig_items(items), meta, {}
             if plat == "youtube":

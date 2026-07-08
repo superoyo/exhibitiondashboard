@@ -36,6 +36,8 @@ TZ = ZoneInfo(TZ_NAME)
 # Apify actor + tuning knobs (kept here so they are easy to find / change).
 APIFY_ACTOR_ID: str = "clockworks~tiktok-scraper"
 FB_ACTOR_ID: str = "apify~facebook-posts-scraper"  # campaign report Facebook posts
+# Facebook REELS need their own actor — the posts scraper has no view counts
+FB_REEL_ACTOR_ID: str = os.getenv("FB_REEL_ACTOR_ID", "apify~facebook-reels-scraper")
 # Extra-platform actors (multi-platform report). Override via env if a different
 # actor works better. Best-effort — parsing degrades gracefully if they change.
 IG_ACTOR_ID: str = os.getenv("IG_ACTOR_ID", "apify~instagram-scraper")

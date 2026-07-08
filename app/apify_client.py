@@ -122,6 +122,21 @@ def run_scrape_fb(
                     tolerate_failure=tolerate_failure)
 
 
+def run_scrape_fb_reels(
+    post_urls: List[str],
+    *,
+    poll_interval: float = 8.0,
+    timeout_s: float = 300.0,
+    tolerate_failure: bool = False,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Scrape specific Facebook REELS by URL — the posts scraper returns no
+    view counts for reels, this dedicated actor does."""
+    payload = {"startUrls": [{"url": u} for u in post_urls], "resultsLimit": 1}
+    return _execute(payload, actor_id=config.FB_REEL_ACTOR_ID,
+                    poll_interval=poll_interval, timeout_s=timeout_s,
+                    tolerate_failure=tolerate_failure)
+
+
 def run_scrape_ig(
     post_urls: List[str], *, poll_interval: float = 8.0, timeout_s: float = 300.0,
     tolerate_failure: bool = False,
