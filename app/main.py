@@ -89,7 +89,7 @@ def _seed_on_startup() -> None:
 @app.get("/api/version")
 def version():
     """Build marker — lets us confirm which commit Railway is actually running."""
-    return {"build": "campaign-hub-v72"}
+    return {"build": "campaign-hub-v73"}
 
 
 FRONTEND_DIR = pathlib.Path(__file__).resolve().parent.parent / "frontend"
@@ -155,10 +155,8 @@ def campaign_report(campaign_key: str):
     return _report_with_og(campaign_key)
 
 
-@app.get("/v/{view_token}")
-def campaign_report_view(view_token: str):
-    """Public, view-only campaign report for clients. The path segment is a
-    RANDOM view token (not the campaign key) so links can't be enumerated."""
+def _serve_view(view_token: str):
+    """Resolve a client view token -> campaign and serve the view-only report."""
     from sqlalchemy import select as _select
 
     from app.db import session_scope
@@ -178,6 +176,20 @@ def campaign_report_view(view_token: str):
             "<h2>ไม่พบลิงก์รายงานนี้</h2><p>ลิงก์อาจถูกเปลี่ยน — "
             "กรุณาขอลิงก์ใหม่จากทีมงาน</p></div>", status_code=404)
     return _report_with_og(key, inject_campaign=True)
+
+
+@app.get("/v/{view_token}")
+def campaign_report_view(view_token: str):
+    """Public, view-only report. The path segment is a RANDOM view token (not
+    the campaign key) so links can't be enumerated."""
+    return _serve_view(view_token)
+
+
+@app.get("/v/{slug}/{view_token}")
+def campaign_report_view_named(slug: str, view_token: str):
+    """Same as /v/<token> but with a readable campaign-name slug in front
+    (cosmetic only — resolution is by the token; the slug is ignored)."""
+    return _serve_view(view_token)
 
 
 # ---- legacy paths kept alive so old bookmarks + shared links still work ----

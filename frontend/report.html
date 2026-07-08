@@ -274,14 +274,18 @@ if(VIEW_ONLY){
   }catch(e){ setInfo('⚠️ สร้างไฟล์ไม่สำเร็จ: '+e.message); }
   finally{ pb.disabled=false; pb.innerHTML=old; }
  };}
-// "View Only for Client" — copy the RANDOM-token client link (owner view only)
+// "View Only for Client" — copy the client link: /v/<campaign-slug>/<token>
+// (slug is readable so the team knows which campaign they're sending; the
+// random token is what actually grants access)
 {const sb=document.getElementById('shareBtn');
+ const slugify=s=>(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'').slice(0,40);
  if(sb) sb.onclick=async()=>{
   try{
    const r=await fetch('/api/campaigns/'+encodeURIComponent(CAMPAIGN)+'/view-token');
    const d=await r.json();
    if(!r.ok||!d.token) throw new Error(d.detail||'ขอลิงก์ไม่สำเร็จ');
-   const link=location.origin+'/v/'+d.token;
+   const slug=slugify(window.__CAMP_NAME__)||CAMPAIGN;
+   const link=location.origin+'/v/'+slug+'/'+d.token;
    try{ await navigator.clipboard.writeText(link); setInfo('✅ คัดลอกลิงก์สำหรับลูกค้าแล้ว — '+link); }
    catch(e){ window.prompt('คัดลอกลิงก์นี้ส่งให้ลูกค้า (ดูได้อย่างเดียว):', link); }
   }catch(e){ setInfo('⚠️ '+e.message); }
@@ -291,6 +295,7 @@ if(VIEW_ONLY){
 async function loadCampaignMeta(){
  try{
   const meta = await (await fetch('/api/campaigns/'+encodeURIComponent(CAMPAIGN))).json();
+  window.__CAMP_NAME__ = meta.name || '';
   const emoji = meta.emoji || '📊';
   document.getElementById('repTitle').textContent = `${emoji} ${meta.name || CAMPAIGN} — Campaign Report`;
   document.getElementById('repSub').textContent = meta.subtitle || 'ข้อมูลจริงจาก TikTok/Facebook ผ่าน Apify';
