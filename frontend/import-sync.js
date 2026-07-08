@@ -74,15 +74,25 @@ window.ImportSync = (function () {
     const out = []; const multi = wb.SheetNames.length > 1;
     wb.SheetNames.forEach(sheetName => {
       const ws = wb.Sheets[sheetName]; if (!ws) return;
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false, defval: '' });
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: true, defval: '' });
       if (!rows.length) return;
+      // cell HYPERLINKS (names linked to profile pages) — per-row targets
+      const hyper = {};
+      try {
+        const rng = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+        for (let R = rng.s.r; R <= rng.e.r; R++) for (let C = rng.s.c; C <= rng.e.c; C++) {
+          const cell = ws[XLSX.utils.encode_cell({ r: R, c: C })];
+          if (cell && cell.l && cell.l.Target && /^https?:/i.test(cell.l.Target))
+            (hyper[R - rng.s.r] = hyper[R - rng.s.r] || []).push(cell.l.Target);
+        }
+      } catch (e) { }
       let hi = 0; for (let i = 0; i < rows.length; i++) { if (rows[i].filter(c => _n(c)).length >= 1) { hi = i; break; } }
       const headers = rows[hi].map(_low);
       // Skip non-work sheets (shipping-address etc.): no social link + address-ish
       const hasUrl = rows.some(r => r.some(c => SOCIAL.test(_n(c))));
       const nmeta = _low(sheetName) + ' ' + headers.join(' ');
       if (!hasUrl && ADDR.some(k => nmeta.includes(k))) return;
-      let cU = pickCol(headers, ['username', 'handle', 'ผู้ใช้', 'บัญชี', 'user', 'ไอดี', 'ชื่อบัญชี', 'account', 'ช่อง', 'channel', 'kol', 'ชื่อ', 'name']);
+      let cU = pickCol(headers, ['username', 'handle', 'ผู้ใช้', 'บัญชี', 'user', 'ไอดี', 'ชื่อบัญชี', 'account', 'ช่อง', 'channel', 'kol', 'influencer', 'influ', 'อินฟลู', 'ชื่อ', 'name']);
       const cGrp = pickCol(headers, ['หมวด', 'ประเภท', 'group', 'category', 'type', 'tier', 'กลุ่ม']);
       const cSub = pickCol(headers, ['ย่อย', 'subgroup', 'sub']);
       const cFol = pickCol(headers, ['follow', 'ติดตาม', 'fan']);
@@ -90,7 +100,8 @@ window.ImportSync = (function () {
       let section = '';
       for (let i = (headerIsData ? hi : hi + 1); i < rows.length; i++) {
         const row = rows[i]; const filled = row.filter(c => _n(c)); if (!filled.length) continue;
-        const urls = [...new Set(urlsIn(row.map(_n).join('  ')))];
+        const hyperUrls = (hyper[i] || []).map(u => normalizeUrl(u.trim())).filter(u => !NONWORK_URL.test(u));
+        const urls = [...new Set([...urlsIn(row.map(_n).join('  ')), ...hyperUrls])];
         if (!urls.length && !multi && cGrp < 0 && filled.length <= 2) {
           const t = filled.map(_n).find(v => v && !/^\d+$/.test(v) && !/^#/.test(v));
           if (t) section = t;

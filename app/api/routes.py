@@ -197,7 +197,10 @@ def _roster_endpoints(model, is_report: bool):
         q = select(model)
         if is_report:
             q = q.where(model.campaign == campaign)
-        rows = session.scalars(q.order_by(model.content_group, model.username)).all()
+            q = q.order_by(model.sort_order, model.id)  # source-file order
+        else:
+            q = q.order_by(model.content_group, model.username)
+        rows = session.scalars(q).all()
         return {"kols": [_serialize(k) for k in rows]}
 
     def add(body: KolIn, campaign: str = "pao", session: Session = Depends(db_dependency)):
@@ -217,6 +220,8 @@ def _roster_endpoints(model, is_report: bool):
         )
         if is_report:
             k.campaign = campaign
+            k.sort_order = (session.scalar(
+                select(func.max(model.sort_order)).where(model.campaign == campaign)) or 0) + 1
             if body.subgroup is not None:
                 k.subgroup = body.subgroup.strip() or None
             if body.url:
@@ -315,11 +320,12 @@ def bulk_replace_report(body: BulkRosterIn, campaign: str = "pao",
         raise HTTPException(400, "ไม่พบรายชื่อ KOL ที่ใช้ได้ในไฟล์/ชีต")
 
     session.execute(delete(ReportKol).where(ReportKol.campaign == campaign))
-    for u, k in seen.items():
+    for i, (u, k) in enumerate(seen.items()):
         links = [{"platform": (ln.platform or ""), "url": ln.url.strip(),
                   "handle": (ln.handle or "")} for ln in (k.links or []) if ln.url and ln.url.strip()]
         primary = (k.url.strip() if k.url else "") or (links[0]["url"] if links else "")
         session.add(ReportKol(
+            sort_order=i,  # keep the source file's row order
             username=u,
             display=(k.display or u).strip(),
             content_group=(k.group or "KOL").strip() or "KOL",
@@ -504,7 +510,7 @@ def report_data(campaign: str = "pao", session: Session = Depends(db_dependency)
     roster = session.scalars(
         select(ReportKol)
         .where(ReportKol.active.is_(True), ReportKol.campaign == campaign)
-        .order_by(ReportKol.content_group, ReportKol.subgroup)
+        .order_by(ReportKol.sort_order, ReportKol.id)  # source-file order
     ).all()
     # best post per (username, platform) so each platform's stats stay separate
     posts_by: dict = {}

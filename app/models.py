@@ -68,6 +68,7 @@ class ReportKol(Base):
     avatar_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     followers: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

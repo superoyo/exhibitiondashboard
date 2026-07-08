@@ -578,7 +578,7 @@ def build_pptx(campaign_key: str) -> tuple[io.BytesIO, str]:
         kols = session.scalars(
             select(ReportKol)
             .where(ReportKol.active.is_(True), ReportKol.campaign == campaign_key)
-            .order_by(ReportKol.content_group, ReportKol.subgroup, ReportKol.username)
+            .order_by(ReportKol.sort_order, ReportKol.id)  # source-file order
         ).all()
         posts_by = {}
         for p in session.scalars(select(ReportPost).where(
