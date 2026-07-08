@@ -233,9 +233,9 @@ function render(DATA){
 // ---- data load + refresh ----
 // Campaign inferred from URL. Canonical: /c/<key>. Legacy paths still work.
 function inferCampaign(){
+ if(window.__CAMPAIGN__) return window.__CAMPAIGN__;  // injected on /v/<token>
  const p=location.pathname.replace(/\/$/,'');
  const m=p.match(/^\/c\/([a-z0-9-]+)$/i); if(m) return m[1].toLowerCase();
- const mv=p.match(/^\/v\/([a-z0-9-]+)$/i); if(mv) return mv[1].toLowerCase();
  if(p==='/report') return 'pao';
  if(p==='/sahagroup2027') return 'sahagroup2027';
  if(p==='/sahagroup') return 'sahagroup';
@@ -274,12 +274,17 @@ if(VIEW_ONLY){
   }catch(e){ setInfo('⚠️ สร้างไฟล์ไม่สำเร็จ: '+e.message); }
   finally{ pb.disabled=false; pb.innerHTML=old; }
  };}
-// "สร้างลิงก์ลูกค้า" — copy the public view-only URL (owner view only)
+// "View Only for Client" — copy the RANDOM-token client link (owner view only)
 {const sb=document.getElementById('shareBtn');
  if(sb) sb.onclick=async()=>{
-  const link=location.origin+'/v/'+encodeURIComponent(CAMPAIGN);
-  try{ await navigator.clipboard.writeText(link); setInfo('✅ คัดลอกลิงก์สำหรับลูกค้าแล้ว — '+link); }
-  catch(e){ window.prompt('คัดลอกลิงก์นี้ส่งให้ลูกค้า (ดูได้อย่างเดียว):', link); }
+  try{
+   const r=await fetch('/api/campaigns/'+encodeURIComponent(CAMPAIGN)+'/view-token');
+   const d=await r.json();
+   if(!r.ok||!d.token) throw new Error(d.detail||'ขอลิงก์ไม่สำเร็จ');
+   const link=location.origin+'/v/'+d.token;
+   try{ await navigator.clipboard.writeText(link); setInfo('✅ คัดลอกลิงก์สำหรับลูกค้าแล้ว — '+link); }
+   catch(e){ window.prompt('คัดลอกลิงก์นี้ส่งให้ลูกค้า (ดูได้อย่างเดียว):', link); }
+  }catch(e){ setInfo('⚠️ '+e.message); }
  };}
 
 // Fetch campaign metadata for title/subtitle + top-5 quick nav

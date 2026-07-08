@@ -748,15 +748,38 @@ def _next_campaign_key(session: Session) -> str:
     return key
 
 
+def _slug_from_name(name: str) -> str:
+    """Friendly URL key from the campaign name: 'Bon (2026-061) DNA High
+    Protein' -> 'bon-2026-061-dna-high-protein'. Thai-only names produce an
+    empty slug (keys allow a-z/0-9/- only) — callers fall back to a number."""
+    s = re.sub(r"[^a-z0-9]+", "-", (name or "").lower())
+    return re.sub(r"-+", "-", s).strip("-")[:32].strip("-")
+
+
+def _campaign_key_for(session: Session, name: str) -> str:
+    base = _slug_from_name(name)
+    if not base or base.isdigit():  # unusable slug -> running code
+        return _next_campaign_key(session)
+    key = base
+    n = 2
+    while session.get(Campaign, key):  # name collision -> -2, -3, ...
+        suffix = f"-{n}"
+        key = base[: 32 - len(suffix)] + suffix
+        n += 1
+    return key
+
+
 @router.post("/campaigns")
 def create_campaign(body: CampaignIn, session: Session = Depends(db_dependency)):
-    """Create a new campaign. The URL key is a system-generated running code
-    (00001, 00002, …) — the client only sends name/emoji/subtitle."""
+    """Create a new campaign. The URL key is a friendly slug generated from the
+    campaign name (running code as fallback) — editable later via Edit."""
     if not (body.name or "").strip():
         raise HTTPException(400, "name ห้ามว่าง")
-    key = _next_campaign_key(session)
+    import secrets as _secrets
+    key = _campaign_key_for(session, body.name)
     c = Campaign(
         key=key,
+        view_token=_secrets.token_urlsafe(9),
         name=body.name.strip(),
         emoji=(body.emoji or "📊").strip()[:8],
         subtitle=(body.subtitle or "").strip() or None,
@@ -806,6 +829,20 @@ def delete_campaign(key: str, session: Session = Depends(db_dependency)):
     c.active = False
     session.commit()
     return {"status": "archived", "key": key}
+
+
+@router.get("/campaigns/{key}/view-token")
+def campaign_view_token(key: str, session: Session = Depends(db_dependency)):
+    """The campaign's client-link token (random, unguessable). Generated on
+    first request. Auth-protected — never exposed on the open meta endpoint."""
+    import secrets as _secrets
+    c = session.get(Campaign, key)
+    if not c:
+        raise HTTPException(404, f"ไม่พบแคมเปญ '{key}'")
+    if not c.view_token:
+        c.view_token = _secrets.token_urlsafe(9)
+        session.commit()
+    return {"token": c.view_token}
 
 
 class CampaignRename(BaseModel):

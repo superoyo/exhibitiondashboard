@@ -109,6 +109,8 @@ class Campaign(Base):
 
     key: Mapped[str] = mapped_column(String(32), primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # random unguessable token for the client view-only link (/v/<token>)
+    view_token: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     emoji: Mapped[str] = mapped_column(String(8), nullable=False, default="📊")
     subtitle: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     groups_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
