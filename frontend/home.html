@@ -136,6 +136,7 @@ function cardHTML(c){
         <div class="text-xs mt-1" style="color:var(--muted)">/c/${key}</div>
         ${c.subtitle?`<div class="text-sm mt-2" style="color:#334155">${esc(c.subtitle)}</div>`:''}
         <div class="mt-3">${(c.groups||[]).slice(0,4).map(g=>`<span class="chip">${esc(g)}</span>`).join('')}${(c.groups||[]).length>4?`<span class="chip">+${(c.groups||[]).length-4}</span>`:''}</div>
+        ${c.created_by?`<div class="text-xs mt-2 flex items-center gap-1" style="color:var(--muted)">${c.created_by_photo?`<img src="${esc(c.created_by_photo)}" referrerpolicy="no-referrer" style="width:20px;height:20px;border-radius:50%;object-fit:cover;background:#e2e8f0" onerror="this.remove()">`:'👤'} <span>สร้างโดย ${esc(c.created_by)}</span></div>`:''}
         <div class="text-xs mt-3 flex items-center justify-between" style="color:var(--muted)">
           <span>${c.refreshed_at?'🔄 อัปเดต '+fmtDate(c.refreshed_at):'ยังไม่มีข้อมูล'}</span>
           <span class="font-semibold" style="color:#2563eb">เปิดรายงาน →</span>

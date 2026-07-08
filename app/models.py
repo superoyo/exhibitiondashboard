@@ -112,6 +112,9 @@ class Campaign(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     # random unguessable token for the client view-only link (/v/<token>)
     view_token: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    # creator (from the Wazzup profile at create time): full name + tiny photo
+    created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_by_photo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     emoji: Mapped[str] = mapped_column(String(8), nullable=False, default="📊")
     subtitle: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     groups_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

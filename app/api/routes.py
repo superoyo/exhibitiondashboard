@@ -721,7 +721,15 @@ def list_campaigns(limit: int = Query(15, ge=1, le=100),
             select(ReportPost.campaign, func.max(ReportPost.scraped_at)).group_by(ReportPost.campaign)
         ).all()
     )
-    return {"campaigns": [_campaign_dict(c, counts.get(c.key, 0), last.get(c.key)) for c in rows]}
+    out = []
+    for c in rows:
+        d = _campaign_dict(c, counts.get(c.key, 0), last.get(c.key))
+        # creator shown on Home cards — this endpoint is auth-protected, the
+        # open single-campaign GET (used by client view pages) omits it
+        d["created_by"] = c.created_by
+        d["created_by_photo"] = c.created_by_photo
+        out.append(d)
+    return {"campaigns": out}
 
 
 @router.get("/campaigns/{key}")
@@ -775,17 +783,61 @@ def _campaign_key_for(session: Session, name: str) -> str:
     return key
 
 
+def _thumb_datauri(b64: str, ftype) -> Optional[str]:
+    """Downscale a base64 employee photo to a tiny 64px JPEG data URI so the
+    campaign list stays light."""
+    try:
+        import base64 as _b64
+        import io as _io
+
+        from PIL import Image
+        im = Image.open(_io.BytesIO(_b64.b64decode(b64))).convert("RGB")
+        im.thumbnail((64, 64))
+        out = _io.BytesIO()
+        im.save(out, "JPEG", quality=80)
+        return "data:image/jpeg;base64," + _b64.b64encode(out.getvalue()).decode()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _creator_info(authorization: Optional[str]) -> tuple:
+    """(full name, tiny photo) of the signed-in creator, from their Wazzup
+    profile. Best-effort — campaign creation never fails because of this."""
+    try:
+        token = ""
+        if authorization and authorization.lower().startswith("bearer "):
+            token = authorization[7:].strip()
+        if not token:
+            return None, None
+        from app.auth import wazzup_profile
+        pd = wazzup_profile(token) or {}
+        p = pd.get("profile") or {}
+        name = p.get("empThaiName") or p.get("empEngName")
+        photo = None
+        if p.get("wazzupPhotoBase64"):
+            photo = _thumb_datauri(p["wazzupPhotoBase64"], p.get("wazzupPhotoFileType"))
+        if not photo and (p.get("profileURL") or "").startswith("http"):
+            photo = p["profileURL"]
+        return name, photo
+    except Exception:  # noqa: BLE001
+        return None, None
+
+
 @router.post("/campaigns")
-def create_campaign(body: CampaignIn, session: Session = Depends(db_dependency)):
+def create_campaign(body: CampaignIn, authorization: Optional[str] = Header(None),
+                    session: Session = Depends(db_dependency)):
     """Create a new campaign. The URL key is a friendly slug generated from the
     campaign name (running code as fallback) — editable later via Edit."""
     if not (body.name or "").strip():
         raise HTTPException(400, "name ห้ามว่าง")
     import secrets as _secrets
+    created_by, created_photo = _creator_info(authorization)
     key = _campaign_key_for(session, body.name)
     c = Campaign(
         key=key,
         view_token=_secrets.token_urlsafe(9),
+        created_by=created_by,
+        created_by_photo=created_photo,
         name=body.name.strip(),
         emoji=(body.emoji or "📊").strip()[:8],
         subtitle=(body.subtitle or "").strip() or None,
