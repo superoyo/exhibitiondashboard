@@ -122,6 +122,28 @@ def run_scrape_fb(
                     tolerate_failure=tolerate_failure)
 
 
+def run_scrape_posts_with_video(
+    post_urls: List[str],
+    *,
+    poll_interval: float = 10.0,
+    timeout_s: float = 600.0,
+    tolerate_failure: bool = True,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Scrape specific TikTok posts WITH the video files downloaded to Apify
+    storage (item['mediaUrls'] points at the stored file). Used by the tie-in
+    frame extraction — noticeably more expensive than a stat scrape."""
+    payload = {
+        "postURLs": post_urls,
+        "shouldDownloadVideos": True,
+        "shouldDownloadCovers": False,
+        "shouldDownloadSubtitles": False,
+        "shouldDownloadSlideshowImages": False,
+        "shouldDownloadAvatars": False,
+    }
+    return _execute(payload, poll_interval=poll_interval, timeout_s=timeout_s,
+                    tolerate_failure=tolerate_failure)
+
+
 def run_scrape_fb_reels(
     post_urls: List[str],
     *,

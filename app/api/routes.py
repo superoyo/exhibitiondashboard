@@ -572,6 +572,24 @@ def report_data(campaign: str = "pao", session: Session = Depends(db_dependency)
     }
 
 
+@router.post("/report/tiein")
+def report_tiein_trigger(background: BackgroundTasks, campaign: str = "pao"):
+    """AI tie-in shots: download the campaign's TikTok videos, let Claude pick
+    the frame showing the product, use it as the PPTX post preview."""
+    from app.tiein import run_tiein
+    st = state_for("ti:" + campaign)
+    if st.get("status") == "running":
+        raise HTTPException(status_code=409, detail="กำลังหา tie-in shot อยู่แล้ว")
+    st.update(status="running", message="เริ่มงาน…", posts=0)
+    background.add_task(run_tiein, campaign)
+    return {"status": "started", "campaign": campaign}
+
+
+@router.get("/report/tiein/status")
+def report_tiein_status(campaign: str = "pao"):
+    return state_for("ti:" + campaign)
+
+
 @router.get("/report/pptx")
 def report_pptx(campaign: str = "pao"):
     """Generate and download the campaign's PowerPoint report."""

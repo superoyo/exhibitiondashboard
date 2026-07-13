@@ -636,8 +636,15 @@ def build_pptx(campaign_key: str) -> tuple[io.BytesIO, str]:
                     _txt(s, 1067397, 519577, 5681886, 536575,
                          f"Post Date: {posted}", 11, middle=True)
 
-                    # composed post screenshot, styled per platform
-                    shot = _image_bytes(session, (p.cover_url if p else None))
+                    # composed post screenshot, styled per platform. Prefer the
+                    # AI-picked product tie-in frame over the plain cover.
+                    shot = None
+                    if p and p.tiein_hash:
+                        row = session.get(ImageCache, p.tiein_hash)
+                        if row and row.data:
+                            shot = row.data
+                    if not shot:
+                        shot = _image_bytes(session, (p.cover_url if p else None))
                     cap = p.caption if p else None
                     if plat == "tiktok":
                         dt_s = (f"{p.posted_at.month}-{p.posted_at.day}"

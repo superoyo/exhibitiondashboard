@@ -54,6 +54,7 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 </div>
 <div class="flex gap-2 justify-end flex-wrap">
 <a id="navEdit" href="/kols" class="btn-refresh" style="background:#475569;color:#fff;text-decoration:none;display:inline-block">✏️ แก้ไข KOL</a>
+<button id="tieinBtn" class="btn-refresh" style="background:#7c3aed">🎯 Tie-in Shot</button>
 <button id="pptxBtn" class="btn-refresh" style="background:#b45309">📥 PowerPoint</button>
 <button id="shareBtn" class="btn-refresh" style="background:#2563eb">🔗 View Only for Client</button>
 <button id="refreshBtn" class="btn-refresh">🔄 Refresh Data</button>
@@ -250,7 +251,7 @@ const VIEW_ONLY = /^\/v\//i.test(location.pathname) || new URLSearchParams(locat
  ['editLink','navEdit'].forEach(id=>{const el=document.getElementById(id); if(el) el.href=q;});}
 if(VIEW_ONLY){
  document.body.classList.add('view-only');
- ['refreshBtn','shareBtn','navEdit','costInfo','editLink','pptxBtn'].forEach(id=>{const el=document.getElementById(id); if(el) el.style.display='none';});
+ ['refreshBtn','shareBtn','navEdit','costInfo','editLink','pptxBtn','tieinBtn'].forEach(id=>{const el=document.getElementById(id); if(el) el.style.display='none';});
  const nav=document.querySelector('nav.nav'); if(nav) nav.style.display='none';
 }
 // "📥 PowerPoint" — download the generated campaign deck (owner view only)
@@ -374,6 +375,26 @@ btn.onclick=async()=>{
  }catch(e){ btn.disabled=false; btn.innerHTML='🔄 Refresh Data'; setInfo('เริ่มงานไม่สำเร็จ'); }
 };
 
+// ---- AI tie-in shots (owner only) ----
+const tbtn=document.getElementById('tieinBtn');
+async function pollTiein(){
+ try{
+  const s=await (await fetch(`/api/report/tiein/status?campaign=${CAMPAIGN}`)).json();
+  if(s.status==='running'){ tbtn.disabled=true; tbtn.innerHTML='<span class="spin"></span>กำลังหา…'; setInfo(s.message||'กำลังหา tie-in shot…'); setTimeout(pollTiein,4000); }
+  else { tbtn.disabled=false; tbtn.innerHTML='🎯 Tie-in Shot';
+    if(s.status==='success'){ setInfo('✅ '+(s.message||'เสร็จแล้ว')+(s.cost_usd?` · $${s.cost_usd}`:'')); }
+    else if(s.status==='failed'){ setInfo('⚠️ '+(s.message||'ล้มเหลว')); }
+  }
+ }catch(e){ if(tbtn){ tbtn.disabled=false; tbtn.innerHTML='🎯 Tie-in Shot'; } }
+}
+if(tbtn) tbtn.onclick=async()=>{
+ if(!confirm('ให้ AI หา "ช็อตหยิบจับสินค้า" จากคลิป TikTok ของแคมเปญนี้?\n• วิเคราะห์อัตโนมัติว่าสินค้าของแคมเปญคืออะไร (จากหลายโพสต์)\n• ดาวน์โหลดวิดีโอ แล้วเลือกเฟรมที่เห็นสินค้าชัดสุดมาใช้ใน PowerPoint\n(ใช้เครดิต Apify + Claude API · อาจใช้เวลาหลายนาที)')) return;
+ tbtn.disabled=true; tbtn.innerHTML='<span class="spin"></span>เริ่ม…';
+ try{ const r=await fetch(`/api/report/tiein?campaign=${CAMPAIGN}`,{method:'POST'}); if(r.status===409){ alert('กำลังทำอยู่แล้ว'); } pollTiein(); }
+ catch(e){ tbtn.disabled=false; tbtn.innerHTML='🎯 Tie-in Shot'; setInfo('เริ่มงานไม่สำเร็จ'); }
+};
+
 loadData();
 if(!VIEW_ONLY) fetch(`/api/report/refresh/status?campaign=${CAMPAIGN}`).then(r=>r.json()).then(s=>{if(s.status==='running')poll();}).catch(()=>{});
+if(!VIEW_ONLY) fetch(`/api/report/tiein/status?campaign=${CAMPAIGN}`).then(r=>r.json()).then(s=>{if(s.status==='running')pollTiein();}).catch(()=>{});
 </script></body></html>

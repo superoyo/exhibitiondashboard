@@ -90,6 +90,8 @@ class ReportPost(Base):
     cover_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     avatar_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     caption: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # ImageCache hash of the AI-picked product tie-in frame from the video
+    tiein_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     posted_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     views: Mapped[int] = mapped_column(BigInteger, default=0)
     likes: Mapped[int] = mapped_column(BigInteger, default=0)
