@@ -40,7 +40,7 @@ MAX_VIDEOS_PER_RUN = 40
 FRAMES_PER_VIDEO = 12
 # bump when the sampling/selection algorithm improves — posts whose stored
 # shot came from an older version are automatically redone on the next run
-TIEIN_VERSION = "tiein2"
+TIEIN_VERSION = "tiein3"
 
 
 # ---------------------------------------------------------------------------
@@ -130,37 +130,20 @@ def infer_product(campaign_key: str, force: bool = False) -> str:
 # 2) frame extraction + selection
 # ---------------------------------------------------------------------------
 
-def _video_duration(exe: str, video_path: str) -> float:
-    """Clip length in seconds, parsed from ffmpeg's banner (no ffprobe bundled)."""
-    import re as _re
-    try:
-        r = subprocess.run([exe, "-i", video_path], capture_output=True, timeout=60)
-        m = _re.search(rb"Duration:\s*(\d+):(\d+):(\d+\.?\d*)", r.stderr or b"")
-        if m:
-            return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
-    except Exception:  # noqa: BLE001
-        pass
-    return 0.0
-
-
 def _extract_frames(video_path: str) -> list:
-    """FRAMES_PER_VIDEO jpegs spread EVENLY across the WHOLE clip. v1 sampled
-    only seconds 2-26 (fps=1/3) and missed tie-in scenes that appear mid/late
-    video — most clips came back with no usable shot."""
+    """Frames covering the WHOLE clip: decode one frame every 3s (up to 60 =
+    3 minutes), then thin evenly down to FRAMES_PER_VIDEO. No duration parsing
+    — earlier versions that guessed the length could silently fall back to
+    sampling only the first seconds and miss mid/late tie-in scenes."""
     import imageio_ffmpeg
     exe = imageio_ffmpeg.get_ffmpeg_exe()
     outdir = tempfile.mkdtemp(prefix="tiein_")
-    pattern = os.path.join(outdir, "f_%02d.jpg")
-    dur = _video_duration(exe, video_path)
-    if dur > 8:  # skip 1s head/tail, spread the samples over what's left
-        fps = FRAMES_PER_VIDEO / max(dur - 2.0, 1.0)
-        cmd = [exe, "-y", "-ss", "1", "-i", video_path,
-               "-vf", f"fps={fps:.6f},scale=480:-2",
-               "-frames:v", str(FRAMES_PER_VIDEO), "-q:v", "4", pattern]
-    else:  # very short clip — just grab a couple of frames per second
-        cmd = [exe, "-y", "-i", video_path, "-vf", "fps=2,scale=480:-2",
-               "-frames:v", str(FRAMES_PER_VIDEO), "-q:v", "4", pattern]
-    subprocess.run(cmd, capture_output=True, timeout=180)
+    pattern = os.path.join(outdir, "f_%03d.jpg")
+    subprocess.run(
+        [exe, "-y", "-i", video_path, "-vf", "fps=1/3,scale=480:-2",
+         "-frames:v", "60", "-q:v", "4", pattern],
+        capture_output=True, timeout=300,
+    )
     frames = []
     for f in sorted(glob.glob(os.path.join(outdir, "f_*.jpg"))):
         try:
@@ -173,6 +156,9 @@ def _extract_frames(video_path: str) -> list:
         os.rmdir(outdir)
     except OSError:
         pass
+    if len(frames) > FRAMES_PER_VIDEO:  # keep first + last, spread the rest
+        step = (len(frames) - 1) / (FRAMES_PER_VIDEO - 1)
+        frames = [frames[round(i * step)] for i in range(FRAMES_PER_VIDEO)]
     return frames
 
 
@@ -182,13 +168,16 @@ def _pick_frame(product_desc: str, frames: list) -> Optional[int]:
         return None
     content: list = [{"type": "text", "text":
         f"สินค้าของแคมเปญ: {product_desc}\n\n"
-        f"ต่อไปนี้คือเฟรมจากวิดีโอรีวิว {len(frames)} เฟรม สุ่มกระจายตลอดทั้งคลิป (เรียงตามเวลา 1-{len(frames)}) "
+        f"ต่อไปนี้คือเฟรมจากวิดีโอรีวิว {len(frames)} เฟรม สุ่มกระจายตลอดทั้งคลิป "
+        "(แต่ละภาพมีเลขเฟรมกำกับไว้ก่อนหน้า) "
         "เลือกเฟรมเดียวที่เป็น tie-in shot ที่ดีที่สุด ตามลำดับความสำคัญ:\n"
         "1) ผู้รีวิวกำลังถือ/หยิบจับ/ใช้งานสินค้า และเห็นแพ็คเกจสินค้าชัดเจน\n"
         "2) เห็นแพ็คเกจ/ฉลากสินค้าชัดเจนเต็มเฟรม (แม้ไม่มีคนถือ)\n"
         "3) เห็นสินค้าบางส่วนในฉาก\n"
         "ตอบเป็นตัวเลขเฟรมเท่านั้น (เช่น 3) — ตอบ 0 เฉพาะกรณีไม่มีเฟรมไหนเห็นสินค้าเลยจริงๆ"}]
-    content += [_img_block(f) for f in frames]
+    for k, f in enumerate(frames, 1):  # label every image so the index is exact
+        content.append({"type": "text", "text": f"เฟรมที่ {k}:"})
+        content.append(_img_block(f))
     ans = _claude(content, max_tokens=10) or "0"
     try:
         n = int("".join(ch for ch in ans if ch.isdigit()) or "0")
@@ -273,16 +262,20 @@ def run_tiein(campaign: str) -> dict:
 
         from app.settings import get_apify_token
         token = get_apify_token()
-        done = 0
+        done = no_product = errs = 0
         for i, it in enumerate(items):
             tid = str(it.get("id") or "")
             post_id = targets.get(tid)
             media = it.get("mediaUrls") or []
-            if not post_id or not media:
+            if not post_id:  # actor returned an item we didn't ask about
+                continue
+            if not media:  # no downloaded video came back for this clip
+                errs += 1
                 continue
             st.update(message=f"กำลังหา tie-in shot… ({i + 1}/{len(items)})")
             path = _download(str(media[0]), token)
             if not path:
+                errs += 1
                 continue
             try:
                 frames = _extract_frames(path)
@@ -292,16 +285,21 @@ def run_tiein(campaign: str) -> dict:
                 except OSError:
                     pass
             if not frames:  # download/ffmpeg hiccup — retry on the next run
+                errs += 1
                 continue
             try:
                 idx = _pick_frame(product, frames)
             except RuntimeError as exc:
                 log.warning("frame pick failed: %s", exc)
+                errs += 1
                 continue  # transient API error — retry on the next run
+            log.info("tiein[%s] clip %s: %d frames, pick=%s",
+                     campaign, tid, len(frames), idx)
             if idx is None:
                 # Claude examined the clip and found no product frame — store
                 # the versioned hash WITHOUT an image so the next run doesn't
                 # pay Apify again; the PPTX falls back to the post cover.
+                no_product += 1
                 with session_scope() as session:
                     p = session.get(ReportPost, post_id)
                     if p:
@@ -321,8 +319,13 @@ def run_tiein(campaign: str) -> dict:
             add_cost(campaign, cost)
         except Exception:  # noqa: BLE001
             pass
+        summary = f"ได้ tie-in shot {done}/{len(targets)} คลิป"
+        if no_product:
+            summary += f" · ไม่พบสินค้าในคลิป {no_product}"
+        if errs:
+            summary += f" · ดึงไม่สำเร็จ {errs} (จะลองใหม่รอบหน้า)"
         st.update(status="success",
-                  message=f"สินค้า: {product[:120]} · ได้ tie-in shot {done}/{len(targets)} คลิป",
+                  message=f"สินค้า: {product[:120]} · {summary}",
                   finished_at=dt.datetime.now(config.TZ).isoformat(),
                   posts=done, cost_usd=round(cost, 4) if cost else None)
         return {"status": "success", "done": done}
