@@ -145,15 +145,19 @@ def run_scrape_posts_with_video(
 
 
 def run_scrape_fb_reels(
-    post_urls: List[str],
+    page_urls: List[str],
     *,
+    results_limit: int = 50,
     poll_interval: float = 8.0,
     timeout_s: float = 300.0,
     tolerate_failure: bool = False,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """Scrape specific Facebook REELS by URL — the posts scraper returns no
-    view counts for reels, this dedicated actor does."""
-    payload = {"startUrls": [{"url": u} for u in post_urls], "resultsLimit": 1}
+    """Scrape recent reels of Facebook PAGES — apify/facebook-reels-scraper
+    accepts only page URLs (a direct /reel/<id> URL yields nothing). The caller
+    matches the wanted reel ids among the page's recent reels; this is the only
+    actor that returns reel VIEW counts."""
+    payload = {"startUrls": [{"url": u} for u in page_urls],
+               "resultsLimit": results_limit}
     return _execute(payload, actor_id=config.FB_REEL_ACTOR_ID,
                     poll_interval=poll_interval, timeout_s=timeout_s,
                     tolerate_failure=tolerate_failure)

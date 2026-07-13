@@ -154,6 +154,22 @@ def handle_from_url(url: Optional[str]) -> str:
     return ""
 
 
+# FB returns HTTP 400 unless the request looks like a real browser navigation
+# (Accept + Sec-Fetch-* headers) — a bare User-Agent is not enough.
+_BROWSER_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                   "AppleWebKit/537.36 (KHTML, like Gecko) "
+                   "Chrome/125.0.0.0 Safari/537.36"),
+    "Accept": ("text/html,application/xhtml+xml,application/xml;"
+               "q=0.9,image/avif,image/webp,*/*;q=0.8"),
+    "Accept-Language": "en-US,en;q=0.9,th;q=0.8",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Upgrade-Insecure-Requests": "1",
+}
+
+
 def _needs_resolve(url: Optional[str]) -> bool:
     """Short/share links whose canonical URL (with post id / page name) is hidden
     behind a redirect."""
@@ -171,20 +187,8 @@ def _resolve_link(url: str) -> str:
         if not is_public_http_url(url):  # SSRF guard for team-entered links
             return url
         import httpx as _httpx
-        # FB returns HTTP 400 unless the request looks like a real browser
-        # navigation (Accept + Sec-Fetch-* headers) — UA alone is not enough,
-        # and a failed resolve left /share/ links stuck with zero stats.
-        with _httpx.Client(follow_redirects=True, timeout=12, headers={
-                "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                               "AppleWebKit/537.36 (KHTML, like Gecko) "
-                               "Chrome/125.0.0.0 Safari/537.36"),
-                "Accept": ("text/html,application/xhtml+xml,application/xml;"
-                           "q=0.9,image/avif,image/webp,*/*;q=0.8"),
-                "Accept-Language": "en-US,en;q=0.9,th;q=0.8",
-                "Sec-Fetch-Dest": "document",
-                "Sec-Fetch-Mode": "navigate",
-                "Sec-Fetch-Site": "none",
-                "Upgrade-Insecure-Requests": "1"}) as c:
+        with _httpx.Client(follow_redirects=True, timeout=12,
+                           headers=_BROWSER_HEADERS) as c:
             r = c.get(url)
             final = str(r.url) or url
             low = final.lower()
@@ -399,8 +403,98 @@ def _is_fb_reel(url: Optional[str]) -> bool:
     return ("facebook.com" in u or "fb.com" in u) and ("/reel/" in u or "/reels/" in u)
 
 
-_FB_REEL_VIEWS = ["viewsCount", "playCount", "videoViewCount", "playsCount",
-                  "views", "plays", "videoPlayCount"]
+def _reduced_num(s) -> int:
+    """'668' / '1.2K' / '3.4M' -> int (FB's share_count_reduced strings)."""
+    t = str(s or "").strip().replace(",", "")
+    m = re.match(r"^([\d.]+)\s*([KMB]?)$", t, re.I)
+    if not m:
+        return 0
+    mult = {"": 1, "K": 1_000, "M": 1_000_000, "B": 1_000_000_000}[m.group(2).upper()]
+    try:
+        return int(float(m.group(1)) * mult)
+    except ValueError:
+        return 0
+
+
+def _fb_reel_html_stats(url: str) -> Optional[dict]:
+    """Scrape a PUBLIC Facebook reel page for reactions/comments/shares plus
+    cover/caption/owner-page-id — the reels ACTOR only takes page URLs, and the
+    posts actor returns zeros for reels, so the reel's own HTML is the only
+    per-link source. FB hides reel VIEW counts from logged-out web; the caller
+    tops views up from the reels actor (page mode). Returns None on any miss."""
+    vid = post_id_from_url("facebook", url)
+    if not vid:
+        return None
+    try:
+        from app.netguard import is_public_http_url
+        if not is_public_http_url(url):
+            return None
+        r = httpx.get(url, headers=_BROWSER_HEADERS, timeout=15, follow_redirects=True)
+        if r.status_code != 200:
+            return None
+        html = r.text or ""
+    except Exception:  # noqa: BLE001
+        return None
+    if vid not in html:
+        return None
+
+    # the reel page preloads NEIGHBOURING reels too, each with its own feedback
+    # entity — attribute counts by finding the feedback id nearest our video id
+    fid = None
+    for m in re.finditer(re.escape(vid), html):
+        w = html[max(0, m.start() - 2500): m.start() + 2500]
+        f = re.search(r'"id":"(ZmVlZGJhY2s6[A-Za-z0-9+/=]+)"', w)
+        if f:
+            fid = f.group(1)
+            break
+    likes = comments = shares = 0
+    if fid:
+        for m in re.finditer(re.escape(fid), html):
+            w = html[max(0, m.start() - 1500): m.start() + 1500]
+            r1 = re.search(r'"likers":\{"count":(\d+)\}', w)
+            r2 = re.search(r'"total_comment_count":(\d+)', w)
+            r3 = re.search(r'"share_count_reduced":"([^"]*)"', w)
+            if r1:
+                likes = max(likes, int(r1.group(1)))
+            if r2:
+                comments = max(comments, int(r2.group(1)))
+            if r3:
+                shares = max(shares, _reduced_num(r3.group(1)))
+    owner = cover = posted = None
+    for m in re.finditer(re.escape(vid), html):
+        w = html[max(0, m.start() - 2500): m.start() + 2500]
+        if not owner:
+            o = re.search(r'content_owner_id_new\\?":\\?"(\d+)', w)
+            owner = o.group(1) if o else None
+        if not cover:
+            c = re.search(r'"first_frame_thumbnail":"([^"]+)"', w)
+            cover = c.group(1).replace("\\/", "/") if c else None
+        if not posted:
+            t = re.search(r'"(?:creation_time|publish_time)":(\d{9,11})', w)
+            posted = t.group(1) if t else None
+        if owner and cover and posted:
+            break
+    if not cover:
+        c = re.search(r'property="og:image"\s+content="([^"]+)"', html)
+        cover = c.group(1).replace("&amp;", "&") if c else None
+    cap = re.search(r'property="og:description"\s+content="([^"]+)"', html)
+    caption = None
+    if cap:
+        import html as _h
+        caption = _h.unescape(cap.group(1))[:2000]
+    if not (fid or owner):  # page didn't contain this reel's data at all
+        return None
+    return {
+        "username": owner or "", "video_id": vid, "url": url,
+        "caption": caption, "cover_url": cover, "avatar_url": None,
+        "posted_at": _parse_posted_at(posted),  # unix epoch (or None)
+        "views": 0, "likes": likes, "comments": comments, "shares": shares,
+        "saves": 0, "_owner": owner,
+    }
+
+
+_FB_REEL_VIEWS = ["viewsCount", "playCount", "playCountRounded", "play_count",
+                  "videoViewCount", "playsCount", "views", "plays", "videoPlayCount"]
 
 
 def _parse_fb_reel_items(items):
@@ -414,11 +508,16 @@ def _parse_fb_reel_items(items):
         if page:
             profile[page] = {"followers": _first_num(it, ["pageLikes", "pageFollowers", "followers"]),
                              "nick": user.get("name") or it.get("pageName") or it.get("profileName")}
-        pid = str(it.get("postId") or it.get("id") or "")
-        url = it.get("url") or it.get("facebookUrl") or it.get("topLevelUrl") or ""
+        pid = str(it.get("postId") or it.get("post_id") or it.get("videoId")
+                  or it.get("video_id") or it.get("id") or "")
+        url = (it.get("url") or it.get("facebookUrl") or it.get("topLevelUrl")
+               or it.get("topLevelReelUrl") or it.get("shareable_url") or "")
+        # prefer the id embedded in the reel URL — that's what roster links
+        # (facebook.com/reel/<id>) are matched by
+        rid = post_id_from_url("facebook", url) or pid
         posts.append({
             "username": page,
-            "video_id": pid or url[:64] or page or "fbreel",
+            "video_id": rid or url[:64] or page or "fbreel",
             "url": url or None,
             "caption": (it.get("text") or it.get("description") or it.get("title") or "")[:2000] or None,
             "cover_url": _fb_cover_url(it, user if isinstance(user, dict) else {}),
@@ -691,8 +790,10 @@ def refresh_report(campaign: str = "pao") -> dict:
                 items, meta = run_scrape_posts(urls, tolerate_failure=True)
                 posts, pr = _parse_report_items(items); return posts, meta, pr
             if plat == "facebook":
-                # Reels go to the dedicated reels actor (posts scraper has no
-                # view counts for reels); everything else to the posts actor.
+                # Reels: the posts scraper returns zeros for them and the reels
+                # actor only takes PAGE urls — so each reel's own public HTML is
+                # scraped for reactions/comments/shares (free), then the reels
+                # actor sweeps the owner pages to top up VIEW counts.
                 reels = [u for u in urls if _is_fb_reel(u)]
                 normal = [u for u in urls if u not in reels]
                 posts, pr = [], {}
@@ -704,11 +805,48 @@ def refresh_report(campaign: str = "pao") -> dict:
                     cost_sum += meta.get("cost_usd") or 0.0
                     part = part or bool(meta.get("partial"))
                 if reels:
-                    items, meta = run_scrape_fb_reels(reels, tolerate_failure=True)
-                    p2, pr2 = _parse_fb_reel_items(items)
-                    posts += p2; pr.update(pr2)
-                    cost_sum += meta.get("cost_usd") or 0.0
-                    part = part or bool(meta.get("partial"))
+                    html_posts, owner_pages = [], {}
+                    for u in reels:
+                        hp = _fb_reel_html_stats(u)
+                        if hp:
+                            owner = hp.pop("_owner", None)
+                            html_posts.append(hp)
+                            if owner:
+                                owner_pages[owner] = f"https://www.facebook.com/{owner}"
+                        else:
+                            log.warning("FB reel HTML stats failed for %s", u)
+                    if owner_pages:
+                        try:
+                            items, meta = run_scrape_fb_reels(
+                                list(owner_pages.values()), tolerate_failure=True)
+                            cost_sum += meta.get("cost_usd") or 0.0
+                            part = part or bool(meta.get("partial"))
+                            rposts, pr2 = _parse_fb_reel_items(items)
+                            pr.update(pr2)
+                            by_id = {p["video_id"]: p for p in rposts if p.get("video_id")}
+                            for hp in html_posts:  # merge views/covers per reel
+                                mp = by_id.get(hp["video_id"])
+                                if not mp:
+                                    continue
+                                if mp.get("views"):
+                                    hp["views"] = mp["views"]
+                                for k2 in ("cover_url", "caption", "posted_at", "avatar_url"):
+                                    if not hp.get(k2) and mp.get(k2):
+                                        hp[k2] = mp[k2]
+                                for k2 in ("likes", "comments", "shares"):
+                                    hp[k2] = max(hp[k2], mp.get(k2) or 0)
+                            # reels whose HTML fetch failed but that the page
+                            # sweep found anyway
+                            have = {p["video_id"] for p in html_posts}
+                            for u in reels:
+                                rid = post_id_from_url("facebook", u)
+                                if rid and rid not in have and rid in by_id:
+                                    mp = dict(by_id[rid])
+                                    mp["url"] = mp.get("url") or u
+                                    html_posts.append(mp)
+                        except (ApifyError, httpx.HTTPError) as exc:
+                            log.error("FB reels page sweep failed: %s", exc)
+                    posts += html_posts
                 return posts, {"cost_usd": cost_sum or None, "partial": part}, pr
             if plat == "instagram":
                 items, meta = run_scrape_ig(urls, tolerate_failure=True); return _parse_ig_items(items), meta, {}
