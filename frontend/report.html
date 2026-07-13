@@ -274,7 +274,10 @@ if(VIEW_ONLY){
    setInfo('🎯 กำลังหา tie-in shot จากคลิปใหม่… (คลิปที่เคยหาแล้วไม่เสียเครดิตซ้ำ)');
    try{ await fetch(`/api/report/tiein?campaign=${CAMPAIGN}`,{method:'POST'}); }catch(e){}
    const ts=await waitTiein(); // 409 = already running → this waits for it too
-   if(ts.status==='failed') setInfo('⚠️ หา tie-in ไม่สำเร็จ ('+(ts.message||'')+') — ใช้รูปปกโพสต์แทน');
+   if(ts.status==='failed'){
+    alert('⚠️ หา tie-in shot ไม่สำเร็จ:\n\n'+(ts.message||'ไม่ทราบสาเหตุ')+'\n\nระบบจะสร้างไฟล์ต่อโดยใช้รูปปกโพสต์แทน');
+    setInfo('⚠️ หา tie-in ไม่สำเร็จ — ใช้รูปปกโพสต์แทน');
+   } else if(ts.message){ setInfo('🎯 '+ts.message); }
    // step 2: build + download the deck
    pb.innerHTML='<span class="spin"></span>กำลังสร้าง…';
    setInfo('📥 กำลังสร้างไฟล์ PowerPoint… (อาจใช้เวลาสักครู่ถ้ารูปเยอะ)');

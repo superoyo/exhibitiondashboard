@@ -290,6 +290,9 @@ def _execute(
         "status": status,
         "cost_usd": float(cost) if cost is not None else None,
         "dataset_id": dataset_id,
+        # downloaded media (e.g. shouldDownloadVideos) lands in the run's
+        # key-value store; dataset items often DON'T link to it (mediaUrls=[])
+        "kv_store_id": run.get("defaultKeyValueStoreId"),
         "partial": partial,
     }
     log.info("Apify run %s done: %d items, cost=%s, partial=%s", run_id, len(items), cost, partial)

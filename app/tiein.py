@@ -188,6 +188,40 @@ def _pick_frame(product_desc: str, frames: list) -> Optional[int]:
     return None
 
 
+def _kv_video_urls(kv_store_id: str, token: str) -> dict:
+    """Map TikTok video-id -> download URL for every file in the scrape run's
+    key-value store. The clockworks actor saves downloaded videos THERE — the
+    dataset items usually come back with mediaUrls=[] (which is why no clip
+    ever produced a frame before this lookup existed)."""
+    import re as _re
+    out: dict = {}
+    if not kv_store_id:
+        return out
+    base = "https://api.apify.com/v2"
+    start_key = None
+    try:
+        for _ in range(20):  # paginate defensively; 1000 keys per page
+            params = {"token": token, "limit": 1000}
+            if start_key:
+                params["exclusiveStartKey"] = start_key
+            r = httpx.get(f"{base}/key-value-stores/{kv_store_id}/keys",
+                          params=params, timeout=30)
+            if r.status_code != 200:
+                break
+            data = (r.json() or {}).get("data") or {}
+            for it in data.get("items") or []:
+                key = str(it.get("key") or "")
+                m = _re.search(r"(\d{15,})", key)  # tiktok ids are long digit runs
+                if m:
+                    out[m.group(1)] = f"{base}/key-value-stores/{kv_store_id}/records/{key}"
+            if not data.get("isTruncated"):
+                break
+            start_key = data.get("nextExclusiveStartKey")
+    except Exception:  # noqa: BLE001 — fall back to whatever was collected
+        pass
+    return out
+
+
 def _download(url: str, token: str) -> Optional[str]:
     """Stream an Apify-stored video to a temp file; returns the path."""
     u = url + ("&" if "?" in url else "?") + "token=" + token
@@ -262,6 +296,9 @@ def run_tiein(campaign: str) -> dict:
 
         from app.settings import get_apify_token
         token = get_apify_token()
+        kv_videos = _kv_video_urls(meta.get("kv_store_id") or "", token)
+        log.info("tiein[%s]: %d items, %d videos in KV store", campaign,
+                 len(items), len(kv_videos))
         done = no_product = errs = 0
         for i, it in enumerate(items):
             tid = str(it.get("id") or "")
@@ -269,11 +306,12 @@ def run_tiein(campaign: str) -> dict:
             media = it.get("mediaUrls") or []
             if not post_id:  # actor returned an item we didn't ask about
                 continue
-            if not media:  # no downloaded video came back for this clip
+            video_url = str(media[0]) if media else kv_videos.get(tid)
+            if not video_url:  # no downloaded video came back for this clip
                 errs += 1
                 continue
             st.update(message=f"กำลังหา tie-in shot… ({i + 1}/{len(items)})")
-            path = _download(str(media[0]), token)
+            path = _download(video_url, token)
             if not path:
                 errs += 1
                 continue

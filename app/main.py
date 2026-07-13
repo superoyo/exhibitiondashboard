@@ -31,6 +31,7 @@ _OPEN_API_PREFIXES = (
     "/api/auth/",           # login/profile proxy
     "/api/img",             # image cache (view pages)
     "/api/report/data",     # report stats (view pages)
+    "/api/report/tiein/status",  # read-only job progress (diagnostics)
     "/api/summary", "/api/trend", "/api/posts", "/api/kols/",  # legacy tracker reads
 )
 _OPEN_API_EXACT = {"/api/version", "/api/health", "/api/scrape/run"}  # scrape/run has X-ADMIN-KEY
@@ -89,7 +90,7 @@ def _seed_on_startup() -> None:
 @app.get("/api/version")
 def version():
     """Build marker — lets us confirm which commit Railway is actually running."""
-    return {"build": "campaign-hub-v80"}
+    return {"build": "campaign-hub-v81"}
 
 
 FRONTEND_DIR = pathlib.Path(__file__).resolve().parent.parent / "frontend"
