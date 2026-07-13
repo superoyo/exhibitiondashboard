@@ -200,13 +200,13 @@ def run_tiein(campaign: str) -> dict:
     """Find product tie-in frames for the campaign's TikTok posts. Progress in
     state_for('ti:'+campaign). Never raises."""
     st = state_for("ti:" + campaign)
-    st.update(status="running", message="กำลังวิเคราะห์สินค้าของแคมเปญ…",
+    st.update(status="running", message="กำลังตรวจว่ามีคลิปใหม่ให้หา tie-in ไหม…",
               started_at=dt.datetime.now(config.TZ).isoformat(), finished_at=None,
               posts=0, cost_usd=None)
     try:
-        product = infer_product(campaign)
-        st.update(message=f"สินค้า: {product[:120]} · กำลังดึงวิดีโอ…")
-
+        # find targets FIRST — when everything is already processed (the common
+        # case now that PPTX triggers this every time) we exit without spending
+        # a single Apify or Claude call
         with session_scope() as session:
             active = {k.username.lower() for k in session.scalars(select(ReportKol).where(
                 ReportKol.active.is_(True), ReportKol.campaign == campaign)).all()}
@@ -222,9 +222,13 @@ def run_tiein(campaign: str) -> dict:
                     targets[m.group(1)] = p.id
         if not targets:
             st.update(status="success",
-                      message=f"สินค้า: {product[:120]} · ไม่มีคลิป TikTok ใหม่ให้หา tie-in",
+                      message="ไม่มีคลิป TikTok ใหม่ให้หา tie-in (ทุกคลิปมี shot แล้ว)",
                       finished_at=dt.datetime.now(config.TZ).isoformat())
             return {"status": "skipped"}
+
+        st.update(message="กำลังวิเคราะห์สินค้าของแคมเปญ…")
+        product = infer_product(campaign)
+        st.update(message=f"สินค้า: {product[:120]} · กำลังดึงวิดีโอ…")
 
         urls = []
         with session_scope() as session:
