@@ -110,6 +110,27 @@ def post_id_from_url(platform: str, url: Optional[str]) -> str:
     return m.group(1) if m else ""
 
 
+def is_profile_link(plat: str, url: Optional[str]) -> bool:
+    """True when the URL is a channel/profile page, not a specific post — those
+    only identify the KOL and must never be sent to a scraper (wasted credits;
+    KOLs that haven't posted yet keep a name-only roster row)."""
+    u = url or ""
+    if post_id_from_url(plat, u):
+        return False
+    if plat == "tiktok":
+        return bool(re.search(r"tiktok\.com/@[^/?#\s]+/?($|[?#])", u, re.I))
+    if plat == "facebook":
+        return bool(handle_from_url(u)) and not re.search(
+            r"(/posts/|/videos/|/reel|/watch|story_fbid=|/permalink/|/share/|fb\.watch)", u, re.I)
+    if plat == "instagram":
+        return bool(handle_from_url(u)) and not re.search(r"/(p|reel|reels|tv)/", u, re.I)
+    if plat == "youtube":
+        return bool(re.search(r"youtube\.com/(@[^/?#\s]+/?($|[?#])|channel/|c/|user/)", u, re.I))
+    if plat == "x":
+        return bool(handle_from_url(u)) and "/status/" not in u.lower()
+    return False
+
+
 def handle_from_url(url: Optional[str]) -> str:
     """Best-effort account handle from a post URL (for matching scraped posts).
     Skips generic path segments (story.php, /p/, /status, ...) that aren't handles."""
@@ -566,9 +587,15 @@ def fetch_profiles(campaign: str = "sahagroup") -> dict:
         with session_scope() as session:
             kols = session.scalars(select(ReportKol).where(
                 ReportKol.active.is_(True), ReportKol.campaign == campaign)).all()
-            # profiles = TikTok handles only (skip Facebook pages)
+            # profiles = TikTok handles only (skip Facebook pages), and only
+            # KOLs with at least one real WORK link — never scrape someone who
+            # hasn't posted yet (roster-only rows waste Apify credits)
+            def _has_work(k) -> bool:
+                return any(not is_profile_link(ln["platform"], ln["url"])
+                           for ln in kol_links(k))
             usernames = [k.username.strip().lower() for k in kols
-                         if k.content_group != "Facebook" and not is_fb(k.url)]
+                         if k.content_group != "Facebook" and not is_fb(k.url)
+                         and _has_work(k)]
         st["kol_count"] = len(usernames)
         if not usernames:
             st.update(status="failed", message="ไม่มี KOL TikTok ที่ active",
@@ -704,11 +731,18 @@ def refresh_report(campaign: str = "pao") -> dict:
             return post_id_from_url(plat, url) or handle_from_url(url)
 
         # batch-scrape the keyable links per platform (cheap, matched by id/handle)
+        # — profile/channel links (KOLs who haven't posted yet) are never scraped
+        skipped_profiles = 0
         keyable_urls: Dict[str, list] = {}
         for uname, links in roster:
             for ln in links:
                 plat = ln["platform"]
-                if plat in SCRAPEABLE and _url_key(plat, ln["url"]):
+                if plat not in SCRAPEABLE:
+                    continue
+                if is_profile_link(plat, ln["url"]):
+                    skipped_profiles += 1
+                    continue
+                if _url_key(plat, ln["url"]):
                     bucket = keyable_urls.setdefault(plat, [])
                     if ln["url"] not in bucket:
                         bucket.append(ln["url"])
@@ -735,8 +769,8 @@ def refresh_report(campaign: str = "pao") -> dict:
         for uname, links in roster:
             for ln in links:
                 plat = ln["platform"]
-                if plat not in SCRAPEABLE:
-                    continue
+                if plat not in SCRAPEABLE or is_profile_link(plat, ln["url"]):
+                    continue  # profile links are name-only — never scraped
                 slot = index.get(plat) or {"id": {}, "handle": {}}
                 pid = post_id_from_url(plat, ln["url"])
                 post = (slot["id"].get(pid) if pid else None) or slot["handle"].get(handle_from_url(ln["url"]))
@@ -906,6 +940,8 @@ def refresh_report(campaign: str = "pao") -> dict:
         unmatched = [_PLATFORM_LABELS.get(p, p) for p, s in index.items()
                      if s.get("id") and plat_counts.get(p, 0) == 0]
         msg = f"อัปเดต {n_posts} โพสต์ จาก {len(refreshed_users)}/{len(roster)} KOL · {breakdown}"
+        if skipped_profiles:
+            msg += f" · ข้าม {skipped_profiles} ลิงก์โปรไฟล์ (ยังไม่มีลิงก์งาน — ไม่เปลือง Apify)"
         if unmatched:
             msg += " · จับคู่ไม่ได้: " + ", ".join(unmatched)
         if partial:
