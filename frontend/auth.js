@@ -1,10 +1,13 @@
 // Client-side auth guard (Wazzup session). Included by every protected page.
 // - Redirects to /login when there is no live session (expiration checked)
+// - SSO handoff: accepts #token=<access_token> (or ?token=...) from another
+//   app that already has a Wazzup session, validates it against
+//   /api/auth/profile, stores the session, and cleans the token off the URL.
 // - Attaches Authorization: Bearer <token> to every same-origin /api/ fetch
 // - On any 401 from the API, clears the session and returns to /login
 // - Adds a user chip + logout button to the nav
 // View-only client pages (/v/<key> or ?view=1) are NOT guarded.
-(function () {
+(async function () {
   if (/^\/v\//i.test(location.pathname) ||
       new URLSearchParams(location.search).get('view') === '1') return;
 
@@ -24,26 +27,88 @@
     location.replace('/login?next=' + encodeURIComponent(location.pathname + location.search));
   }
 
-  const s = readSession();
-  if (!s) { toLogin(); return; }
+  // SSO handoff — if the URL carries a token (fragment or query), validate it
+  // against Wazzup via /api/auth/profile, promote it to a real session, and
+  // scrub the token from the URL so it doesn't linger in history / copy-paste.
+  // No `exp` is required from the sender: if the token is stale, the next
+  // /api/ call gets 401 and the guard bounces the user to /login as usual.
+  async function tryUrlToken() {
+    const hashParams = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+    const qsParams   = new URLSearchParams(location.search);
+    const token = hashParams.get('token') || qsParams.get('token');
+    if (!token) return null;
 
-  // attach the bearer token to same-origin API calls; bounce to login on 401
+    let profile = null;
+    try {
+      const r = await fetch('/api/auth/profile',
+        { headers: { 'Authorization': 'Bearer ' + token } });
+      if (r.ok) profile = await r.json();
+    } catch (e) {}
+
+    // always scrub the token from the URL — whether validation succeeded or
+    // not — so a bad/stale token doesn't sit in the address bar being retried
+    hashParams.delete('token');
+    qsParams.delete('token');
+    const newSearch = qsParams.toString();
+    const newHash   = hashParams.toString();
+    history.replaceState(null, '', location.pathname
+      + (newSearch ? '?' + newSearch : '')
+      + (newHash ? '#' + newHash : ''));
+
+    if (!profile) return null;
+
+    const p = profile.profile || {};
+    const sess = {
+      access_token: token,
+      expiration:   null,   // sender doesn't send exp; server 401 will bounce
+      displayName:  p.empThaiName || p.empEngName || p.nickName || '',
+      empThaiName:  p.empThaiName || '',
+      empEngName:   p.empEngName || '',
+      nickName:     p.nickName || '',
+      email:        p.email || '',
+    };
+    if (p.wazzupPhotoBase64) {
+      let t = (p.wazzupPhotoFileType || 'jpeg').replace(/^\./, '').toLowerCase();
+      if (!t.includes('/')) t = 'image/' + (t === 'jpg' ? 'jpeg' : t);
+      const uri = 'data:' + t + ';base64,' + p.wazzupPhotoBase64;
+      if (uri.length < 400000) sess.photo = uri;
+    }
+    if (!sess.photo && p.profileURL && /^https?:/i.test(p.profileURL)) {
+      sess.photo = p.profileURL;
+    }
+    localStorage.setItem('wz_session', JSON.stringify(sess));
+    return sess;
+  }
+
+  // Kick off session determination (async). Wrap fetch IMMEDIATELY — before
+  // any await — so /api/ calls fired by the page during the SSO handoff
+  // (e.g. home.html's inline `loadGrid()` right after this script tag) hang
+  // on `sessionReady` and pick up the Authorization header, instead of
+  // firing un-authed and coming back 401 → empty UI.
+  const sessionReady = (async () => (await tryUrlToken()) || readSession())();
+
   const origFetch = window.fetch.bind(window);
-  window.fetch = function (input, init) {
+  window.fetch = async function (input, init) {
     let url = '';
     try { url = (typeof input === 'string') ? input : (input && input.url) || ''; } catch (e) {}
     const isApi = url.startsWith('/api/') || url.startsWith(location.origin + '/api/');
-    if (isApi) {
-      init = init || {};
-      const h = new Headers(init.headers || {});
-      h.set('Authorization', 'Bearer ' + s.access_token);
-      init.headers = h;
+    const isAuthCall = url.includes('/api/auth/');
+    if (isApi && !isAuthCall) {
+      const sess = await sessionReady;
+      if (sess && sess.access_token) {
+        init = init || {};
+        const h = new Headers(init.headers || {});
+        h.set('Authorization', 'Bearer ' + sess.access_token);
+        init.headers = h;
+      }
     }
-    return origFetch(input, init).then(function (r) {
-      if (isApi && r.status === 401 && !url.includes('/api/auth/')) toLogin();
-      return r;
-    });
+    const r = await origFetch(input, init);
+    if (isApi && !isAuthCall && r.status === 401) toLogin();
+    return r;
   };
+
+  const s = await sessionReady;
+  if (!s) { toLogin(); return; }
 
   // user chip (photo + real full name) + logout in the nav
   function mountChip() {
