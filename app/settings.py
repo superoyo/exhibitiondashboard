@@ -46,6 +46,20 @@ def apify_token_source() -> str:
     return "database" if get_setting(APIFY_TOKEN_KEY) else "env"
 
 
+ANTHROPIC_KEY_KEY = "anthropic_api_key"
+
+
+def get_anthropic_key() -> str:
+    """DB override → env var — same pattern as the Apify token, so the team
+    can swap the Claude key from the /token page without touching Railway."""
+    import os
+    return (get_setting(ANTHROPIC_KEY_KEY) or os.getenv("ANTHROPIC_API_KEY", "")).strip()
+
+
+def anthropic_key_source() -> str:
+    return "database" if get_setting(ANTHROPIC_KEY_KEY) else "env"
+
+
 def mask_token(tok: str) -> str:
     """Show only enough to recognise the key — e.g. 'apify_••••••••cD3f'."""
     tok = (tok or "").strip()

@@ -685,6 +685,29 @@ def token_set(body: TokenIn):
     return {"status": "saved", "masked": mask_token(tok), "source": "database"}
 
 
+@router.get("/ai/key")
+def ai_key_get():
+    from app.settings import anthropic_key_source, get_anthropic_key, mask_token
+    key = get_anthropic_key()
+    return {"masked": mask_token(key), "source": anthropic_key_source(),
+            "is_set": bool(key)}
+
+
+@router.post("/ai/key")
+def ai_key_set(body: TokenIn):
+    """Save the Claude API key from the web UI (same pattern as the Apify
+    token) — no Railway access needed. Verified live before saving."""
+    from app.settings import ANTHROPIC_KEY_KEY, mask_token, set_setting
+    key = (body.token or "").strip()
+    if not key.startswith("sk-ant-") or len(key) < 20:
+        raise HTTPException(400, "รูปแบบ key ไม่ถูกต้อง — ต้องขึ้นต้นด้วย sk-ant-")
+    set_setting(ANTHROPIC_KEY_KEY, key)
+    from app.tiein import ai_status
+    status = ai_status(force=True)  # live-check the new key immediately
+    return {"status": "saved", "masked": mask_token(key), "source": "database",
+            "check": status}
+
+
 # ----------------------------------------------------------------------------
 # Campaign metadata CRUD — powers the home page (list) and "+ Create Campaign"
 # ----------------------------------------------------------------------------

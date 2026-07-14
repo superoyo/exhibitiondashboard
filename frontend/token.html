@@ -55,10 +55,20 @@
       <div class="text-xs mb-1" style="color:var(--muted)">🤖 Claude AI — ระบบหา Tie-in shot ใน PowerPoint</div>
       <div class="flex items-center gap-3 flex-wrap">
         <div id="aiState" class="text-lg font-semibold">…</div>
+        <div id="aiMasked" class="mono text-sm" style="color:var(--muted)"></div>
+        <span id="aiSource" class="text-xs px-2 py-1 rounded-full" style="background:#eef2f7;color:#475569;display:none"></span>
         <button id="aiBtn" class="btn">ตรวจสอบใหม่</button>
       </div>
       <div id="aiMsg" class="text-sm mt-1" style="color:var(--muted)">กำลังตรวจสอบ…</div>
-      <div class="text-xs mt-2" style="color:var(--muted)">ถ้าเครดิตหมด: เติมที่ <a href="https://console.anthropic.com/settings/billing" target="_blank">console.anthropic.com → Billing</a> (ไม่ต้องเปลี่ยน key) · ถ้า key ใช้ไม่ได้: สร้างใหม่ที่ console.anthropic.com → API Keys แล้วแก้ใน Railway → Variables</div>
+      <div class="mt-3 pt-3" style="border-top:1px solid var(--line)">
+        <div class="text-xs mb-1" style="color:var(--muted)">ใส่/เปลี่ยน Claude API key (เอาจาก <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com → API Keys</a> · บัญชีต้องมีเครดิตที่ <a href="https://console.anthropic.com/settings/billing" target="_blank">Billing</a>)</div>
+        <textarea id="aiNewKey" class="inp" rows="2" placeholder="sk-ant-api03-..."></textarea>
+        <div class="mt-2 flex gap-2">
+          <button id="aiSaveBtn" class="btn btn-primary">บันทึก Key</button>
+          <span id="aiSaveMsg" class="text-sm self-center"></span>
+        </div>
+      </div>
+      <div class="text-xs mt-2" style="color:var(--muted)">ถ้าเครดิตหมด: เติมที่ Billing แล้วใช้ต่อได้ทันที ไม่ต้องเปลี่ยน key</div>
     </div>
 
     <div class="card p-4">
@@ -87,21 +97,47 @@ $("#testBtn").onclick=async()=>{
     else { $("#testResult").textContent=`❌ ${d.detail||'ใช้ไม่ได้'}`; $("#testResult").style.color="#dc2626"; }
   }catch(e){ $("#testResult").textContent="❌ ทดสอบไม่สำเร็จ"; $("#testResult").style.color="#dc2626"; }
 };
+function aiPaint(d){
+  const map={ok:["🟢 พร้อมใช้งาน","#059669"],no_key:["🔴 ยังไม่ได้ตั้ง key","#dc2626"],
+             no_credit:["🟠 เครดิตหมด","#d97706"],invalid_key:["🔴 key ใช้ไม่ได้","#dc2626"],
+             error:["⚠️ ตรวจสอบไม่ได้","#d97706"]};
+  const m=map[d.state]||map.error;
+  $("#aiState").textContent=m[0]; $("#aiState").style.color=m[1];
+  $("#aiMsg").textContent=d.message||""; $("#aiMsg").style.color=m[1];
+}
+async function aiKeyInfo(){
+  try{
+    const k=await (await fetch("/api/ai/key")).json();
+    $("#aiMasked").textContent=k.is_set?k.masked:"";
+    const src=$("#aiSource");
+    if(k.is_set){ src.style.display="inline-block"; src.textContent=k.source==="database"?"จาก: หน้านี้ (DB)":"จาก: Railway (env)"; }
+    else src.style.display="none";
+  }catch(e){}
+}
 async function aiCheck(force){
   $("#aiState").textContent="…"; $("#aiState").style.color="#64748b";
   $("#aiMsg").textContent="กำลังตรวจสอบ…"; $("#aiMsg").style.color="#64748b";
-  try{
-    const d=await (await fetch("/api/ai/status"+(force?"?force=1":""))).json();
-    const map={ok:["🟢 พร้อมใช้งาน","#059669"],no_key:["🔴 ยังไม่ได้ตั้ง key","#dc2626"],
-               no_credit:["🟠 เครดิตหมด","#d97706"],invalid_key:["🔴 key ใช้ไม่ได้","#dc2626"],
-               error:["⚠️ ตรวจสอบไม่ได้","#d97706"]};
-    const m=map[d.state]||map.error;
-    $("#aiState").textContent=m[0]; $("#aiState").style.color=m[1];
-    $("#aiMsg").textContent=d.message||""; $("#aiMsg").style.color=m[1];
-  }catch(e){ $("#aiState").textContent="⚠️"; $("#aiMsg").textContent="ตรวจสอบไม่สำเร็จ — ลองรีเฟรชหน้า"; }
+  try{ aiPaint(await (await fetch("/api/ai/status"+(force?"?force=1":""))).json()); }
+  catch(e){ $("#aiState").textContent="⚠️"; $("#aiMsg").textContent="ตรวจสอบไม่สำเร็จ — ลองรีเฟรชหน้า"; }
 }
 $("#aiBtn").onclick=()=>aiCheck(true);
-aiCheck(false);
+$("#aiSaveBtn").onclick=async()=>{
+  const key=$("#aiNewKey").value.trim();
+  if(!key){ $("#aiSaveMsg").textContent="วาง key ก่อน"; $("#aiSaveMsg").style.color="#dc2626"; return; }
+  if(!confirm("บันทึก Claude API key ตัวนี้? ระบบจะทดสอบ key ให้ทันที")) return;
+  $("#aiSaveMsg").textContent="กำลังบันทึก+ทดสอบ…"; $("#aiSaveMsg").style.color="#64748b";
+  try{
+    const r=await fetch("/api/ai/key",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:key})});
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.detail||"error");
+    $("#aiNewKey").value="";
+    $("#aiSaveMsg").textContent=d.check&&d.check.ok?"✅ บันทึกแล้ว — key ใช้งานได้":"✅ บันทึกแล้ว (ดูสถานะด้านบน)";
+    $("#aiSaveMsg").style.color="#059669";
+    if(d.check) aiPaint(d.check);
+    aiKeyInfo();
+  }catch(e){ $("#aiSaveMsg").textContent="❌ "+e.message; $("#aiSaveMsg").style.color="#dc2626"; }
+};
+aiCheck(false); aiKeyInfo();
 $("#saveBtn").onclick=async()=>{
   const token=$("#newTok").value.trim();
   if(!token){ $("#saveMsg").textContent="วาง token ก่อน"; $("#saveMsg").style.color="#dc2626"; return; }

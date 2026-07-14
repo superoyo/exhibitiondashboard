@@ -64,9 +64,10 @@ def _api_error_thai(r) -> str:
 
 
 def _claude(content: list, max_tokens: int = 300) -> Optional[str]:
-    key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+    from app.settings import get_anthropic_key
+    key = get_anthropic_key()
     if not key:
-        raise RuntimeError("ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY ใน Railway Variables")
+        raise RuntimeError("ยังไม่ได้ตั้งค่า Claude API key — ใส่ได้ที่เมนู Apify Token (หน้า Home)")
     r = httpx.post(
         "https://api.anthropic.com/v1/messages",
         timeout=90,
@@ -92,10 +93,11 @@ def ai_status(force: bool = False) -> dict:
     if (not force and _AI_STATUS_CACHE["data"]
             and _time.time() - _AI_STATUS_CACHE["t"] < 300):
         return _AI_STATUS_CACHE["data"]
-    key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+    from app.settings import get_anthropic_key
+    key = get_anthropic_key()
     if not key:
         out = {"ok": False, "state": "no_key",
-               "message": "ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY ใน Railway Variables"}
+               "message": "ยังไม่ได้ตั้ง Claude API key — วาง key ในช่องด้านล่างแล้วกดบันทึกได้เลย"}
     else:
         try:
             r = httpx.post(
