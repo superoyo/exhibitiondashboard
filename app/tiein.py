@@ -47,6 +47,22 @@ TIEIN_VERSION = "tiein3"
 # Claude Messages API (plain httpx — no SDK dependency)
 # ---------------------------------------------------------------------------
 
+def _api_error_thai(r) -> str:
+    """Translate a Claude API error response into an actionable Thai message
+    (shown in the UI — the team must know HOW to fix it, not just that it broke)."""
+    txt = (r.text or "")[:400]
+    low = txt.lower()
+    if "credit balance is too low" in low or "billing" in low:
+        return ("เครดิต Claude AI หมด — เข้า console.anthropic.com → Billing → "
+                "Add credits แล้วใช้งานต่อได้ทันที (ไม่ต้องเปลี่ยน key)")
+    if r.status_code == 401:
+        return ("ANTHROPIC_API_KEY ไม่ถูกต้องหรือถูกยกเลิก — สร้าง key ใหม่ที่ "
+                "console.anthropic.com → API Keys แล้วแก้ค่าใน Railway Variables")
+    if r.status_code == 429:
+        return "Claude API ติด rate limit ชั่วคราว — รอสักครู่แล้วลองใหม่"
+    return f"Claude API HTTP {r.status_code}: {txt[:150]}"
+
+
 def _claude(content: list, max_tokens: int = 300) -> Optional[str]:
     key = os.getenv("ANTHROPIC_API_KEY", "").strip()
     if not key:
@@ -60,10 +76,49 @@ def _claude(content: list, max_tokens: int = 300) -> Optional[str]:
               "messages": [{"role": "user", "content": content}]},
     )
     if r.status_code != 200:
-        raise RuntimeError(f"Claude API HTTP {r.status_code}: {r.text[:200]}")
+        raise RuntimeError(_api_error_thai(r))
     data = r.json()
     parts = [b.get("text", "") for b in data.get("content", []) if b.get("type") == "text"]
     return "".join(parts).strip()
+
+
+_AI_STATUS_CACHE: dict = {"t": 0.0, "data": None}
+
+
+def ai_status(force: bool = False) -> dict:
+    """Live key/credit check for the settings page: a 1-token ping (costs a
+    fraction of a satang), cached 5 minutes so page loads don't spam the API."""
+    import time as _time
+    if (not force and _AI_STATUS_CACHE["data"]
+            and _time.time() - _AI_STATUS_CACHE["t"] < 300):
+        return _AI_STATUS_CACHE["data"]
+    key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+    if not key:
+        out = {"ok": False, "state": "no_key",
+               "message": "ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY ใน Railway Variables"}
+    else:
+        try:
+            r = httpx.post(
+                "https://api.anthropic.com/v1/messages", timeout=20,
+                headers={"x-api-key": key, "anthropic-version": "2023-06-01",
+                         "content-type": "application/json"},
+                json={"model": MODEL, "max_tokens": 1,
+                      "messages": [{"role": "user", "content": "hi"}]},
+            )
+            if r.status_code == 200:
+                out = {"ok": True, "state": "ok",
+                       "message": "พร้อมใช้งาน — key และเครดิตปกติ"}
+            else:
+                low = (r.text or "").lower()
+                state = ("no_credit" if ("credit balance is too low" in low
+                                         or "billing" in low)
+                         else "invalid_key" if r.status_code == 401 else "error")
+                out = {"ok": False, "state": state, "message": _api_error_thai(r)}
+        except Exception as exc:  # noqa: BLE001
+            out = {"ok": False, "state": "error",
+                   "message": f"เชื่อมต่อ Claude API ไม่ได้: {exc}"}
+    _AI_STATUS_CACHE.update(t=_time.time(), data=out)
+    return out
 
 
 def _img_block(jpeg: bytes) -> dict:

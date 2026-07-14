@@ -33,7 +33,7 @@
     </nav>
 
     <header class="mb-4">
-      <h1 class="text-xl sm:text-2xl font-bold">🔑 Apify Token</h1>
+      <h1 class="text-xl sm:text-2xl font-bold">🔑 Apify Token & สถานะระบบ</h1>
       <p class="text-sm" style="color:var(--muted)">Token ที่เว็บใช้ดึงข้อมูลจาก TikTok/Facebook · เปลี่ยนได้เมื่อ key หมดอายุ</p>
     </header>
 
@@ -49,6 +49,16 @@
         <button id="testBtn" class="btn">ทดสอบ token</button>
         <span id="testResult" class="text-sm"></span>
       </div>
+    </div>
+
+    <div class="card p-4 mb-4">
+      <div class="text-xs mb-1" style="color:var(--muted)">🤖 Claude AI — ระบบหา Tie-in shot ใน PowerPoint</div>
+      <div class="flex items-center gap-3 flex-wrap">
+        <div id="aiState" class="text-lg font-semibold">…</div>
+        <button id="aiBtn" class="btn">ตรวจสอบใหม่</button>
+      </div>
+      <div id="aiMsg" class="text-sm mt-1" style="color:var(--muted)">กำลังตรวจสอบ…</div>
+      <div class="text-xs mt-2" style="color:var(--muted)">ถ้าเครดิตหมด: เติมที่ <a href="https://console.anthropic.com/settings/billing" target="_blank">console.anthropic.com → Billing</a> (ไม่ต้องเปลี่ยน key) · ถ้า key ใช้ไม่ได้: สร้างใหม่ที่ console.anthropic.com → API Keys แล้วแก้ใน Railway → Variables</div>
     </div>
 
     <div class="card p-4">
@@ -77,6 +87,21 @@ $("#testBtn").onclick=async()=>{
     else { $("#testResult").textContent=`❌ ${d.detail||'ใช้ไม่ได้'}`; $("#testResult").style.color="#dc2626"; }
   }catch(e){ $("#testResult").textContent="❌ ทดสอบไม่สำเร็จ"; $("#testResult").style.color="#dc2626"; }
 };
+async function aiCheck(force){
+  $("#aiState").textContent="…"; $("#aiState").style.color="#64748b";
+  $("#aiMsg").textContent="กำลังตรวจสอบ…"; $("#aiMsg").style.color="#64748b";
+  try{
+    const d=await (await fetch("/api/ai/status"+(force?"?force=1":""))).json();
+    const map={ok:["🟢 พร้อมใช้งาน","#059669"],no_key:["🔴 ยังไม่ได้ตั้ง key","#dc2626"],
+               no_credit:["🟠 เครดิตหมด","#d97706"],invalid_key:["🔴 key ใช้ไม่ได้","#dc2626"],
+               error:["⚠️ ตรวจสอบไม่ได้","#d97706"]};
+    const m=map[d.state]||map.error;
+    $("#aiState").textContent=m[0]; $("#aiState").style.color=m[1];
+    $("#aiMsg").textContent=d.message||""; $("#aiMsg").style.color=m[1];
+  }catch(e){ $("#aiState").textContent="⚠️"; $("#aiMsg").textContent="ตรวจสอบไม่สำเร็จ — ลองรีเฟรชหน้า"; }
+}
+$("#aiBtn").onclick=()=>aiCheck(true);
+aiCheck(false);
 $("#saveBtn").onclick=async()=>{
   const token=$("#newTok").value.trim();
   if(!token){ $("#saveMsg").textContent="วาง token ก่อน"; $("#saveMsg").style.color="#dc2626"; return; }

@@ -590,6 +590,14 @@ def report_tiein_status(campaign: str = "pao"):
     return state_for("ti:" + campaign)
 
 
+@router.get("/ai/status")
+def ai_status_route(force: bool = False):
+    """Is the Claude AI key set + funded? Shown on the settings page so the
+    team sees 'เครดิตหมด' in the UI instead of digging through job errors."""
+    from app.tiein import ai_status
+    return ai_status(force)
+
+
 @router.get("/report/pptx")
 def report_pptx(campaign: str = "pao"):
     """Generate and download the campaign's PowerPoint report."""
