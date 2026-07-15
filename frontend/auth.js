@@ -110,17 +110,14 @@
   const s = await sessionReady;
   if (!s) { toLogin(); return; }
 
-  // user chip (photo + real full name) + logout in the nav
+  // user chip in the nav — an avatar button that opens a Facebook-style
+  // popup with the full name + logout button (nothing else is shown next to
+  // the avatar itself, to keep the nav tidy).
   function mountChip() {
     const nav = document.querySelector('nav.nav');
     if (!nav) return;
     const name = s.displayName || s.empThaiName || s.empEngName || s.nickName || s.email || '';
-    const wrap = document.createElement('div');
-    wrap.style.cssText = 'display:flex;align-items:center;gap:.45rem;font-size:.78rem;color:#475569;margin-left:.4rem';
-    // Avatar: initials fallback baked in underneath; photo layered on top if
-    // available. If the photo URL 404s (Wazzup CDN expires, etc.) the img
-    // removes itself and the initials show through — instead of leaving a
-    // blank hole in the nav like before.
+    const meta = s.email || (s.displayName && s.displayName !== s.empEngName ? s.empEngName : '') || '';
     const initials = (function () {
       const parts = String(name).trim().split(/\s+/).filter(Boolean);
       if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
@@ -131,35 +128,113 @@
       for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffff;
       return 'hsl(' + (h % 360) + ',55%,42%)';
     })();
-    const avatar = document.createElement('div');
-    avatar.style.cssText = 'position:relative;width:28px;height:28px;flex:none';
-    const fallback = document.createElement('div');
-    fallback.textContent = initials;
-    fallback.style.cssText = 'position:absolute;inset:0;border-radius:50%;background:' + bgColor
-      + ';color:#fff;display:flex;align-items:center;justify-content:center;'
-      + 'font-weight:700;font-size:.7rem;letter-spacing:.02em;border:1px solid #e5e7eb;'
-      + 'font-family:system-ui,\'Segoe UI\',Arial,sans-serif';
-    avatar.appendChild(fallback);
-    if (s.photo) {
-      const img = document.createElement('img');
-      img.src = s.photo;
-      img.alt = name;
-      img.referrerPolicy = 'no-referrer';
-      img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;'
-        + 'border-radius:50%;object-fit:cover;border:1px solid #e5e7eb;background:#e2e8f0';
-      img.onerror = function () { this.remove(); };
-      avatar.appendChild(img);
+
+    // build one avatar element at the given size, with initials fallback and
+    // (if available) the photo layered on top; if the photo 404s the img
+    // removes itself and the initials show through
+    function buildAvatar(size, fontSize) {
+      const el = document.createElement('div');
+      el.style.cssText = 'position:relative;width:' + size + 'px;height:' + size + 'px;flex:none';
+      const fb = document.createElement('div');
+      fb.textContent = initials;
+      fb.style.cssText = 'position:absolute;inset:0;border-radius:50%;background:' + bgColor
+        + ';color:#fff;display:flex;align-items:center;justify-content:center;'
+        + 'font-weight:700;font-size:' + fontSize + ';letter-spacing:.02em;border:1px solid #e5e7eb;'
+        + 'font-family:system-ui,\'Segoe UI\',Arial,sans-serif';
+      el.appendChild(fb);
+      if (s.photo) {
+        const img = document.createElement('img');
+        img.src = s.photo;
+        img.alt = name;
+        img.referrerPolicy = 'no-referrer';
+        img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;'
+          + 'border-radius:50%;object-fit:cover;border:1px solid #e5e7eb;background:#e2e8f0';
+        img.onerror = function () { this.remove(); };
+        el.appendChild(img);
+      }
+      return el;
     }
-    wrap.appendChild(avatar);
-    const who = document.createElement('span');
-    who.textContent = name;
-    who.style.cssText = 'font-weight:600;color:#334155;white-space:nowrap';
+
+    // wrapper anchors the absolutely-positioned popup
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:relative;margin-left:.4rem';
+
+    // avatar trigger (36px, ~30% larger than before). A real <button> so it
+    // is keyboard-focusable and screen readers announce it as clickable.
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.setAttribute('aria-label', 'บัญชี ' + name);
+    trigger.setAttribute('aria-haspopup', 'true');
+    trigger.setAttribute('aria-expanded', 'false');
+    trigger.style.cssText = 'padding:0;border:none;background:none;cursor:pointer;line-height:0;'
+      + 'border-radius:50%;transition:box-shadow .12s';
+    trigger.appendChild(buildAvatar(36, '.85rem'));
+    trigger.onmouseenter = function () { this.style.boxShadow = '0 0 0 3px #eef2f7'; };
+    trigger.onmouseleave = function () { this.style.boxShadow = 'none'; };
+
+    // popup (menu) — hidden until the avatar is clicked
+    const popup = document.createElement('div');
+    popup.setAttribute('role', 'menu');
+    popup.style.cssText = 'position:absolute;top:calc(100% + 10px);right:0;z-index:60;'
+      + 'width:240px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;'
+      + 'box-shadow:0 12px 32px rgba(15,23,42,.14);padding:1rem;display:none;'
+      + 'font-family:\'Noto Sans Thai\',system-ui,sans-serif';
+
+    const bigAvatar = buildAvatar(56, '1.3rem');
+    bigAvatar.style.margin = '0 auto .6rem';
+    popup.appendChild(bigAvatar);
+
+    const nameEl = document.createElement('div');
+    nameEl.textContent = name || '(ไม่มีชื่อ)';
+    nameEl.style.cssText = 'text-align:center;font-weight:700;color:#0f172a;font-size:.95rem;line-height:1.25;word-break:break-word';
+    popup.appendChild(nameEl);
+
+    if (meta) {
+      const metaEl = document.createElement('div');
+      metaEl.textContent = meta;
+      metaEl.style.cssText = 'text-align:center;color:#64748b;font-size:.75rem;margin-top:.2rem;word-break:break-word';
+      popup.appendChild(metaEl);
+    }
+
+    const divider = document.createElement('div');
+    divider.style.cssText = 'height:1px;background:#e5e7eb;margin:.85rem 0';
+    popup.appendChild(divider);
+
     const btn = document.createElement('button');
+    btn.type = 'button';
     btn.textContent = 'ออกจากระบบ';
-    btn.style.cssText = 'border:1px solid #e5e7eb;background:#fff;border-radius:999px;padding:.25rem .7rem;cursor:pointer;font-size:.72rem;font-family:inherit;color:#475569';
+    btn.setAttribute('role', 'menuitem');
+    btn.style.cssText = 'width:100%;border:1px solid #e5e7eb;background:#fff;'
+      + 'border-radius:8px;padding:.55rem;cursor:pointer;font-size:.85rem;'
+      + 'font-family:inherit;color:#475569;font-weight:600;transition:.12s';
+    btn.onmouseenter = function () {
+      this.style.background = '#fef2f2'; this.style.color = '#dc2626'; this.style.borderColor = '#fecaca';
+    };
+    btn.onmouseleave = function () {
+      this.style.background = '#fff'; this.style.color = '#475569'; this.style.borderColor = '#e5e7eb';
+    };
     btn.onclick = function () { localStorage.removeItem('wz_session'); location.href = '/login'; };
-    wrap.appendChild(who); wrap.appendChild(btn);
+    popup.appendChild(btn);
+
+    wrap.appendChild(trigger);
+    wrap.appendChild(popup);
     nav.appendChild(wrap);
+
+    function setOpen(open) {
+      popup.style.display = open ? 'block' : 'none';
+      trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    trigger.onclick = function (e) {
+      e.stopPropagation();
+      setOpen(popup.style.display !== 'block');
+    };
+    // click anywhere else on the page closes it
+    document.addEventListener('click', function (e) {
+      if (!wrap.contains(e.target)) setOpen(false);
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') setOpen(false);
+    });
   }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', mountChip);
