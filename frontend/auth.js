@@ -117,19 +117,40 @@
     const name = s.displayName || s.empThaiName || s.empEngName || s.nickName || s.email || '';
     const wrap = document.createElement('div');
     wrap.style.cssText = 'display:flex;align-items:center;gap:.45rem;font-size:.78rem;color:#475569;margin-left:.4rem';
+    // Avatar: initials fallback baked in underneath; photo layered on top if
+    // available. If the photo URL 404s (Wazzup CDN expires, etc.) the img
+    // removes itself and the initials show through — instead of leaving a
+    // blank hole in the nav like before.
+    const initials = (function () {
+      const parts = String(name).trim().split(/\s+/).filter(Boolean);
+      if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+      return (parts[0] || '?').slice(0, 1).toUpperCase();
+    })();
+    const bgColor = (function () {
+      let h = 0;
+      for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffff;
+      return 'hsl(' + (h % 360) + ',55%,42%)';
+    })();
+    const avatar = document.createElement('div');
+    avatar.style.cssText = 'position:relative;width:28px;height:28px;flex:none';
+    const fallback = document.createElement('div');
+    fallback.textContent = initials;
+    fallback.style.cssText = 'position:absolute;inset:0;border-radius:50%;background:' + bgColor
+      + ';color:#fff;display:flex;align-items:center;justify-content:center;'
+      + 'font-weight:700;font-size:.7rem;letter-spacing:.02em;border:1px solid #e5e7eb;'
+      + 'font-family:system-ui,\'Segoe UI\',Arial,sans-serif';
+    avatar.appendChild(fallback);
     if (s.photo) {
       const img = document.createElement('img');
       img.src = s.photo;
       img.alt = name;
       img.referrerPolicy = 'no-referrer';
-      img.style.cssText = 'width:28px;height:28px;border-radius:50%;object-fit:cover;background:#e2e8f0;border:1px solid #e5e7eb;flex:none';
+      img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;'
+        + 'border-radius:50%;object-fit:cover;border:1px solid #e5e7eb;background:#e2e8f0';
       img.onerror = function () { this.remove(); };
-      wrap.appendChild(img);
-    } else {
-      const ph = document.createElement('span');
-      ph.textContent = '👤';
-      wrap.appendChild(ph);
+      avatar.appendChild(img);
     }
+    wrap.appendChild(avatar);
     const who = document.createElement('span');
     who.textContent = name;
     who.style.cssText = 'font-weight:600;color:#334155;white-space:nowrap';
