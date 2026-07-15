@@ -4,7 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>KOL TikTok Tracker — Sahagroup Fair 2026</title>
-  <script src="/static/auth.js?v=72"></script>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-LR32XF3T80"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-LR32XF3T80');
+</script>
+
+  <script src="/static/auth.js?v=73"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -21,7 +30,7 @@
     table th{ cursor:pointer; user-select:none; }
     a{ color:#2563eb; }
     .nav{ display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; margin-bottom:1rem; }
-    .nav-brand{ font-weight:700; font-size:.95rem; margin-right:.6rem; }
+    .nav-brand{ font-weight:700; font-size:.95rem; margin-right:1.75rem; }
     .navtab{ padding:.4rem .9rem; border-radius:999px; font-size:.85rem; font-weight:600; color:#475569; text-decoration:none; border:1px solid var(--line); background:#fff; }
     .navtab:hover{ background:#eef2f7; }
     .navtab-active{ background:#0f172a; color:#fff; border-color:#0f172a; }
@@ -32,7 +41,7 @@
 
     <!-- Nav -->
     <nav class="nav">
-      <a href="/" class="nav-brand">🎯 Influencer Real Time Report</a>
+      <a href="/" class="nav-brand" style="margin-right:auto"><span style="display:inline-flex;align-items:center;gap:.4rem;white-space:nowrap"><img src="/static/logo.png" alt="Far East Fame Line" style="height:52px">Influencer Real Time Report</span></a>
       <a href="/" class="navtab">← Home</a>
       <a href="/kols?campaign=__tracker" class="navtab">แก้ไข KOL</a>
     </nav>

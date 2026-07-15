@@ -59,13 +59,15 @@
 
     const p = profile.profile || {};
     const sess = {
-      access_token: token,
-      expiration:   null,   // sender doesn't send exp; server 401 will bounce
-      displayName:  p.empThaiName || p.empEngName || p.nickName || '',
-      empThaiName:  p.empThaiName || '',
-      empEngName:   p.empEngName || '',
-      nickName:     p.nickName || '',
-      email:        p.email || '',
+      access_token:   token,
+      expiration:     null,   // sender doesn't send exp; server 401 will bounce
+      displayName:    p.empThaiName || p.empEngName || p.nickName || '',
+      empThaiName:    p.empThaiName || '',
+      empEngName:     p.empEngName || '',
+      nickName:       p.nickName || '',
+      email:          p.email || '',
+      positionName:   p.positionName || '',
+      departmentName: p.departmentName || '',
     };
     if (p.wazzupPhotoBase64) {
       let t = (p.wazzupPhotoFileType || 'jpeg').replace(/^\./, '').toLowerCase();
@@ -155,9 +157,12 @@
       return el;
     }
 
-    // wrapper anchors the absolutely-positioned popup
+    // wrapper anchors the absolutely-positioned popup. margin-left:auto so the
+    // chip parks itself at the far right of the nav; the navtabs sit
+    // naturally next to the logo (only nav-brand's fixed margin-right between
+    // them, not a free-space push).
     const wrap = document.createElement('div');
-    wrap.style.cssText = 'position:relative;margin-left:.4rem';
+    wrap.style.cssText = 'position:relative;margin-left:auto';
 
     // avatar trigger (36px, ~30% larger than before). A real <button> so it
     // is keyboard-focusable and screen readers announce it as clickable.
@@ -167,34 +172,56 @@
     trigger.setAttribute('aria-haspopup', 'true');
     trigger.setAttribute('aria-expanded', 'false');
     trigger.style.cssText = 'padding:0;border:none;background:none;cursor:pointer;line-height:0;'
-      + 'border-radius:50%;transition:box-shadow .12s';
-    trigger.appendChild(buildAvatar(36, '.85rem'));
+      + 'border-radius:50%;transition:box-shadow .12s;overflow:visible;position:relative';
+    const triggerAvatar = buildAvatar(36, '.85rem');
+    // small chevron badge at bottom-right — signals "this opens a menu"
+    // (mirrors Facebook's account-switcher / GitHub's avatar-menu affordance)
+    const caret = document.createElement('span');
+    caret.textContent = '▾';
+    caret.setAttribute('aria-hidden', 'true');
+    caret.style.cssText = 'position:absolute;right:-2px;bottom:-2px;'
+      + 'width:14px;height:14px;border-radius:50%;background:#94a3b8;color:#fff;'
+      + 'font-size:.55rem;line-height:1;display:flex;align-items:center;justify-content:center;'
+      + 'border:2px solid #fff;font-family:system-ui,sans-serif;'
+      + 'box-shadow:0 1px 2px rgba(0,0,0,.15);pointer-events:none';
+    triggerAvatar.appendChild(caret);
+    trigger.appendChild(triggerAvatar);
     trigger.onmouseenter = function () { this.style.boxShadow = '0 0 0 3px #eef2f7'; };
     trigger.onmouseleave = function () { this.style.boxShadow = 'none'; };
 
-    // popup (menu) — hidden until the avatar is clicked
+    // popup (menu) — hidden until the avatar is clicked. Header row: avatar
+    // on the left, empThaiName + positionName stacked on the right.
     const popup = document.createElement('div');
     popup.setAttribute('role', 'menu');
     popup.style.cssText = 'position:absolute;top:calc(100% + 10px);right:0;z-index:60;'
-      + 'width:240px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;'
+      + 'width:280px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;'
       + 'box-shadow:0 12px 32px rgba(15,23,42,.14);padding:1rem;display:none;'
       + 'font-family:\'Noto Sans Thai\',system-ui,sans-serif';
 
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;gap:.75rem;min-width:0';
+
     const bigAvatar = buildAvatar(56, '1.3rem');
-    bigAvatar.style.margin = '0 auto .6rem';
-    popup.appendChild(bigAvatar);
+    header.appendChild(bigAvatar);
+
+    const info = document.createElement('div');
+    info.style.cssText = 'flex:1;min-width:0';
 
     const nameEl = document.createElement('div');
-    nameEl.textContent = name || '(ไม่มีชื่อ)';
-    nameEl.style.cssText = 'text-align:center;font-weight:700;color:#0f172a;font-size:.95rem;line-height:1.25;word-break:break-word';
-    popup.appendChild(nameEl);
+    nameEl.textContent = (s.empThaiName || name || '(ไม่มีชื่อ)');
+    nameEl.style.cssText = 'font-weight:700;color:#0f172a;font-size:.95rem;line-height:1.25;word-break:break-word';
+    info.appendChild(nameEl);
 
-    if (meta) {
-      const metaEl = document.createElement('div');
-      metaEl.textContent = meta;
-      metaEl.style.cssText = 'text-align:center;color:#64748b;font-size:.75rem;margin-top:.2rem;word-break:break-word';
-      popup.appendChild(metaEl);
+    const position = s.positionName || '';
+    if (position) {
+      const posEl = document.createElement('div');
+      posEl.textContent = position;
+      posEl.style.cssText = 'color:#64748b;font-size:.78rem;margin-top:.15rem;line-height:1.3;word-break:break-word';
+      info.appendChild(posEl);
     }
+
+    header.appendChild(info);
+    popup.appendChild(header);
 
     const divider = document.createElement('div');
     divider.style.cssText = 'height:1px;background:#e5e7eb;margin:.85rem 0';
@@ -202,11 +229,20 @@
 
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.textContent = 'ออกจากระบบ';
     btn.setAttribute('role', 'menuitem');
+    // inline SVG (Feather-style log-out icon) + label, so the icon inherits
+    // currentColor and animates with the hover color change
+    btn.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" '
+      + 'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" '
+      + 'aria-hidden="true" style="flex:none">'
+      + '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>'
+      + '<polyline points="16 17 21 12 16 7"/>'
+      + '<line x1="21" y1="12" x2="9" y2="12"/>'
+      + '</svg><span>ออกจากระบบ</span>';
     btn.style.cssText = 'width:100%;border:1px solid #e5e7eb;background:#fff;'
       + 'border-radius:8px;padding:.55rem;cursor:pointer;font-size:.85rem;'
-      + 'font-family:inherit;color:#475569;font-weight:600;transition:.12s';
+      + 'font-family:inherit;color:#475569;font-weight:600;transition:.12s;'
+      + 'display:flex;align-items:center;justify-content:center;gap:.5rem';
     btn.onmouseenter = function () {
       this.style.background = '#fef2f2'; this.style.color = '#dc2626'; this.style.borderColor = '#fecaca';
     };

@@ -1,7 +1,16 @@
 <!DOCTYPE html>
 <html lang="th"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Influencer Real Time Report</title>
-<script src="/static/auth.js?v=72"></script>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-LR32XF3T80"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-LR32XF3T80');
+</script>
+
+<script src="/static/auth.js?v=73"></script>
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -12,7 +21,7 @@ body{background:radial-gradient(125% 88% at 50% 132%,#f6cb38 0%,#fadd6a 18%,#fce
 .card:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(15,23,42,.08);border-color:#94a3b8}
 a{color:inherit;text-decoration:none}
 .nav{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin-bottom:1rem}
-.nav-brand{font-weight:700;font-size:1rem;margin-right:.6rem}
+.nav-brand{font-weight:700;font-size:1rem;margin-right:1.75rem}
 .navtab{padding:.4rem .9rem;border-radius:999px;font-size:.85rem;font-weight:600;color:#475569;border:1px solid var(--line);background:#fff}
 .navtab-active{background:#0f172a;color:#fff;border-color:#0f172a}
 .navtab:hover{background:#eef2f7}
@@ -39,15 +48,9 @@ a{color:inherit;text-decoration:none}
 </style></head><body class="min-h-screen">
 <div class="max-w-6xl mx-auto px-3 sm:px-5 py-5">
 <nav class="nav">
-  <span class="nav-brand">🎯 Influencer Real Time Report</span>
+  <span class="nav-brand" style="margin-right:auto"><span style="display:inline-flex;align-items:center;gap:.4rem;white-space:nowrap"><img src="/static/logo.png" alt="Far East Fame Line" style="height:52px">Influencer Real Time Report</span></span>
   <a href="/" class="navtab navtab-active">Home</a>
   <a href="/token" class="navtab">Apify Token</a>
-  <div class="logo" role="img" aria-label="Far East Fame Line">
-    <span class="lw">Far<i class="ldot"></i></span>
-    <span class="lw">East</span>
-    <span class="lw">Fame</span>
-    <span class="lw">Line</span>
-  </div>
 </nav>
 
 <header class="mb-4 flex flex-wrap items-end justify-between gap-3">
