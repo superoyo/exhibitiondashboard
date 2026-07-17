@@ -55,6 +55,8 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 <div class="text-right" style="margin-left:auto">
 <div class="flex gap-2 justify-end flex-wrap">
 <a id="navEdit" href="/kols" class="btn-refresh" style="background:#475569;color:#fff;text-decoration:none;display:inline-block">✏️ แก้ไข KOL</a>
+<button id="packBtn" class="btn-refresh" style="background:#7c3aed">🖼️ ภาพสินค้า</button>
+<input id="packFile" type="file" accept="image/*" style="display:none">
 <button id="pptxBtn" class="btn-refresh" style="background:#b45309">📥 PowerPoint</button>
 <button id="shareBtn" class="btn-refresh" style="background:#2563eb">🔗 View Only for Client</button>
 <button id="refreshBtn" class="btn-refresh">🔄 Refresh Data</button>
@@ -251,9 +253,39 @@ const VIEW_ONLY = /^\/v\//i.test(location.pathname) || new URLSearchParams(locat
  ['editLink','navEdit'].forEach(id=>{const el=document.getElementById(id); if(el) el.href=q;});}
 if(VIEW_ONLY){
  document.body.classList.add('view-only');
- ['refreshBtn','shareBtn','navEdit','costInfo','editLink','pptxBtn'].forEach(id=>{const el=document.getElementById(id); if(el) el.style.display='none';});
+ ['refreshBtn','shareBtn','navEdit','costInfo','editLink','pptxBtn','packBtn'].forEach(id=>{const el=document.getElementById(id); if(el) el.style.display='none';});
  const nav=document.querySelector('nav.nav'); if(nav) nav.style.display='none';
 }
+// "🖼️ ภาพสินค้า" — upload the campaign's product pack shot; the tie-in AI
+// then picks video frames by matching THIS image instead of a text guess
+{const pk=document.getElementById('packBtn'), pf=document.getElementById('packFile');
+ let packSet=false;
+ const paint=()=>{ if(pk) pk.innerHTML=packSet?'🖼️ ภาพสินค้า ✓':'🖼️ ภาพสินค้า'; };
+ if(pk&&!VIEW_ONLY) fetch(`/api/report/packshot?campaign=${CAMPAIGN}`).then(r=>r.json())
+   .then(d=>{ packSet=!!d.is_set; paint(); }).catch(()=>{});
+ if(pk) pk.onclick=()=>{
+  if(packSet&&!confirm('มีภาพสินค้าอยู่แล้ว ต้องการเปลี่ยนเป็นภาพใหม่?')) return;
+  pf.value=''; pf.click();
+ };
+ if(pf) pf.onchange=()=>{
+  const f=pf.files&&pf.files[0]; if(!f) return;
+  if(f.size>8*1024*1024){ alert('ไฟล์ใหญ่เกิน 8MB — ย่อรูปก่อนครับ'); return; }
+  const rd=new FileReader();
+  rd.onload=async()=>{
+   pk.disabled=true; pk.innerHTML='<span class="spin"></span>อัพโหลด…';
+   try{
+    const r=await fetch(`/api/report/packshot?campaign=${CAMPAIGN}`,{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({image_base64:rd.result})});
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.detail||('HTTP '+r.status));
+    packSet=true;
+    setInfo('✅ บันทึกภาพสินค้าแล้ว — กด PowerPoint เพื่อให้ AI หา tie-in shot ใหม่โดยเทียบกับภาพนี้');
+   }catch(e){ alert('อัพโหลดไม่สำเร็จ: '+e.message); }
+   finally{ pk.disabled=false; paint(); }
+  };
+  rd.readAsDataURL(f);
+ };}
 // "📥 PowerPoint" — one click does both steps: (1) AI tie-in shots for any
 // TikTok clips that don't have one yet (already-processed clips are cached →
 // no repeat Apify/Claude cost), then (2) build + download the deck.

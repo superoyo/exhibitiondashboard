@@ -40,7 +40,19 @@ MAX_VIDEOS_PER_RUN = 40
 FRAMES_PER_VIDEO = 12
 # bump when the sampling/selection algorithm improves — posts whose stored
 # shot came from an older version are automatically redone on the next run
-TIEIN_VERSION = "tiein3"
+TIEIN_VERSION = "tiein4"
+VIDEO_BATCH = 6  # one 16-url actor run dropped 13/16 videos; small chunks stick
+
+
+def packshot_hash(campaign: str) -> str:
+    """ImageCache key of the campaign's uploaded product pack shot."""
+    return hashlib.sha256(f"packshot:{campaign}".encode()).hexdigest()[:40]
+
+
+def get_packshot(campaign: str) -> Optional[bytes]:
+    with session_scope() as session:
+        row = session.get(ImageCache, packshot_hash(campaign))
+        return row.data if row and row.data else None
 
 
 # ---------------------------------------------------------------------------
@@ -146,9 +158,11 @@ def _shrink(img: bytes, max_side: int = 512) -> bytes:
 # 1) what is this campaign's product?
 # ---------------------------------------------------------------------------
 
-def infer_product(campaign_key: str, force: bool = False) -> str:
-    """Summarise the campaign's product from its name, captions and covers.
-    Cached in app_settings so it's inferred once per campaign."""
+def infer_product(campaign_key: str, force: bool = False,
+                  ref_img: Optional[bytes] = None) -> str:
+    """Summarise the campaign's product from its name, captions and covers
+    (plus the uploaded pack shot when there is one). Cached in app_settings
+    so it's inferred once per campaign."""
     from app.settings import get_setting, set_setting
     cached = get_setting(f"product:{campaign_key}")
     if cached and not force:
@@ -177,6 +191,10 @@ def infer_product(campaign_key: str, force: bool = False) -> str:
           "สรุปว่า 'สินค้า/บริการ' ของแคมเปญนี้คืออะไร "
           "ตอบภาษาไทย 1-2 ประโยค ระบุลักษณะภายนอกของสินค้า "
           "(รูปทรง สี แพ็คเกจ) ให้ชัดที่สุดเท่าที่เห็น"}]
+    if ref_img:
+        content.append({"type": "text",
+                        "text": "ภาพ pack shot สินค้าอย่างเป็นทางการของแคมเปญ (เชื่อภาพนี้เป็นหลัก):"})
+        content.append(_img_block(_shrink(ref_img)))
     content += [_img_block(c) for c in covers]
     desc = _claude(content, max_tokens=300) or name
     set_setting(f"product:{campaign_key}", desc)
@@ -219,7 +237,8 @@ def _extract_frames(video_path: str) -> list:
     return frames
 
 
-def _pick_frame(product_desc: str, frames: list) -> Optional[int]:
+def _pick_frame(product_desc: str, frames: list,
+                ref_img: Optional[bytes] = None) -> Optional[int]:
     """Ask Claude which frame best shows the product (1-based; None if none)."""
     if not frames:
         return None
@@ -228,10 +247,16 @@ def _pick_frame(product_desc: str, frames: list) -> Optional[int]:
         f"ต่อไปนี้คือเฟรมจากวิดีโอรีวิว {len(frames)} เฟรม สุ่มกระจายตลอดทั้งคลิป "
         "(แต่ละภาพมีเลขเฟรมกำกับไว้ก่อนหน้า) "
         "เลือกเฟรมเดียวที่เป็น tie-in shot ที่ดีที่สุด ตามลำดับความสำคัญ:\n"
-        "1) ผู้รีวิวกำลังถือ/หยิบจับ/ใช้งานสินค้า และเห็นแพ็คเกจสินค้าชัดเจน\n"
-        "2) เห็นแพ็คเกจ/ฉลากสินค้าชัดเจนเต็มเฟรม (แม้ไม่มีคนถือ)\n"
-        "3) เห็นสินค้าบางส่วนในฉาก\n"
-        "ตอบเป็นตัวเลขเฟรมเท่านั้น (เช่น 3) — ตอบ 0 เฉพาะกรณีไม่มีเฟรมไหนเห็นสินค้าเลยจริงๆ"}]
+        "1) เห็น 'ตัวแพ็คเกจสินค้า' (ขวด/ถุง/กล่อง พร้อมฉลาก) ชัดเจน และมีคนถือ/หยิบจับ\n"
+        "2) เห็นตัวแพ็คเกจสินค้าชัดเจนในเฟรม (แม้ไม่มีคนถือ)\n"
+        "3) เห็นแพ็คเกจสินค้าเพียงบางส่วน\n"
+        "ข้อควรระวัง: ฉากที่กำลัง 'ใช้งาน' โดยไม่เห็นแพ็คเกจ (เช่น ถูพื้น เทของ "
+        "โดยไม่เห็นขวด/ถุงสินค้า) ถือว่าด้อยกว่าเฟรมที่เห็นแพ็คเกจเสมอ\n"
+        "ตอบเป็นตัวเลขเฟรมเท่านั้น (เช่น 3) — ตอบ 0 เฉพาะกรณีไม่มีเฟรมไหนเห็นแพ็คเกจสินค้าเลย"}]
+    if ref_img:
+        content.append({"type": "text",
+                        "text": "ภาพอ้างอิง: pack shot จริงของสินค้า — เลือกเฟรมที่เห็นสินค้าตรงกับภาพนี้:"})
+        content.append(_img_block(_shrink(ref_img)))
     for k, f in enumerate(frames, 1):  # label every image so the index is exact
         content.append({"type": "text", "text": f"เฟรมที่ {k}:"})
         content.append(_img_block(f))
@@ -338,8 +363,10 @@ def run_tiein(campaign: str) -> dict:
                       finished_at=dt.datetime.now(config.TZ).isoformat())
             return {"status": "skipped"}
 
-        st.update(message="กำลังวิเคราะห์สินค้าของแคมเปญ…")
-        product = infer_product(campaign)
+        ref_img = get_packshot(campaign)  # uploaded product pack shot (optional)
+        st.update(message="กำลังวิเคราะห์สินค้าของแคมเปญ…"
+                          + (" (มีภาพ pack shot อ้างอิง)" if ref_img else ""))
+        product = infer_product(campaign, ref_img=ref_img)
         st.update(message=f"สินค้า: {product[:120]} · กำลังดึงวิดีโอ…")
 
         urls = []
@@ -348,12 +375,23 @@ def run_tiein(campaign: str) -> dict:
                 p = session.get(ReportPost, pid)
                 if p and p.url:
                     urls.append(p.url)
-        items, meta = run_scrape_posts_with_video(urls)
-        cost = meta.get("cost_usd") or 0.0
 
         from app.settings import get_apify_token
         token = get_apify_token()
-        kv_videos = _kv_video_urls(meta.get("kv_store_id") or "", token)
+        # download in SMALL batches — one big 16-url run returned only 3
+        # videos; short runs let the actor finish every download
+        items, kv_videos, cost = [], {}, 0.0
+        for b in range(0, len(urls), VIDEO_BATCH):
+            chunk = urls[b:b + VIDEO_BATCH]
+            st.update(message=(f"สินค้า: {product[:80]} · กำลังดึงวิดีโอ… "
+                               f"({min(b + len(chunk), len(urls))}/{len(urls)})"))
+            try:
+                ch_items, meta = run_scrape_posts_with_video(chunk)
+                items += ch_items
+                cost += meta.get("cost_usd") or 0.0
+                kv_videos.update(_kv_video_urls(meta.get("kv_store_id") or "", token))
+            except Exception as exc:  # noqa: BLE001 — keep other batches alive
+                log.error("tiein[%s] video batch failed: %s", campaign, _redact(exc))
         log.info("tiein[%s]: %d items, %d videos in KV store", campaign,
                  len(items), len(kv_videos))
         done = no_product = errs = 0
@@ -383,7 +421,7 @@ def run_tiein(campaign: str) -> dict:
                 errs += 1
                 continue
             try:
-                idx = _pick_frame(product, frames)
+                idx = _pick_frame(product, frames, ref_img=ref_img)
             except RuntimeError as exc:
                 log.warning("frame pick failed: %s", exc)
                 errs += 1

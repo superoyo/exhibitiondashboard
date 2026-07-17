@@ -598,6 +598,50 @@ def ai_status_route(force: bool = False):
     return ai_status(force)
 
 
+class PackshotIn(BaseModel):
+    image_base64: str
+
+
+@router.get("/report/packshot")
+def packshot_get(campaign: str = "pao"):
+    """Is a product pack shot uploaded for this campaign? (+ tiny preview)"""
+    import base64 as _b64
+
+    from app.tiein import _shrink, get_packshot
+    img = get_packshot(campaign)
+    if not img:
+        return {"is_set": False}
+    return {"is_set": True,
+            "preview": "data:image/jpeg;base64,"
+                       + _b64.b64encode(_shrink(img, 240)).decode()}
+
+
+@router.post("/report/packshot")
+def packshot_set(body: PackshotIn, campaign: str = "pao"):
+    """Store the campaign's product pack shot — the tie-in AI uses it as the
+    reference image when picking frames, which beats any text description."""
+    import base64 as _b64
+
+    from app.tiein import _shrink, packshot_hash
+    try:
+        raw = _b64.b64decode((body.image_base64 or "").split(",")[-1])
+    except Exception:  # noqa: BLE001
+        raise HTTPException(400, "ไฟล์ภาพไม่ถูกต้อง")
+    if not raw:
+        raise HTTPException(400, "ไฟล์ภาพว่างเปล่า")
+    if len(raw) > 8_000_000:
+        raise HTTPException(400, "ไฟล์ใหญ่เกิน 8MB — ย่อรูปก่อนอัพโหลด")
+    img = _shrink(raw, 1024)  # normalise to jpeg ≤1024px
+    from app.db import session_scope
+    with session_scope() as s:
+        s.merge(ImageCache(hash=packshot_hash(campaign),
+                           content_type="image/jpeg", data=img))
+    # product description must be re-inferred WITH the new pack shot
+    from app.settings import set_setting
+    set_setting(f"product:{campaign}", "")
+    return {"status": "saved"}
+
+
 @router.get("/report/pptx")
 def report_pptx(campaign: str = "pao"):
     """Generate and download the campaign's PowerPoint report."""
