@@ -231,6 +231,20 @@ def _extract_frames(video_path: str) -> list:
         os.rmdir(outdir)
     except OSError:
         pass
+    def _not_black(b: bytes) -> bool:
+        """Drop black/near-black frames (intros, fades, decode glitches) so
+        they can never end up as the slide preview."""
+        try:
+            import io
+
+            from PIL import Image
+            im = Image.open(io.BytesIO(b)).convert("L")
+            im.thumbnail((32, 32))
+            pix = list(im.getdata())
+            return (sum(pix) / max(len(pix), 1)) > 10
+        except Exception:  # noqa: BLE001
+            return True
+    frames = [f for f in frames if _not_black(f)] or frames[:1]
     if len(frames) > FRAMES_PER_VIDEO:  # keep first + last, spread the rest
         step = (len(frames) - 1) / (FRAMES_PER_VIDEO - 1)
         frames = [frames[round(i * step)] for i in range(FRAMES_PER_VIDEO)]
