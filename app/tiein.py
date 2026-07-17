@@ -41,7 +41,9 @@ FRAMES_PER_VIDEO = 12
 # bump when the sampling/selection algorithm improves — posts whose stored
 # shot came from an older version are automatically redone on the next run
 TIEIN_VERSION = "tiein4"
-VIDEO_BATCH = 6  # one 16-url actor run dropped 13/16 videos; small chunks stick
+# the actor only ever finishes downloading the FIRST video of a run — so each
+# clip gets its own single-url run, several in flight at once
+VIDEO_WORKERS = 5
 
 
 def packshot_hash(campaign: str) -> str:
@@ -421,38 +423,43 @@ def run_tiein(campaign: str) -> dict:
 
         from app.settings import get_apify_token
         token = get_apify_token()
-        # download in SMALL batches — one big 16-url run returned only 3
-        # videos; short runs let the actor finish every download
+        # ONE url per actor run, several runs concurrently — the actor's video
+        # downloader reliably finishes only the FIRST queued video before the
+        # run ends (observed 1/6, 1/6, 1/4 across batch sizes), so every clip
+        # must be the first of its own run. Parallelism keeps wall-clock sane.
         items, kv_videos, cost = [], {}, 0.0
-        dbg: list = []  # per-batch evidence, surfaced via the status endpoint
-        for b in range(0, len(urls), VIDEO_BATCH):
-            chunk = urls[b:b + VIDEO_BATCH]
-            st.update(message=(f"สินค้า: {product[:80]} · กำลังดึงวิดีโอ… "
-                               f"({min(b + len(chunk), len(urls))}/{len(urls)})"))
-            try:
-                ch_items, meta = run_scrape_posts_with_video(chunk)
-                items += ch_items
-                cost += meta.get("cost_usd") or 0.0
-                kv_id = meta.get("kv_store_id") or ""
-                st.update(message=(f"สินค้า: {product[:80]} · รอไฟล์วิดีโออัพโหลด… "
-                                   f"({min(b + len(chunk), len(urls))}/{len(urls)})"))
-                import time as _time
-                t0 = _time.monotonic()
-                _wait_videos(kv_id, token, expect=len(chunk))
-                kv_map, kv_raw = _kv_video_urls(kv_id, token)
-                kv_videos.update(kv_map)
-                dbg.append({
-                    "run": meta.get("apify_run_id"), "kv": kv_id,
-                    "urls": len(chunk), "items": len(ch_items),
-                    "items_with_mediaUrls": sum(1 for it in ch_items
-                                                if it.get("mediaUrls")),
-                    "waited_s": round(_time.monotonic() - t0),
-                    "kv_keys_total": len(kv_raw), "kv_ids_matched": len(kv_map),
-                    "kv_key_sample": kv_raw[:8],
-                })
-            except Exception as exc:  # noqa: BLE001 — keep other batches alive
-                log.error("tiein[%s] video batch failed: %s", campaign, _redact(exc))
-                dbg.append({"urls": len(chunk), "error": _redact(exc)})
+        dbg: list = []  # per-run evidence, surfaced via the status endpoint
+
+        def _one_video(u):
+            ch_items, meta = run_scrape_posts_with_video([u], timeout_s=300)
+            kv_id = meta.get("kv_store_id") or ""
+            _wait_videos(kv_id, token, expect=1, timeout_s=150)
+            kv_map, kv_raw = _kv_video_urls(kv_id, token)
+            return ch_items, meta, kv_map, kv_raw
+
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        got = 0
+        with ThreadPoolExecutor(max_workers=VIDEO_WORKERS) as pool:
+            futs = {pool.submit(_one_video, u): u for u in urls}
+            for fut in as_completed(futs):
+                got += 1
+                st.update(message=(f"สินค้า: {product[:80]} · ดึงวิดีโอแล้ว "
+                                   f"{got}/{len(urls)}"))
+                try:
+                    ch_items, meta, kv_map, kv_raw = fut.result()
+                    items += ch_items
+                    cost += meta.get("cost_usd") or 0.0
+                    kv_videos.update(kv_map)
+                    dbg.append({
+                        "run": meta.get("apify_run_id"),
+                        "items": len(ch_items),
+                        "media": sum(1 for it in ch_items if it.get("mediaUrls")),
+                        "kv_ids_matched": len(kv_map),
+                    })
+                except Exception as exc:  # noqa: BLE001 — keep the rest alive
+                    log.error("tiein[%s] video run failed for %s: %s",
+                              campaign, futs[fut], _redact(exc))
+                    dbg.append({"url": futs[fut][:80], "error": _redact(exc)})
         st["debug"] = dbg
         log.info("tiein[%s]: %d items, %d videos in KV store · %s", campaign,
                  len(items), len(kv_videos), dbg)
