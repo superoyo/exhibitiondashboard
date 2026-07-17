@@ -270,15 +270,17 @@ def _pick_frame(product_desc: str, frames: list,
     return None
 
 
-def _kv_video_urls(kv_store_id: str, token: str) -> dict:
-    """Map TikTok video-id -> download URL for every file in the scrape run's
+def _kv_video_urls(kv_store_id: str, token: str):
+    """(video-id -> download URL, raw key names) for the scrape run's
     key-value store. The clockworks actor saves downloaded videos THERE — the
     dataset items usually come back with mediaUrls=[] (which is why no clip
-    ever produced a frame before this lookup existed)."""
+    ever produced a frame before this lookup existed). Raw key names are kept
+    for the debug readout — the naming scheme is undocumented."""
     import re as _re
     out: dict = {}
+    raw: list = []
     if not kv_store_id:
-        return out
+        return out, raw
     base = "https://api.apify.com/v2"
     start_key = None
     try:
@@ -293,6 +295,7 @@ def _kv_video_urls(kv_store_id: str, token: str) -> dict:
             data = (r.json() or {}).get("data") or {}
             for it in data.get("items") or []:
                 key = str(it.get("key") or "")
+                raw.append(f"{key} ({it.get('size') or 0}b)")
                 m = _re.search(r"(\d{15,})", key)  # tiktok ids are long digit runs
                 if m:
                     out[m.group(1)] = f"{base}/key-value-stores/{kv_store_id}/records/{key}"
@@ -301,7 +304,7 @@ def _kv_video_urls(kv_store_id: str, token: str) -> dict:
             start_key = data.get("nextExclusiveStartKey")
     except Exception:  # noqa: BLE001 — fall back to whatever was collected
         pass
-    return out
+    return out, raw
 
 
 def _download(url: str, token: str) -> Optional[str]:
@@ -381,6 +384,7 @@ def run_tiein(campaign: str) -> dict:
         # download in SMALL batches — one big 16-url run returned only 3
         # videos; short runs let the actor finish every download
         items, kv_videos, cost = [], {}, 0.0
+        dbg: list = []  # per-batch evidence, surfaced via the status endpoint
         for b in range(0, len(urls), VIDEO_BATCH):
             chunk = urls[b:b + VIDEO_BATCH]
             st.update(message=(f"สินค้า: {product[:80]} · กำลังดึงวิดีโอ… "
@@ -389,12 +393,23 @@ def run_tiein(campaign: str) -> dict:
                 ch_items, meta = run_scrape_posts_with_video(chunk)
                 items += ch_items
                 cost += meta.get("cost_usd") or 0.0
-                kv_videos.update(_kv_video_urls(meta.get("kv_store_id") or "", token))
+                kv_map, kv_raw = _kv_video_urls(meta.get("kv_store_id") or "", token)
+                kv_videos.update(kv_map)
+                dbg.append({
+                    "run": meta.get("apify_run_id"), "kv": meta.get("kv_store_id"),
+                    "urls": len(chunk), "items": len(ch_items),
+                    "items_with_mediaUrls": sum(1 for it in ch_items
+                                                if it.get("mediaUrls")),
+                    "kv_keys_total": len(kv_raw), "kv_ids_matched": len(kv_map),
+                    "kv_key_sample": kv_raw[:8],
+                })
             except Exception as exc:  # noqa: BLE001 — keep other batches alive
                 log.error("tiein[%s] video batch failed: %s", campaign, _redact(exc))
-        log.info("tiein[%s]: %d items, %d videos in KV store", campaign,
-                 len(items), len(kv_videos))
-        done = no_product = errs = 0
+                dbg.append({"urls": len(chunk), "error": _redact(exc)})
+        st["debug"] = dbg
+        log.info("tiein[%s]: %d items, %d videos in KV store · %s", campaign,
+                 len(items), len(kv_videos), dbg)
+        done = no_product = errs = have_video = 0
         for i, it in enumerate(items):
             tid = str(it.get("id") or "")
             post_id = targets.get(tid)
@@ -405,6 +420,7 @@ def run_tiein(campaign: str) -> dict:
             if not video_url:  # no downloaded video came back for this clip
                 errs += 1
                 continue
+            have_video += 1
             st.update(message=f"กำลังหา tie-in shot… ({i + 1}/{len(items)})")
             path = _download(video_url, token)
             if not path:
@@ -452,7 +468,8 @@ def run_tiein(campaign: str) -> dict:
             add_cost(campaign, cost)
         except Exception:  # noqa: BLE001
             pass
-        summary = f"ได้ tie-in shot {done}/{len(targets)} คลิป"
+        summary = (f"ได้ tie-in shot {done}/{len(targets)} คลิป "
+                   f"(Apify ส่งวิดีโอมา {have_video}/{len(targets)})")
         if no_product:
             summary += f" · ไม่พบสินค้าในคลิป {no_product}"
         if errs:
