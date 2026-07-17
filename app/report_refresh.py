@@ -895,12 +895,21 @@ def refresh_report(campaign: str = "pao") -> dict:
                     if ln["url"] not in bucket:
                         bucket.append(ln["url"])
 
-        for plat, urls in keyable_urls.items():
-            try:
-                _absorb(plat, *_scrape_platform(plat, urls))
-            except (ApifyError, httpx.HTTPError) as exc:
-                log.error("Refresh[%s] %s batch failed: %s", campaign, plat, exc)
-                scrape_errors.append(f"{_PLATFORM_LABELS.get(plat, plat)}: {_redact(exc)}")
+        # all platforms scrape CONCURRENTLY — each Apify run spends ~30-60s
+        # mostly booting/polling, so running them in series just adds up.
+        # Results are absorbed on the main thread (shared dicts stay safe).
+        if keyable_urls:
+            st.update(message=f"กำลังดึงข้อมูล {len(keyable_urls)} แพลตฟอร์มพร้อมกัน…")
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=min(5, len(keyable_urls))) as pool:
+                futures = {plat: pool.submit(_scrape_platform, plat, urls)
+                           for plat, urls in keyable_urls.items()}
+            for plat, fut in futures.items():
+                try:
+                    _absorb(plat, *fut.result())
+                except (ApifyError, httpx.HTTPError) as exc:
+                    log.error("Refresh[%s] %s batch failed: %s", campaign, plat, exc)
+                    scrape_errors.append(f"{_PLATFORM_LABELS.get(plat, plat)}: {_redact(exc)}")
 
         rows = []
         refreshed_users = set()
@@ -957,6 +966,8 @@ def refresh_report(campaign: str = "pao") -> dict:
         # FB pages / IG accounts don't expose follower counts on post items —
         # scrape the pages/profiles themselves so ER-by-followers works for
         # photo posts. Only the handles that actually posted are scraped.
+        # Follower counts barely move within a day, so this pass runs at most
+        # once per 24h — repeat refreshes skip it (numbers persist on the rows).
         ig_handles = sorted({(post.get("username") or "").lower()
                              for _u, plat, post, _l in rows if plat == "instagram"} - {""})
         fb_pages: Dict[str, str] = {}
@@ -966,6 +977,19 @@ def refresh_report(campaign: str = "pao") -> dict:
             h = handle_from_url(ln["url"]) or (post.get("username") or "").lower()
             if h and h not in fb_pages:
                 fb_pages[h] = f"https://www.facebook.com/{h}"
+        skip_followers = False
+        if ig_handles or fb_pages:
+            try:
+                from app.settings import get_setting
+                last_f = get_setting(f"followers_ts:{campaign}")
+                if last_f:
+                    age = dt.datetime.now(config.TZ) - dt.datetime.fromisoformat(last_f)
+                    skip_followers = age.total_seconds() < 86400
+            except Exception:  # noqa: BLE001 — a bad timestamp just re-fetches
+                pass
+        if skip_followers:
+            log.info("Refresh[%s]: follower pass skipped (fetched <24h ago)", campaign)
+            ig_handles, fb_pages = [], {}
         if ig_handles:
             try:
                 st.update(message=f"กำลังดึง followers โปรไฟล์ Instagram {len(ig_handles)} บัญชี…")
@@ -1013,6 +1037,13 @@ def refresh_report(campaign: str = "pao") -> dict:
             except (ApifyError, httpx.HTTPError) as exc:
                 log.error("Refresh[%s] FB pages failed: %s", campaign, exc)
                 scrape_errors.append(f"FB followers: {_redact(exc)}")
+        if ig_handles or fb_pages:  # a follower pass actually ran — stamp it
+            try:
+                from app.settings import set_setting
+                set_setting(f"followers_ts:{campaign}",
+                            dt.datetime.now(config.TZ).isoformat())
+            except Exception:  # noqa: BLE001
+                pass
 
         # per-KOL followers / nick / avatar aggregated from the matched posts;
         # each link also remembers its own platform's follower count
@@ -1090,6 +1121,8 @@ def refresh_report(campaign: str = "pao") -> dict:
         msg = f"อัปเดต {n_posts} โพสต์ จาก {len(refreshed_users)}/{len(roster)} KOL · {breakdown}"
         if skipped_profiles:
             msg += f" · ข้าม {skipped_profiles} ลิงก์โปรไฟล์ (ยังไม่มีลิงก์งาน — ไม่เปลือง Apify)"
+        if skip_followers:
+            msg += " · ใช้ followers ชุดเดิม (ดึงล่าสุดไม่เกิน 24 ชม.)"
         if unmatched:
             msg += " · จับคู่ไม่ได้: " + ", ".join(unmatched)
         if partial:
