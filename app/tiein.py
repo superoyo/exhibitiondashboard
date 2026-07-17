@@ -307,6 +307,32 @@ def _kv_video_urls(kv_store_id: str, token: str):
     return out, raw
 
 
+def _wait_videos(kv_store_id: str, token: str, expect: int,
+                 timeout_s: float = 300.0) -> int:
+    """The clockworks actor marks its run SUCCEEDED and then keeps uploading
+    the downloaded videos through a separate queue (VIDEO_DOWNLOAD_REQUEST_
+    QUEUE_ID in the store) — listing the store right away sees only the
+    bookkeeping files. Poll until `expect` id-keyed videos exist, or the count
+    has been stable for ~90s, or timeout. Returns the final count."""
+    import time as _time
+    deadline = _time.monotonic() + timeout_s
+    last, stable = -1, 0
+    while True:
+        got, _ = _kv_video_urls(kv_store_id, token)
+        n = len(got)
+        if n >= expect:
+            return n
+        if n == last:
+            stable += 1
+            if stable >= 9:  # no new upload for ~90s — that's all we're getting
+                return n
+        else:
+            last, stable = n, 0
+        if _time.monotonic() > deadline:
+            return n
+        _time.sleep(10)
+
+
 def _download(url: str, token: str) -> Optional[str]:
     """Stream an Apify-stored video to a temp file; returns the path."""
     u = url + ("&" if "?" in url else "?") + "token=" + token
@@ -393,13 +419,20 @@ def run_tiein(campaign: str) -> dict:
                 ch_items, meta = run_scrape_posts_with_video(chunk)
                 items += ch_items
                 cost += meta.get("cost_usd") or 0.0
-                kv_map, kv_raw = _kv_video_urls(meta.get("kv_store_id") or "", token)
+                kv_id = meta.get("kv_store_id") or ""
+                st.update(message=(f"สินค้า: {product[:80]} · รอไฟล์วิดีโออัพโหลด… "
+                                   f"({min(b + len(chunk), len(urls))}/{len(urls)})"))
+                import time as _time
+                t0 = _time.monotonic()
+                _wait_videos(kv_id, token, expect=len(chunk))
+                kv_map, kv_raw = _kv_video_urls(kv_id, token)
                 kv_videos.update(kv_map)
                 dbg.append({
-                    "run": meta.get("apify_run_id"), "kv": meta.get("kv_store_id"),
+                    "run": meta.get("apify_run_id"), "kv": kv_id,
                     "urls": len(chunk), "items": len(ch_items),
                     "items_with_mediaUrls": sum(1 for it in ch_items
                                                 if it.get("mediaUrls")),
+                    "waited_s": round(_time.monotonic() - t0),
                     "kv_keys_total": len(kv_raw), "kv_ids_matched": len(kv_map),
                     "kv_key_sample": kv_raw[:8],
                 })
