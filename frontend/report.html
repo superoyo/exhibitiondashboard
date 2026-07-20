@@ -68,7 +68,6 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 <button id="packBtn" class="btn-refresh" style="background:#7c3aed">🖼️ ภาพสินค้า</button>
 <input id="packFile" type="file" accept="image/*" style="display:none">
 <button id="pptxBtn" class="btn-refresh" style="background:#b45309">📥 PowerPoint</button>
-<button id="pdfBtn" class="btn-refresh" style="background:#0f766e">📄 PDF</button>
 <button id="shareBtn" class="btn-refresh" style="background:#2563eb">🔗 View Only for Client</button>
 <button id="refreshBtn" class="btn-refresh">🔄 Refresh Data</button>
 </div>
@@ -267,17 +266,6 @@ if(VIEW_ONLY){
  ['refreshBtn','shareBtn','navEdit','costInfo','editLink','pptxBtn','packBtn'].forEach(id=>{const el=document.getElementById(id); if(el) el.style.display='none';});
  const nav=document.querySelector('nav.nav'); if(nav) nav.style.display='none';
 }
-// "📄 PDF" — export the whole stats page (KPIs, charts, table) via the
-// browser's print-to-PDF. Available on the client View-Only page too.
-{const pdb=document.getElementById('pdfBtn');
- const CHART_IDS=['cDonut','cER','cStack','cTop','cScatter'];
- const rsCharts=()=>CHART_IDS.forEach(id=>{const el=document.getElementById(id); if(el&&el._ec) el._ec.resize();});
- if(pdb) pdb.onclick=async()=>{
-  document.body.classList.add('printing'); rsCharts();       // fit charts to A4 width
-  await new Promise(r=>setTimeout(r,350));
-  window.print();                                            // user picks "Save as PDF"
-  setTimeout(()=>{document.body.classList.remove('printing'); rsCharts();},600);
- };}
 // "🖼️ ภาพสินค้า" — upload the campaign's product pack shot; the tie-in AI
 // then picks video frames by matching THIS image instead of a text guess
 {const pk=document.getElementById('packBtn'), pf=document.getElementById('packFile');
