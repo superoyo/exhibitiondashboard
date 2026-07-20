@@ -290,7 +290,8 @@ if(VIEW_ONLY){
     const d=await r.json();
     if(!r.ok) throw new Error(d.detail||('HTTP '+r.status));
     packSet=true;
-    setInfo('✅ บันทึกภาพสินค้าแล้ว — กด PowerPoint เพื่อให้ AI หา tie-in shot ใหม่โดยเทียบกับภาพนี้');
+    setInfo('✅ บันทึกภาพสินค้าแล้ว — กด PowerPoint เพื่อให้ AI หา tie-in shot โดยเทียบกับภาพนี้'
+      +(d.unlocked?` (ปลดล็อก ${d.unlocked} คลิปที่เคยหาไม่เจอ ให้ลองใหม่)`:''));
    }catch(e){ alert('อัพโหลดไม่สำเร็จ: '+e.message); }
    finally{ pk.disabled=false; paint(); }
   };

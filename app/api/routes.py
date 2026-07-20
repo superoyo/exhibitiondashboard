@@ -636,10 +636,20 @@ def packshot_set(body: PackshotIn, campaign: str = "pao"):
     with session_scope() as s:
         s.merge(ImageCache(hash=packshot_hash(campaign),
                            content_type="image/jpeg", data=img))
+        # clips previously marked 'no product found' (marker = hash without an
+        # image row) get another chance now that a reference image exists;
+        # clips that already HAVE a shot are left alone
+        retried = 0
+        for p in s.scalars(select(ReportPost).where(
+                ReportPost.campaign == campaign,
+                ReportPost.tiein_hash.isnot(None))).all():
+            if not s.get(ImageCache, p.tiein_hash):
+                p.tiein_hash = None
+                retried += 1
     # product description must be re-inferred WITH the new pack shot
     from app.settings import set_setting
     set_setting(f"product:{campaign}", "")
-    return {"status": "saved"}
+    return {"status": "saved", "unlocked": retried}
 
 
 @router.get("/report/pptx")
