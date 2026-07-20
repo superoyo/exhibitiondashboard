@@ -806,8 +806,11 @@ def refresh_report(campaign: str = "pao") -> dict:
                     part = part or bool(meta.get("partial"))
                 if reels:
                     html_posts, owner_pages = [], {}
-                    for u in reels:
-                        hp = _fb_reel_html_stats(u)
+                    # each reel page is a 2-3MB fetch — do them concurrently
+                    from concurrent.futures import ThreadPoolExecutor as _TPE
+                    with _TPE(max_workers=min(4, len(reels))) as _p:
+                        reel_stats = list(_p.map(_fb_reel_html_stats, reels))
+                    for u, hp in zip(reels, reel_stats):
                         if hp:
                             owner = hp.pop("_owner", None)
                             html_posts.append(hp)
@@ -815,7 +818,19 @@ def refresh_report(campaign: str = "pao") -> dict:
                                 owner_pages[owner] = f"https://www.facebook.com/{owner}"
                         else:
                             log.warning("FB reel HTML stats failed for %s", u)
-                    if owner_pages:
+                    # the page sweep (only source of reel VIEW counts) is the
+                    # slowest+priciest actor here — run it at most once/24h;
+                    # carried-over stats keep yesterday's views in between
+                    sweep_ok = True
+                    try:
+                        from app.settings import get_setting
+                        lastw = get_setting(f"fbreels_ts:{campaign}")
+                        if lastw:
+                            age = dt.datetime.now(config.TZ) - dt.datetime.fromisoformat(lastw)
+                            sweep_ok = age.total_seconds() >= 86400
+                    except Exception:  # noqa: BLE001
+                        pass
+                    if owner_pages and sweep_ok:
                         try:
                             items, meta = run_scrape_fb_reels(
                                 list(owner_pages.values()), tolerate_failure=True)
@@ -844,6 +859,9 @@ def refresh_report(campaign: str = "pao") -> dict:
                                     mp = dict(by_id[rid])
                                     mp["url"] = mp.get("url") or u
                                     html_posts.append(mp)
+                            from app.settings import set_setting
+                            set_setting(f"fbreels_ts:{campaign}",
+                                        dt.datetime.now(config.TZ).isoformat())
                         except (ApifyError, httpx.HTTPError) as exc:
                             log.error("FB reels page sweep failed: %s", exc)
                     posts += html_posts
@@ -942,26 +960,39 @@ def refresh_report(campaign: str = "pao") -> dict:
                 f"ลิงก์เจาะจงเกิน {MAX_SINGLE} รายการ — ข้ามไป {len(need_single) - MAX_SINGLE} ลิงก์")
         if need_single:
             st.update(message=f"กำลังดึงลิงก์แบบเจาะจง {min(len(need_single), MAX_SINGLE)} รายการ…")
-        for uname, ln in need_single[:MAX_SINGLE]:
-            plat = ln["platform"]
+
+        def _scrape_single(pair):
+            """Runs in a worker thread; results merged on the main thread."""
+            uname, ln = pair
             try:
-                posts, meta, pr = _scrape_platform(plat, [ln["url"]])
-                profile.update(pr or {})
-                if meta.get("cost_usd"):
-                    cost += meta["cost_usd"]
-                if posts:
-                    best = max(posts, key=lambda p: (p.get("views", 0) + p.get("likes", 0)))
-                    _add_row(uname, plat, best, ln)
-                    canon = best.get("url")  # persist canonical URL → keyable next time
-                    if canon:
-                        ln["url"] = canon
-                        ln["platform"] = platform_of(canon)
-                        h = handle_from_url(canon)
-                        if h:
-                            ln["handle"] = h
+                return uname, ln, *_scrape_platform(ln["platform"], [ln["url"]]), None
             except (ApifyError, httpx.HTTPError) as exc:
-                log.error("Refresh[%s] %s single failed: %s", campaign, plat, exc)
-                scrape_errors.append(f"{_PLATFORM_LABELS.get(plat, plat)}: {_redact(exc)}")
+                return uname, ln, [], {}, {}, exc
+
+        from concurrent.futures import ThreadPoolExecutor
+        single_results = []
+        if need_single:
+            with ThreadPoolExecutor(max_workers=5) as pool:
+                single_results = list(pool.map(_scrape_single, need_single[:MAX_SINGLE]))
+        for uname, ln, posts, meta, pr, err in single_results:
+            plat = ln["platform"]
+            if err is not None:
+                log.error("Refresh[%s] %s single failed: %s", campaign, plat, err)
+                scrape_errors.append(f"{_PLATFORM_LABELS.get(plat, plat)}: {_redact(err)}")
+                continue
+            profile.update(pr or {})
+            if meta.get("cost_usd"):
+                cost += meta["cost_usd"]
+            if posts:
+                best = max(posts, key=lambda p: (p.get("views", 0) + p.get("likes", 0)))
+                _add_row(uname, plat, best, ln)
+                canon = best.get("url")  # persist canonical URL → keyable next time
+                if canon:
+                    ln["url"] = canon
+                    ln["platform"] = platform_of(canon)
+                    h = handle_from_url(canon)
+                    if h:
+                        ln["handle"] = h
 
         # FB pages / IG accounts don't expose follower counts on post items —
         # scrape the pages/profiles themselves so ER-by-followers works for
@@ -1064,6 +1095,19 @@ def refresh_report(campaign: str = "pao") -> dict:
                 avatar_by_user.setdefault(uname, post["avatar_url"])
 
         with session_scope() as session:
+            # snapshot the existing rows FIRST — a transient scrape miss must
+            # never wipe stats we already had, and tie-in shots (paid for
+            # once) must survive the delete+recreate below
+            old_rows: Dict[str, dict] = {}
+            for p in session.scalars(select(ReportPost).where(
+                    ReportPost.campaign == campaign)).all():
+                old_rows[p.video_id] = {
+                    "views": p.views or 0, "likes": p.likes or 0,
+                    "comments": p.comments or 0, "shares": p.shares or 0,
+                    "saves": p.saves or 0, "cover_url": p.cover_url,
+                    "caption": p.caption, "posted_at": p.posted_at,
+                    "tiein_hash": p.tiein_hash,
+                }
             if refreshed_users:
                 session.execute(delete(ReportPost).where(
                     ReportPost.campaign == campaign, ReportPost.username.in_(refreshed_users)))
@@ -1077,6 +1121,13 @@ def refresh_report(campaign: str = "pao") -> dict:
                 if vid in seen_vids:  # same KOL pasted the same link twice — skip dup
                     continue
                 seen_vids.add(vid)
+                old = old_rows.get(vid) or {}
+                for f in ("views", "likes", "comments", "shares", "saves"):
+                    if not post.get(f) and old.get(f):
+                        post[f] = old[f]  # keep yesterday's number over a fresh 0
+                for f in ("cover_url", "caption", "posted_at"):
+                    if not post.get(f) and old.get(f):
+                        post[f] = old[f]
                 session.add(ReportPost(
                     campaign=campaign, username=uname, platform=plat,
                     video_id=vid,
@@ -1085,6 +1136,7 @@ def refresh_report(campaign: str = "pao") -> dict:
                     avatar_url=post.get("avatar_url"), posted_at=post.get("posted_at"),
                     views=post["views"], likes=post["likes"], comments=post["comments"],
                     shares=post["shares"], saves=post["saves"],
+                    tiein_hash=old.get("tiein_hash"),
                 ))
             kmap = {u: links for u, links in roster}
             for k in session.scalars(select(ReportKol).where(ReportKol.campaign == campaign)).all():
