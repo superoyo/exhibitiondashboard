@@ -249,7 +249,16 @@ def _execute(
             params={"token": token},
             json=payload,
         )
-        start.raise_for_status()
+        if start.status_code >= 400:
+            # Apify's response body says WHY (quota exhausted, scoped token,
+            # memory limit, ...) — surface it instead of a bare status code
+            try:
+                detail = ((start.json().get("error") or {}).get("message")
+                          or start.text[:300])
+            except Exception:  # noqa: BLE001
+                detail = (start.text or "")[:300]
+            raise ApifyError(
+                f"Apify ปฏิเสธการเริ่มงาน (HTTP {start.status_code}): {detail}")
         run = start.json()["data"]
         run_id = run["id"]
         dataset_id = run["defaultDatasetId"]
