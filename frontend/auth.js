@@ -8,6 +8,21 @@
 // - Adds a user chip + logout button to the nav
 // View-only client pages (/v/<key> or ?view=1) are NOT guarded.
 (async function () {
+  // ---- Embed mode (?embed=1) ---------------------------------------------
+  // A host app (Agency Intelligence) frames this report inside its own UI and
+  // hands the Wazzup session over via #token=. Hide our own chrome so the
+  // report blends in. Purely additive: without ?embed=1 nothing changes, and
+  // data collection / API behaviour is untouched either way.
+  if (new URLSearchParams(location.search).get('embed') === '1') {
+    document.documentElement.classList.add('embed');
+    var st = document.createElement('style');
+    st.textContent =
+      'html.embed .nav{display:none}' +
+      'html.embed body>.max-w-7xl{padding-top:.75rem}' +
+      'html.embed #navEdit{display:none}';
+    (document.head || document.documentElement).appendChild(st);
+  }
+
   if (/^\/v\//i.test(location.pathname) ||
       new URLSearchParams(location.search).get('view') === '1') return;
 
