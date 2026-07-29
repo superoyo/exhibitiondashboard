@@ -54,6 +54,7 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 </style></head><body class="min-h-screen">
 <div class="max-w-7xl mx-auto px-3 sm:px-5 py-5">
 <nav class="nav">
+  <span data-global-menu style="margin-right:.6rem"></span>
 <a href="/" class="nav-brand" style="margin-right:auto"><span style="display:inline-flex;align-items:center;gap:.4rem;white-space:nowrap"><img src="/static/logo.png" alt="Far East Fame Line" style="height:52px">Influencer Real Time Report</span></a>
 <a href="/" class="navtab">← Home</a>
 </nav>
@@ -441,4 +442,5 @@ btn.onclick=async()=>{
 
 loadData();
 if(!VIEW_ONLY) fetch(`/api/report/refresh/status?campaign=${CAMPAIGN}`).then(r=>r.json()).then(s=>{if(s.status==='running')poll();}).catch(()=>{});
-</script></body></html>
+</script>  <script src="https://agencyitelligence-production.up.railway.app/global-menu.js" defer></script>
+</body></html>
