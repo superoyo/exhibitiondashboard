@@ -835,6 +835,73 @@ def list_campaigns(limit: int = Query(15, ge=1, le=100),
     return {"campaigns": out}
 
 
+@router.get("/campaigns/summary")
+def campaigns_summary(keys: str = Query("", description="รหัสแคมเปญคั่นด้วยคอมมา ว่าง = ทุกแคมเปญ"),
+                      session: Session = Depends(db_dependency)):
+    """สรุปตัวเลขต่อแคมเปญแบบเบา สำหรับระบบภายนอกเอาไปทำตาราง (Agency Intelligence)
+
+    ไม่ต้องดึง /report/data ทั้งก้อนมานับเอง และรวมแคมเปญที่ archive แล้วด้วย
+    ถ้าระบุ keys มา
+
+    total_views นับแบบเดียวกับหน้ารายงาน: เอาโพสต์ที่ยอดวิวสูงสุดของแต่ละ
+    (username, platform) แล้วรวม — ไม่ใช่รวมทุกโพสต์ ไม่งั้นตัวเลขจะเกินจริง
+    """
+    wanted = [k.strip() for k in keys.split(",") if k.strip()]
+
+    q = select(Campaign)
+    if wanted:
+        q = q.where(Campaign.key.in_(wanted))
+    campaigns = session.scalars(q).all()
+
+    kol_counts = dict(
+        session.execute(
+            select(ReportKol.campaign, func.count())
+            .where(ReportKol.active.is_(True))
+            .group_by(ReportKol.campaign)
+        ).all()
+    )
+
+    # ชั้นใน: โพสต์ที่วิวสูงสุดต่อ (campaign, username, platform)
+    best = (
+        select(
+            ReportPost.campaign.label("campaign"),
+            func.max(ReportPost.views).label("views"),
+        )
+        .group_by(ReportPost.campaign, ReportPost.username, ReportPost.platform)
+        .subquery()
+    )
+    view_totals = dict(
+        session.execute(
+            select(best.c.campaign, func.coalesce(func.sum(best.c.views), 0)).group_by(best.c.campaign)
+        ).all()
+    )
+    post_counts = dict(
+        session.execute(
+            select(ReportPost.campaign, func.count()).group_by(ReportPost.campaign)
+        ).all()
+    )
+    last = dict(
+        session.execute(
+            select(ReportPost.campaign, func.max(ReportPost.scraped_at)).group_by(ReportPost.campaign)
+        ).all()
+    )
+
+    out = []
+    for c in campaigns:
+        refreshed = last.get(c.key)
+        out.append({
+            "key": c.key,
+            "name": c.name,
+            "active": c.active,
+            "kol_count": kol_counts.get(c.key, 0),
+            "post_count": post_counts.get(c.key, 0),
+            "total_views": int(view_totals.get(c.key, 0) or 0),
+            "refreshed_at": refreshed.isoformat() if refreshed else None,
+        })
+    out.sort(key=lambda d: d["key"])
+    return {"campaigns": out}
+
+
 @router.get("/campaigns/{key}")
 def get_campaign(key: str, session: Session = Depends(db_dependency)):
     c = session.get(Campaign, key)
