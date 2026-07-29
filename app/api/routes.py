@@ -837,6 +837,7 @@ def list_campaigns(limit: int = Query(15, ge=1, le=100),
 
 @router.get("/campaigns/summary")
 def campaigns_summary(keys: str = Query("", description="รหัสแคมเปญคั่นด้วยคอมมา ว่าง = ทุกแคมเปญ"),
+                      days: int = Query(0, ge=0, le=730, description="นับเฉพาะโพสต์ที่ลงใน N วันล่าสุด (0 = ทั้งหมด)"),
                       session: Session = Depends(db_dependency)):
     """สรุปตัวเลขต่อแคมเปญแบบเบา สำหรับระบบภายนอกเอาไปทำตาราง (Agency Intelligence)
 
@@ -845,7 +846,13 @@ def campaigns_summary(keys: str = Query("", description="รหัสแคม�
 
     total_views นับแบบเดียวกับหน้ารายงาน: เอาโพสต์ที่ยอดวิวสูงสุดของแต่ละ
     (username, platform) แล้วรวม — ไม่ใช่รวมทุกโพสต์ ไม่งั้นตัวเลขจะเกินจริง
+
+    days = กรองเฉพาะโพสต์ที่ "ลงในช่วง N วันล่าสุด" (ดูจาก posted_at)
+    ย้ำว่าไม่ใช่ "ยอดวิวที่เพิ่มขึ้นในช่วงนั้น" — ตาราง report_posts เก็บยอดล่าสุด
+    ของแต่ละโพสต์เป็น snapshot ไม่ได้เก็บยอดรายวัน จึงคิดส่วนต่างรายวันไม่ได้
+    โพสต์ที่ไม่มี posted_at จะไม่ถูกนับเมื่อระบุ days (ไม่รู้ว่าลงเมื่อไร)
     """
+    since = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days) if days else None
     wanted = [k.strip() for k in keys.split(",") if k.strip()]
 
     q = select(Campaign)
@@ -861,11 +868,16 @@ def campaigns_summary(keys: str = Query("", description="รหัสแคม�
         ).all()
     )
 
+    def in_window(q):
+        return q.where(ReportPost.posted_at.is_not(None), ReportPost.posted_at >= since) if since else q
+
     # ชั้นใน: โพสต์ที่วิวสูงสุดต่อ (campaign, username, platform)
     best = (
-        select(
-            ReportPost.campaign.label("campaign"),
-            func.max(ReportPost.views).label("views"),
+        in_window(
+            select(
+                ReportPost.campaign.label("campaign"),
+                func.max(ReportPost.views).label("views"),
+            )
         )
         .group_by(ReportPost.campaign, ReportPost.username, ReportPost.platform)
         .subquery()
@@ -877,7 +889,15 @@ def campaigns_summary(keys: str = Query("", description="รหัสแคม�
     )
     post_counts = dict(
         session.execute(
-            select(ReportPost.campaign, func.count()).group_by(ReportPost.campaign)
+            in_window(select(ReportPost.campaign, func.count())).group_by(ReportPost.campaign)
+        ).all()
+    )
+    # KOL ที่มีโพสต์ในช่วงนี้ (ต่างจาก kol_count ที่นับทั้ง roster)
+    active_kols = dict(
+        session.execute(
+            in_window(
+                select(ReportPost.campaign, func.count(func.distinct(ReportPost.username)))
+            ).group_by(ReportPost.campaign)
         ).all()
     )
     last = dict(
@@ -894,12 +914,13 @@ def campaigns_summary(keys: str = Query("", description="รหัสแคม�
             "name": c.name,
             "active": c.active,
             "kol_count": kol_counts.get(c.key, 0),
+            "active_kol_count": active_kols.get(c.key, 0),
             "post_count": post_counts.get(c.key, 0),
             "total_views": int(view_totals.get(c.key, 0) or 0),
             "refreshed_at": refreshed.isoformat() if refreshed else None,
         })
     out.sort(key=lambda d: d["key"])
-    return {"campaigns": out}
+    return {"window_days": days or None, "campaigns": out}
 
 
 @router.get("/campaigns/{key}")
