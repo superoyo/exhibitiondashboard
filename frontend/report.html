@@ -348,9 +348,9 @@ if(INFLUENCER_VIEW){
    nx.onclick=()=>pod.scrollBy({left:step()*3,behavior:'smooth'});
    pod.addEventListener('scroll',upd); window.addEventListener('resize',upd);
    new MutationObserver(upd).observe(pod,{childList:true});
-   // auto-advance one card every 3s, looping back at the end; pause on hover
+   // auto-advance 3 cards every 3s, looping back at the end; pause on hover
    let auto=null;
-   const tick=()=>{const max=maxScroll(); if(max<=2)return; if(pod.scrollLeft>=max-2) pod.scrollTo({left:0,behavior:'smooth'}); else pod.scrollBy({left:step(),behavior:'smooth'});};
+   const tick=()=>{const max=maxScroll(); if(max<=2)return; if(pod.scrollLeft>=max-2) pod.scrollTo({left:0,behavior:'smooth'}); else pod.scrollBy({left:step()*3,behavior:'smooth'});};
    const start=()=>{if(!auto)auto=setInterval(tick,3000);};
    const stop=()=>{if(auto){clearInterval(auto);auto=null;}};
    if(wrap){wrap.addEventListener('mouseenter',stop); wrap.addEventListener('mouseleave',start);}
