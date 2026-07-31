@@ -57,6 +57,8 @@ body.influencer-view #tbl th:nth-child(n+4):nth-child(-n+9),
 body.influencer-view #tbl td:nth-child(n+4):nth-child(-n+9),
 body.influencer-view #tblW th:nth-child(n+4):nth-child(-n+9),
 body.influencer-view #tblW td:nth-child(n+4):nth-child(-n+9){display:none}
+/* influencer view: podium ("Posted Content") cards drop the metric block */
+body.influencer-view .pod-metrics{display:none}
 </style></head><body class="min-h-screen">
 <div class="max-w-7xl mx-auto px-3 sm:px-5 py-5">
 <nav class="nav">
@@ -99,7 +101,7 @@ body.influencer-view #tblW td:nth-child(n+4):nth-child(-n+9){display:none}
 
 <section class="card p-4 mb-5">
 <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
-<h3 class="font-semibold text-lg">🏆 Top 3 KOL</h3>
+<h3 id="podiumTitle" class="font-semibold text-lg">🏆 Top 3 KOL</h3>
 <div id="tpMetrics" class="flex flex-wrap gap-2"></div>
 </div>
 <div id="tpGroups" class="flex flex-wrap gap-2 mb-2 items-center"></div>
@@ -208,11 +210,13 @@ function render(DATA){
       <div class="mt-1">${platBadge(r)}</div>
      </div>
     </div>
+    <div class="pod-metrics">
     <div class="mt-2 text-2xl font-extrabold" style="color:${CATC(r.category)}">${m[2](r[tpMetric])}</div>
     <div class="text-xs" style="color:var(--muted)">${m[1]}</div>
     <div class="grid grid-cols-3 gap-y-1 mt-3 text-xs" style="color:#334155">
      <div>👁 ${fmt(r.views)}</div><div>❤️ ${fmt(r.likes)}</div><div>💬 ${fmt(r.comments)}</div>
      <div>🔁 ${fmt(r.shares)}</div><div>🔖 ${fmt(r.saves||0)}</div><div>📊 ${erTxt(r)}</div>
+    </div>
     </div>
     ${r.url?`<a href="${H(r.url)}" target="_blank" rel="noopener" class="post-link">🔗 ดูโพสต์ต้นทาง ↗</a>`:`<span class="post-link disabled">— ยังไม่มีลิงก์โพสต์ —</span>`}
    </div>
@@ -296,8 +300,10 @@ if(VIEW_ONLY){
 }
 if(INFLUENCER_VIEW){
  document.body.classList.add('influencer-view');
- // hide the summary cards shown in the client view — this page is a plain list
- ['kpis','engbreakTitle','engbreak','chartGrid'].forEach(id=>{const el=document.getElementById(id); if(el) el.style.display='none';});
+ // hide the summary cards + the Top-3 metric toggle — this page is a plain list
+ ['kpis','engbreakTitle','engbreak','chartGrid','tpMetrics'].forEach(id=>{const el=document.getElementById(id); if(el) el.style.display='none';});
+ // relabel the podium section: "Top 3 KOL" -> "Posted Content"
+ const tt=document.getElementById('podiumTitle'); if(tt) tt.textContent='Posted Content';
  // "Active" = influencers with a post link; "Waiting" (card below) = no link yet
  const pt=document.getElementById('postsTitle'); if(pt) pt.textContent='Active';
  const wc=document.getElementById('waitingCard'); if(wc) wc.style.display='';
