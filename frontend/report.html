@@ -88,7 +88,7 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 <div id="bigFilter" class="flex flex-wrap gap-2 mb-4"></div>
 <div id="kpis" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4"></div>
 
-<h2 class="text-sm font-semibold mb-2" style="color:var(--muted)">รายละเอียด Engagement (like + comment + share + save)</h2>
+<h2 id="engbreakTitle" class="text-sm font-semibold mb-2" style="color:var(--muted)">รายละเอียด Engagement (like + comment + share + save)</h2>
 <div id="engbreak" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5"></div>
 
 <section class="card p-4 mb-5">
@@ -101,7 +101,7 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 <div id="podium" class="grid grid-cols-1 sm:grid-cols-3 gap-3"></div>
 </section>
 
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
+<div id="chartGrid" class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
 <div class="card p-4"><h3 class="font-semibold mb-1">Views ตามหมวด KOL</h3><div id="cDonut" style="height:300px"></div></div>
 <div class="card p-4"><h3 class="font-semibold mb-1">Engagement Rate ตามหมวด</h3><div id="cER" style="height:300px"></div></div>
 <div class="card p-4 lg:col-span-2"><h3 class="font-semibold mb-1">Engagement แยกชนิดตามหมวด (like / comment / share / save)</h3><div id="cStack" style="height:320px"></div></div>
@@ -261,6 +261,10 @@ const CAMPAIGN = inferCampaign();
 // /vi/<key>, or ?view=1 — show stats, hide every edit/refresh/share control
 // so the recipient can only look.
 const VIEW_ONLY = /^\/vi?\//i.test(location.pathname) || new URLSearchParams(location.search).get('view')==='1';
+// Influencer view (/vi/) is a list-only variant of the view-only page: drop the
+// KPI summary + engagement-breakdown cards and relabel the header (below).
+const INFLUENCER_VIEW = /^\/vi\//i.test(location.pathname);
+const REPORT_LABEL = INFLUENCER_VIEW ? 'Campaign Influencer List' : 'Campaign Report';
 // Point every "แก้ไข KOL" link at this campaign's roster
 {const q='/kols?campaign='+encodeURIComponent(CAMPAIGN);
  ['editLink','navEdit'].forEach(id=>{const el=document.getElementById(id); if(el) el.href=q;});}
@@ -268,6 +272,10 @@ if(VIEW_ONLY){
  document.body.classList.add('view-only');
  ['refreshBtn','shareBtn','viewInfBtn','navEdit','costInfo','editLink','pptxBtn','packBtn'].forEach(id=>{const el=document.getElementById(id); if(el) el.style.display='none';});
  const nav=document.querySelector('nav.nav'); if(nav) nav.style.display='none';
+}
+if(INFLUENCER_VIEW){
+ // hide the summary cards shown in the client view — this page is a plain list
+ ['kpis','engbreakTitle','engbreak','chartGrid'].forEach(id=>{const el=document.getElementById(id); if(el) el.style.display='none';});
 }
 // "🖼️ ภาพสินค้า" — upload the campaign's product pack shot; the tie-in AI
 // then picks video frames by matching THIS image instead of a text guess
@@ -381,11 +389,11 @@ async function loadCampaignMeta(){
   const meta = await (await fetch('/api/campaigns/'+encodeURIComponent(CAMPAIGN))).json();
   window.__CAMP_NAME__ = meta.name || '';
   const emoji = meta.emoji || '📊';
-  document.getElementById('repTitle').textContent = `${emoji} ${meta.name || CAMPAIGN} — Campaign Report`;
+  document.getElementById('repTitle').textContent = `${emoji} ${meta.name || CAMPAIGN} — ${REPORT_LABEL}`;
   document.getElementById('repSub').textContent = meta.subtitle || 'ข้อมูลจริงจาก TikTok/Facebook ผ่าน Apify';
-  document.title = `${meta.name || CAMPAIGN} — Campaign Report`;
+  document.title = `${meta.name || CAMPAIGN} — ${REPORT_LABEL}`;
  }catch(e){
-  document.getElementById('repTitle').textContent = CAMPAIGN + ' — Campaign Report';
+  document.getElementById('repTitle').textContent = CAMPAIGN + ' — ' + REPORT_LABEL;
  }
 }
 loadCampaignMeta();
