@@ -51,10 +51,12 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
  #kpis,#engbreak,#podium{break-inside:avoid}
  a{color:#0f172a;text-decoration:none}
 }
-/* influencer view (/vi/): posts table drops the metric columns
+/* influencer view (/vi/): the Active + Waiting tables drop the metric columns
    views/likes/comments/shares/saves/er — these sit at positions 4–9 */
 body.influencer-view #tbl th:nth-child(n+4):nth-child(-n+9),
-body.influencer-view #tbl td:nth-child(n+4):nth-child(-n+9){display:none}
+body.influencer-view #tbl td:nth-child(n+4):nth-child(-n+9),
+body.influencer-view #tblW th:nth-child(n+4):nth-child(-n+9),
+body.influencer-view #tblW td:nth-child(n+4):nth-child(-n+9){display:none}
 </style></head><body class="min-h-screen">
 <div class="max-w-7xl mx-auto px-3 sm:px-5 py-5">
 <nav class="nav">
@@ -120,6 +122,15 @@ body.influencer-view #tbl td:nth-child(n+4):nth-child(-n+9){display:none}
 <th class="pr-3 text-right" data-k="likes">❤️ Likes</th><th class="pr-3 text-right" data-k="comments">💬 Cmt</th>
 <th class="pr-3 text-right" data-k="shares">🔁 Share</th><th class="pr-3 text-right" data-k="saves">🔖 Save</th>
 <th class="pr-3 text-right" data-k="er">ER%</th><th class="pr-3" data-k="posted">โพสต์เมื่อ</th><th>ลิงก์</th></tr></thead><tbody id="tb"></tbody></table></div>
+</div>
+<div id="waitingCard" class="card p-4 mt-5" style="display:none">
+<div class="flex items-center justify-between gap-2 mb-2"><h3 class="font-semibold">Waiting</h3></div>
+<div class="overflow-x-auto"><table class="w-full text-sm" id="tblW"><thead><tr style="color:var(--muted)" class="text-left border-b">
+<th class="py-2 pr-3">หมวด</th><th class="pr-3">KOL</th>
+<th class="pr-3 text-right">Followers</th><th class="pr-3 text-right">Views</th>
+<th class="pr-3 text-right">❤️ Likes</th><th class="pr-3 text-right">💬 Cmt</th>
+<th class="pr-3 text-right">🔁 Share</th><th class="pr-3 text-right">🔖 Save</th>
+<th class="pr-3 text-right">ER%</th><th class="pr-3">โพสต์เมื่อ</th><th>ลิงก์</th></tr></thead><tbody id="tbW"></tbody></table></div>
 </div>
 <footer class="text-xs mt-5" style="color:var(--muted)">ER = engagement(like+cmt+share+save)/views · โพสต์ที่ไม่มียอด views (เช่น รูปภาพบน Facebook/IG) ใช้ engagement/followers แทน (มี * กำกับ) · — = คำนวณไม่ได้ (ไม่มีทั้ง views และ followers) · ข้อมูลดึงจากลิงก์โพสต์แคมเปญผ่าน Apify (เฉพาะ KOL ที่ active) · กด Refresh Data เพื่ออัปเดต</footer>
 </div>
@@ -231,14 +242,20 @@ function render(DATA){
  mk('cScatter').setOption({tooltip:{trigger:'item',formatter:p=>`${H(p.data[2])}<br>Followers: ${fmt(p.data[0])}<br>Views: ${fmt(p.data[1])}`},grid:{left:60,right:30,top:20,bottom:35},xAxis:{type:'log',name:'Followers',...AX,axisLabel:{...AX.axisLabel,formatter:fmt}},yAxis:{type:'log',name:'Views',...AX,axisLabel:{...AX.axisLabel,formatter:fmt}},series:[{type:'scatter',symbolSize:12,data:E.map(r=>[Math.max(r.followers,1),Math.max(r.views,1),r.username,r.category]),itemStyle:{color:p=>CATC(p.data[3])}}]});
 
  let sortK='views',asc=false;
- function table(){const d=[...E];d.sort((a,b)=>{let x=a[sortK],y=b[sortK];if(typeof x==='string'){return asc?(''+x).localeCompare(y):(''+y).localeCompare(x)}return asc?x-y:y-x});
-  document.getElementById('tb').innerHTML=d.map(r=>`<tr class="border-b hover:bg-black/5" style="border-color:var(--line)">
+ const rowHtml=r=>`<tr class="border-b hover:bg-black/5" style="border-color:var(--line)">
   <td class="py-2 pr-3"><span class="chip" style="background:${CATC(r.category)}">${H(r.category)}</span></td>
   <td class="pr-3 font-medium"><span style="display:inline-flex;align-items:center;gap:8px">${r.avatar?`<img src="${IMG(r.avatar)}" referrerpolicy="no-referrer" loading="lazy" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex:none;background:#e2e8f0" onerror="this.style.display='none'">`:''}@${H(r.username||'')} ${platBadge(r)}</span></td><td class="pr-3 text-right">${fmt(r.followers)}</td>
   <td class="pr-3 text-right font-semibold">${(r.views||0).toLocaleString()}</td><td class="pr-3 text-right">${(r.likes||0).toLocaleString()}</td>
   <td class="pr-3 text-right">${(r.comments||0).toLocaleString()}</td><td class="pr-3 text-right">${(r.shares||0).toLocaleString()}</td>
   <td class="pr-3 text-right">${(r.saves||0).toLocaleString()}</td><td class="pr-3 text-right">${erTxt(r)}</td>
-  <td class="pr-3" style="color:var(--muted)">${r.posted||''}</td><td>${r.url?`<a href="${H(r.url)}" target="_blank">เปิด ↗</a>`:''}</td></tr>`).join('');}
+  <td class="pr-3" style="color:var(--muted)">${r.posted||''}</td><td>${r.url?`<a href="${H(r.url)}" target="_blank">เปิด ↗</a>`:''}</td></tr>`;
+ function table(){const d=[...E].sort((a,b)=>{let x=a[sortK],y=b[sortK];if(typeof x==='string'){return asc?(''+x).localeCompare(y):(''+y).localeCompare(x)}return asc?x-y:y-x});
+  // influencer view splits by link: Active (has link) here, Waiting (no link) below
+  const act=INFLUENCER_VIEW?d.filter(r=>r.url):d;
+  document.getElementById('tb').innerHTML=act.map(rowHtml).join('');
+  if(INFLUENCER_VIEW){const w=d.filter(r=>!r.url), tbW=document.getElementById('tbW');
+   if(tbW) tbW.innerHTML=w.length?w.map(rowHtml).join(''):'<tr><td colspan="11" class="py-3" style="color:var(--muted)">— ไม่มี (ทุกคนมี link แล้ว) —</td></tr>';}
+ }
  document.querySelectorAll('#tbl th').forEach(th=>th.onclick=()=>{const k=th.dataset.k;if(k){asc=sortK===k?!asc:false;sortK=k;table();}});
  table();
  document.getElementById('csv').onclick=()=>{
@@ -281,8 +298,9 @@ if(INFLUENCER_VIEW){
  document.body.classList.add('influencer-view');
  // hide the summary cards shown in the client view — this page is a plain list
  ['kpis','engbreakTitle','engbreak','chartGrid'].forEach(id=>{const el=document.getElementById(id); if(el) el.style.display='none';});
- // relabel the posts card (the metric columns are dropped via CSS below)
- const pt=document.getElementById('postsTitle'); if(pt) pt.textContent='Influencer ทั้งหมด';
+ // "Active" = influencers with a post link; "Waiting" (card below) = no link yet
+ const pt=document.getElementById('postsTitle'); if(pt) pt.textContent='Active';
+ const wc=document.getElementById('waitingCard'); if(wc) wc.style.display='';
 }
 // "🖼️ ภาพสินค้า" — upload the campaign's product pack shot; the tie-in AI
 // then picks video frames by matching THIS image instead of a text guess
