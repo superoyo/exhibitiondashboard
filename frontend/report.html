@@ -57,12 +57,19 @@ body.influencer-view #tbl th:nth-child(n+4):nth-child(-n+9),
 body.influencer-view #tbl td:nth-child(n+4):nth-child(-n+9),
 body.influencer-view #tblW th:nth-child(n+4):nth-child(-n+9),
 body.influencer-view #tblW td:nth-child(n+4):nth-child(-n+9){display:none}
-/* influencer view: podium ("Posted Content") cards drop the metric block */
-body.influencer-view .pod-metrics{display:none}
-/* influencer view: Posted Content becomes a horizontal card slider of all
-   active (linked) influencers */
-body.influencer-view #podium{display:flex;overflow-x:auto;gap:12px;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding-bottom:6px}
+/* influencer view: podium ("Posted Content") cards drop the metric block + medal */
+body.influencer-view .pod-metrics,
+body.influencer-view .pod-medal{display:none}
+/* influencer view: Posted Content is a CAROUSEL — a horizontal card track of all
+   active (linked) influencers, navigated by the ❮ ❯ arrows (scrollbar hidden) */
+body.influencer-view #podium{display:flex;overflow-x:auto;gap:12px;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+body.influencer-view #podium::-webkit-scrollbar{display:none}
 body.influencer-view #podium>.card{flex:0 0 300px;max-width:85%;scroll-snap-align:start}
+.carousel-nav{display:none}
+body.influencer-view .carousel-nav{display:flex;align-items:center;justify-content:center;position:absolute;top:50%;transform:translateY(-50%);z-index:5;width:40px;height:40px;border-radius:9999px;background:#fff;border:1px solid #e5e7eb;box-shadow:0 2px 10px rgba(15,23,42,.18);cursor:pointer;font-size:1.05rem;font-weight:700;line-height:1;color:#0f172a}
+body.influencer-view #podPrev{left:-6px}
+body.influencer-view #podNext{right:-6px}
+body.influencer-view .carousel-nav:hover{background:#f1f5f9}
 </style></head><body class="min-h-screen">
 <div class="max-w-7xl mx-auto px-3 sm:px-5 py-5">
 <nav class="nav">
@@ -110,7 +117,11 @@ body.influencer-view #podium>.card{flex:0 0 300px;max-width:85%;scroll-snap-alig
 </div>
 <div id="tpGroups" class="flex flex-wrap gap-2 mb-2 items-center"></div>
 <div id="tpPlats" class="flex flex-wrap gap-2 mb-4 items-center"></div>
+<div id="podiumWrap" class="relative">
+<button id="podPrev" type="button" class="carousel-nav" aria-label="ก่อนหน้า">❮</button>
 <div id="podium" class="grid grid-cols-1 sm:grid-cols-3 gap-3"></div>
+<button id="podNext" type="button" class="carousel-nav" aria-label="ถัดไป">❯</button>
+</div>
 </section>
 
 <div id="chartGrid" class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
@@ -204,7 +215,7 @@ function render(DATA){
    <a href="${H(r.url)||'#'}" target="_blank" class="block relative" style="display:block;height:190px;background:#e2e8f0;overflow:hidden">
     <div class="absolute inset-0 flex items-center justify-center" style="color:#94a3b8;font-size:.8rem">ตัวอย่างคอนเทนต์</div>
     ${r.thumb?`<img src="${IMG(r.thumb)}" loading="lazy" referrerpolicy="no-referrer" style="position:relative;width:100%;height:190px;object-fit:cover;display:block" onerror="this.style.display='none'">`:''}
-    <div class="absolute top-2 left-2 text-3xl" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))">${medal[i]||''}</div>
+    <div class="pod-medal absolute top-2 left-2 text-3xl" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))">${medal[i]||''}</div>
     <span class="chip absolute top-3 right-2" style="background:${CATC(r.category)}">${H(r.category)}</span>
     <div class="absolute inset-x-0 bottom-0 px-3 py-2 text-white text-sm font-semibold" style="background:linear-gradient(transparent,rgba(0,0,0,.7))">▶ ดูคลิปจริง</div>
    </a>
@@ -314,6 +325,17 @@ if(INFLUENCER_VIEW){
  // "Active" = influencers with a post link; "Waiting" (card below) = no link yet
  const pt=document.getElementById('postsTitle'); if(pt) pt.textContent='Active';
  const wc=document.getElementById('waitingCard'); if(wc) wc.style.display='';
+ // Posted Content carousel — arrows scroll the track one card at a time and
+ // hide themselves at each end; MutationObserver re-checks after each render
+ {const pod=document.getElementById('podium'), pv=document.getElementById('podPrev'), nx=document.getElementById('podNext');
+  if(pod&&pv&&nx){
+   const step=()=>{const c=pod.querySelector('.card'); return (c?c.getBoundingClientRect().width:300)+12;};
+   const upd=()=>{const max=pod.scrollWidth-pod.clientWidth-2; pv.style.visibility=pod.scrollLeft>2?'visible':'hidden'; nx.style.visibility=pod.scrollLeft<max?'visible':'hidden';};
+   pv.onclick=()=>pod.scrollBy({left:-step(),behavior:'smooth'});
+   nx.onclick=()=>pod.scrollBy({left:step(),behavior:'smooth'});
+   pod.addEventListener('scroll',upd); window.addEventListener('resize',upd);
+   new MutationObserver(upd).observe(pod,{childList:true});
+  }}
 }
 // "🖼️ ภาพสินค้า" — upload the campaign's product pack shot; the tie-in AI
 // then picks video frames by matching THIS image instead of a text guess
