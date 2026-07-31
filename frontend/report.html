@@ -10,7 +10,7 @@
   gtag('config', 'G-LR32XF3T80');
 </script>
 
-<script src="/static/auth.js?v=73"></script>
+<script src="/static/auth.js?v=74"></script>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -257,9 +257,10 @@ function inferCampaign(){
  return 'sahagroup'; // fallback (old bookmark of '/')
 }
 const CAMPAIGN = inferCampaign();
-// View-only mode (shareable client link): /v/<key> or ?view=1 — show stats,
-// hide every edit/refresh/share control so clients can only look.
-const VIEW_ONLY = /^\/v\//i.test(location.pathname) || new URLSearchParams(location.search).get('view')==='1';
+// View-only mode (shareable public link): client /v/<key>, influencer
+// /vi/<key>, or ?view=1 — show stats, hide every edit/refresh/share control
+// so the recipient can only look.
+const VIEW_ONLY = /^\/vi?\//i.test(location.pathname) || new URLSearchParams(location.search).get('view')==='1';
 // Point every "แก้ไข KOL" link at this campaign's roster
 {const q='/kols?campaign='+encodeURIComponent(CAMPAIGN);
  ['editLink','navEdit'].forEach(id=>{const el=document.getElementById(id); if(el) el.href=q;});}
@@ -357,8 +358,9 @@ if(VIEW_ONLY){
    catch(e){ window.prompt('คัดลอกลิงก์นี้ส่งให้ลูกค้า (ดูได้อย่างเดียว):', link); }
   }catch(e){ setInfo('⚠️ '+e.message); }
  };}
-// "View Influencer" — same shareable view-only link as the client one, tagged
-// with role=influencer so the team knows which audience they sent it to.
+// "View Influencer" — copy the influencer link: /vi/<campaign-slug>/<token>
+// (its own dedicated view-only page, separate from the client /v/ link; same
+// random token grants access, the slug is just readable for the team)
 {const ib=document.getElementById('viewInfBtn');
  const slugify=s=>(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'').slice(0,40);
  if(ib) ib.onclick=async()=>{
@@ -367,7 +369,7 @@ if(VIEW_ONLY){
    const d=await r.json();
    if(!r.ok||!d.token) throw new Error(d.detail||'ขอลิงก์ไม่สำเร็จ');
    const slug=slugify(window.__CAMP_NAME__)||CAMPAIGN;
-   const link=location.origin+'/v/'+slug+'/'+d.token+'?role=influencer';
+   const link=location.origin+'/vi/'+slug+'/'+d.token;
    try{ await navigator.clipboard.writeText(link); setInfo('✅ คัดลอกลิงก์สำหรับ Influencer แล้ว — '+link); }
    catch(e){ window.prompt('คัดลอกลิงก์นี้ส่งให้ Influencer (ดูได้อย่างเดียว):', link); }
   }catch(e){ setInfo('⚠️ '+e.message); }

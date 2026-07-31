@@ -193,6 +193,21 @@ def campaign_report_view_named(slug: str, view_token: str):
     return _serve_view(view_token)
 
 
+@app.get("/vi/{view_token}")
+def campaign_report_view_influencer(view_token: str):
+    """Public, view-only report for INFLUENCERS. Same content as /v/ but a
+    distinct entry point (URL namespace) so influencer links stay separate
+    from client links and can be evolved independently later."""
+    return _serve_view(view_token)
+
+
+@app.get("/vi/{slug}/{view_token}")
+def campaign_report_view_influencer_named(slug: str, view_token: str):
+    """Same as /vi/<token> but with a readable campaign-name slug in front
+    (cosmetic only — resolution is by the token; the slug is ignored)."""
+    return _serve_view(view_token)
+
+
 # ---- legacy paths kept alive so old bookmarks + shared links still work ----
 @app.get("/report")
 def report():

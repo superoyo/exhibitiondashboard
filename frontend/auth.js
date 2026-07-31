@@ -6,9 +6,10 @@
 // - Attaches Authorization: Bearer <token> to every same-origin /api/ fetch
 // - On any 401 from the API, clears the session and returns to /login
 // - Adds a user chip + logout button to the nav
-// View-only client pages (/v/<key> or ?view=1) are NOT guarded.
+// View-only public pages — client (/v/<key>), influencer (/vi/<key>) or
+// ?view=1 — are NOT guarded (no login required to look).
 (async function () {
-  if (/^\/v\//i.test(location.pathname) ||
+  if (/^\/vi?\//i.test(location.pathname) ||
       new URLSearchParams(location.search).get('view') === '1') return;
 
   function readSession() {
