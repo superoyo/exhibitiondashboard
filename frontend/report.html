@@ -70,9 +70,12 @@ body.influencer-view .carousel-nav{display:flex;align-items:center;justify-conte
 body.influencer-view #podPrev{left:-6px}
 body.influencer-view #podNext{right:-6px}
 body.influencer-view .carousel-nav:hover{background:#f1f5f9}
-/* influencer view: draggable slider under the carousel (syncs with scroll) */
-.pod-range{display:none}
-body.influencer-view .pod-range{display:block;width:100%;margin-top:14px;height:6px;accent-color:#64748b;cursor:pointer}
+/* influencer view: draggable scrollbar under the carousel (syncs with scroll) */
+.pod-bar{display:none}
+body.influencer-view .pod-bar{display:block;position:relative;width:100%;height:8px;margin-top:14px;background:#e5e7eb;border-radius:9999px;cursor:pointer}
+body.influencer-view .pod-bar-thumb{position:absolute;top:0;left:0;height:100%;min-width:30px;width:30px;background:#94a3b8;border-radius:9999px;cursor:grab}
+body.influencer-view .pod-bar-thumb:hover{background:#64748b}
+body.influencer-view .pod-bar-thumb:active{background:#475569;cursor:grabbing}
 </style></head><body class="min-h-screen">
 <div class="max-w-7xl mx-auto px-3 sm:px-5 py-5">
 <nav class="nav">
@@ -125,7 +128,7 @@ body.influencer-view .pod-range{display:block;width:100%;margin-top:14px;height:
 <div id="podium" class="grid grid-cols-1 sm:grid-cols-3 gap-3"></div>
 <button id="podNext" type="button" class="carousel-nav" aria-label="ถัดไป">❯</button>
 </div>
-<input id="podRange" type="range" class="pod-range" min="0" max="1000" value="0" aria-label="เลื่อนดูคอนเทนต์">
+<div id="podBar" class="pod-bar" role="scrollbar" aria-label="เลื่อนดูคอนเทนต์"><div id="podBarThumb" class="pod-bar-thumb"></div></div>
 </section>
 
 <div id="chartGrid" class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
@@ -329,19 +332,40 @@ if(INFLUENCER_VIEW){
  // "Active" = influencers with a post link; "Waiting" (card below) = no link yet
  const pt=document.getElementById('postsTitle'); if(pt) pt.textContent='Active';
  const wc=document.getElementById('waitingCard'); if(wc) wc.style.display='';
- // Posted Content carousel — arrows scroll the track one card at a time and
- // hide themselves at each end; MutationObserver re-checks after each render
- {const pod=document.getElementById('podium'), pv=document.getElementById('podPrev'), nx=document.getElementById('podNext'), rng=document.getElementById('podRange');
+ // Posted Content carousel — arrows move 3 cards; a proportional scrollbar
+ // thumb below reflects/controls position; the track auto-advances one card
+ // every 3s (looping at the end) and pauses while the pointer is over it
+ {const pod=document.getElementById('podium'), pv=document.getElementById('podPrev'), nx=document.getElementById('podNext'),
+       wrap=document.getElementById('podiumWrap'), bar=document.getElementById('podBar'), thumb=document.getElementById('podBarThumb');
   if(pod&&pv&&nx){
    const step=()=>{const c=pod.querySelector('.card'); return (c?c.getBoundingClientRect().width:300)+12;};
-   const upd=()=>{const max=Math.max(0,pod.scrollWidth-pod.clientWidth);
+   const maxScroll=()=>Math.max(0,pod.scrollWidth-pod.clientWidth);
+   const upd=()=>{const max=maxScroll();
     pv.style.visibility=pod.scrollLeft>2?'visible':'hidden'; nx.style.visibility=pod.scrollLeft<max-2?'visible':'hidden';
-    if(rng){rng.max=Math.round(max)||0; rng.value=Math.round(pod.scrollLeft); rng.style.display=max>2?'block':'none';}};
-   pv.onclick=()=>pod.scrollBy({left:-step(),behavior:'smooth'});
-   nx.onclick=()=>pod.scrollBy({left:step(),behavior:'smooth'});
-   if(rng) rng.oninput=()=>{pod.scrollLeft=+rng.value;};
+    if(bar&&thumb){const bw=bar.clientWidth, tw=Math.max(30,Math.round(bw*(pod.scrollWidth>0?pod.clientWidth/pod.scrollWidth:1)));
+     thumb.style.width=tw+'px'; thumb.style.left=Math.round((max>0?pod.scrollLeft/max:0)*(bw-tw))+'px'; bar.style.display=max>2?'block':'none';}};
+   pv.onclick=()=>pod.scrollBy({left:-step()*3,behavior:'smooth'}); // 3 cards per click
+   nx.onclick=()=>pod.scrollBy({left:step()*3,behavior:'smooth'});
    pod.addEventListener('scroll',upd); window.addEventListener('resize',upd);
    new MutationObserver(upd).observe(pod,{childList:true});
+   // auto-advance one card every 3s, looping back at the end; pause on hover
+   let auto=null;
+   const tick=()=>{const max=maxScroll(); if(max<=2)return; if(pod.scrollLeft>=max-2) pod.scrollTo({left:0,behavior:'smooth'}); else pod.scrollBy({left:step(),behavior:'smooth'});};
+   const start=()=>{if(!auto)auto=setInterval(tick,3000);};
+   const stop=()=>{if(auto){clearInterval(auto);auto=null;}};
+   if(wrap){wrap.addEventListener('mouseenter',stop); wrap.addEventListener('mouseleave',start);}
+   // drag the scrollbar thumb (and click the track to jump); dragging pauses auto
+   if(bar&&thumb){let drag=false,sx=0,sl=0;
+    const move=e=>{if(!drag)return; const x=(e.touches?e.touches[0].clientX:e.clientX), bw=bar.clientWidth, tw=thumb.offsetWidth,
+      nl=Math.min(Math.max(0,sl+(x-sx)),bw-tw); pod.scrollLeft=((bw-tw)>0?nl/(bw-tw):0)*maxScroll();};
+    const up=()=>{drag=false; start(); document.removeEventListener('mousemove',move); document.removeEventListener('mouseup',up);};
+    thumb.addEventListener('mousedown',e=>{drag=true; stop(); sx=e.clientX; sl=parseFloat(thumb.style.left)||0; document.addEventListener('mousemove',move); document.addEventListener('mouseup',up); e.preventDefault();});
+    thumb.addEventListener('touchstart',e=>{drag=true; stop(); sx=e.touches[0].clientX; sl=parseFloat(thumb.style.left)||0;},{passive:true});
+    thumb.addEventListener('touchmove',move,{passive:true});
+    thumb.addEventListener('touchend',()=>{drag=false; start();});
+    bar.addEventListener('click',e=>{if(e.target===thumb)return; const r=bar.getBoundingClientRect(); pod.scrollLeft=Math.min(1,Math.max(0,(e.clientX-r.left)/r.width))*maxScroll();});
+   }
+   start();
   }}
 }
 // "🖼️ ภาพสินค้า" — upload the campaign's product pack shot; the tie-in AI
@@ -417,37 +441,37 @@ if(INFLUENCER_VIEW){
   }catch(e){ setInfo('⚠️ สร้างไฟล์ไม่สำเร็จ: '+e.message); }
   finally{ pb.disabled=false; pb.innerHTML=old; }
  };}
-// "View Only for Client" — copy the client link: /v/<campaign-slug>/<token>
-// (slug is readable so the team knows which campaign they're sending; the
-// random token is what actually grants access)
+// "View Only for Client" — open the client view-only page (/v/<slug>/<token>)
+// in a new tab (the slug is readable; the random token is what grants access)
 {const sb=document.getElementById('shareBtn');
  const slugify=s=>(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'').slice(0,40);
  if(sb) sb.onclick=async()=>{
+  const w=window.open('','_blank'); // open synchronously on the click so popup blockers allow it
   try{
    const r=await fetch('/api/campaigns/'+encodeURIComponent(CAMPAIGN)+'/view-token');
    const d=await r.json();
    if(!r.ok||!d.token) throw new Error(d.detail||'ขอลิงก์ไม่สำเร็จ');
    const slug=slugify(window.__CAMP_NAME__)||CAMPAIGN;
    const link=location.origin+'/v/'+slug+'/'+d.token;
-   try{ await navigator.clipboard.writeText(link); setInfo('✅ คัดลอกลิงก์สำหรับลูกค้าแล้ว — '+link); }
-   catch(e){ window.prompt('คัดลอกลิงก์นี้ส่งให้ลูกค้า (ดูได้อย่างเดียว):', link); }
-  }catch(e){ setInfo('⚠️ '+e.message); }
+   if(w) w.location.href=link; else window.open(link,'_blank');
+   setInfo('✅ เปิดหน้าสำหรับลูกค้าในแท็บใหม่แล้ว');
+  }catch(e){ if(w) w.close(); setInfo('⚠️ '+e.message); }
  };}
-// "View Influencer" — copy the influencer link: /vi/<campaign-slug>/<token>
-// (its own dedicated view-only page, separate from the client /v/ link; same
-// random token grants access, the slug is just readable for the team)
+// "Influencer Status" — open the influencer view-only page (/vi/<slug>/<token>)
+// in a new tab (its own dedicated page, separate from the client /v/ link)
 {const ib=document.getElementById('viewInfBtn');
  const slugify=s=>(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'').slice(0,40);
  if(ib) ib.onclick=async()=>{
+  const w=window.open('','_blank'); // open synchronously on the click so popup blockers allow it
   try{
    const r=await fetch('/api/campaigns/'+encodeURIComponent(CAMPAIGN)+'/view-token');
    const d=await r.json();
    if(!r.ok||!d.token) throw new Error(d.detail||'ขอลิงก์ไม่สำเร็จ');
    const slug=slugify(window.__CAMP_NAME__)||CAMPAIGN;
    const link=location.origin+'/vi/'+slug+'/'+d.token;
-   try{ await navigator.clipboard.writeText(link); setInfo('✅ คัดลอกลิงก์สำหรับ Influencer แล้ว — '+link); }
-   catch(e){ window.prompt('คัดลอกลิงก์นี้ส่งให้ Influencer (ดูได้อย่างเดียว):', link); }
-  }catch(e){ setInfo('⚠️ '+e.message); }
+   if(w) w.location.href=link; else window.open(link,'_blank');
+   setInfo('✅ เปิดหน้า Influencer ในแท็บใหม่แล้ว');
+  }catch(e){ if(w) w.close(); setInfo('⚠️ '+e.message); }
  };}
 
 // Fetch campaign metadata for title/subtitle + top-5 quick nav
