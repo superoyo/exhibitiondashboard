@@ -70,6 +70,9 @@ body.influencer-view .carousel-nav{display:flex;align-items:center;justify-conte
 body.influencer-view #podPrev{left:-6px}
 body.influencer-view #podNext{right:-6px}
 body.influencer-view .carousel-nav:hover{background:#f1f5f9}
+/* influencer view: draggable slider under the carousel (syncs with scroll) */
+.pod-range{display:none}
+body.influencer-view .pod-range{display:block;width:100%;margin-top:14px;height:6px;accent-color:#64748b;cursor:pointer}
 </style></head><body class="min-h-screen">
 <div class="max-w-7xl mx-auto px-3 sm:px-5 py-5">
 <nav class="nav">
@@ -122,6 +125,7 @@ body.influencer-view .carousel-nav:hover{background:#f1f5f9}
 <div id="podium" class="grid grid-cols-1 sm:grid-cols-3 gap-3"></div>
 <button id="podNext" type="button" class="carousel-nav" aria-label="ถัดไป">❯</button>
 </div>
+<input id="podRange" type="range" class="pod-range" min="0" max="1000" value="0" aria-label="เลื่อนดูคอนเทนต์">
 </section>
 
 <div id="chartGrid" class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
@@ -327,12 +331,15 @@ if(INFLUENCER_VIEW){
  const wc=document.getElementById('waitingCard'); if(wc) wc.style.display='';
  // Posted Content carousel — arrows scroll the track one card at a time and
  // hide themselves at each end; MutationObserver re-checks after each render
- {const pod=document.getElementById('podium'), pv=document.getElementById('podPrev'), nx=document.getElementById('podNext');
+ {const pod=document.getElementById('podium'), pv=document.getElementById('podPrev'), nx=document.getElementById('podNext'), rng=document.getElementById('podRange');
   if(pod&&pv&&nx){
    const step=()=>{const c=pod.querySelector('.card'); return (c?c.getBoundingClientRect().width:300)+12;};
-   const upd=()=>{const max=pod.scrollWidth-pod.clientWidth-2; pv.style.visibility=pod.scrollLeft>2?'visible':'hidden'; nx.style.visibility=pod.scrollLeft<max?'visible':'hidden';};
+   const upd=()=>{const max=Math.max(0,pod.scrollWidth-pod.clientWidth);
+    pv.style.visibility=pod.scrollLeft>2?'visible':'hidden'; nx.style.visibility=pod.scrollLeft<max-2?'visible':'hidden';
+    if(rng){rng.max=Math.round(max)||0; rng.value=Math.round(pod.scrollLeft); rng.style.display=max>2?'block':'none';}};
    pv.onclick=()=>pod.scrollBy({left:-step(),behavior:'smooth'});
    nx.onclick=()=>pod.scrollBy({left:step(),behavior:'smooth'});
+   if(rng) rng.oninput=()=>{pod.scrollLeft=+rng.value;};
    pod.addEventListener('scroll',upd); window.addEventListener('resize',upd);
    new MutationObserver(upd).observe(pod,{childList:true});
   }}
