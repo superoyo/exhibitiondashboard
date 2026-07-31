@@ -59,6 +59,10 @@ body.influencer-view #tblW th:nth-child(n+4):nth-child(-n+9),
 body.influencer-view #tblW td:nth-child(n+4):nth-child(-n+9){display:none}
 /* influencer view: podium ("Posted Content") cards drop the metric block */
 body.influencer-view .pod-metrics{display:none}
+/* influencer view: Posted Content becomes a horizontal card slider of all
+   active (linked) influencers */
+body.influencer-view #podium{display:flex;overflow-x:auto;gap:12px;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding-bottom:6px}
+body.influencer-view #podium>.card{flex:0 0 300px;max-width:85%;scroll-snap-align:start}
 </style></head><body class="min-h-screen">
 <div class="max-w-7xl mx-auto px-3 sm:px-5 py-5">
 <nav class="nav">
@@ -190,14 +194,17 @@ function render(DATA){
   if(tpGroup!=='ทั้งหมด') pool=pool.filter(r=>r.category===tpGroup);
   if(tpPlat!=='ทั้งหมด') pool=pool.filter(r=>r.platform===tpPlat);
   const m=METRICS.find(x=>x[0]===tpMetric);
-  const top=[...pool].sort((a,b)=>b[tpMetric]-a[tpMetric]).slice(0,3);
+  // influencer view: show ALL active influencers (those with a link) as a
+  // horizontal slider; the normal/client view keeps the top-3 podium
+  const top=INFLUENCER_VIEW?[...pool].filter(r=>r.url).sort((a,b)=>b[tpMetric]-a[tpMetric])
+                           :[...pool].sort((a,b)=>b[tpMetric]-a[tpMetric]).slice(0,3);
   const medal=['🥇','🥈','🥉'];
   let cards=top.map((r,i)=>`
   <div class="card overflow-hidden" style="${i===0?'border:2px solid '+CATC(r.category):''}">
    <a href="${H(r.url)||'#'}" target="_blank" class="block relative" style="display:block;height:190px;background:#e2e8f0;overflow:hidden">
     <div class="absolute inset-0 flex items-center justify-center" style="color:#94a3b8;font-size:.8rem">ตัวอย่างคอนเทนต์</div>
     ${r.thumb?`<img src="${IMG(r.thumb)}" loading="lazy" referrerpolicy="no-referrer" style="position:relative;width:100%;height:190px;object-fit:cover;display:block" onerror="this.style.display='none'">`:''}
-    <div class="absolute top-2 left-2 text-3xl" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))">${medal[i]}</div>
+    <div class="absolute top-2 left-2 text-3xl" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))">${medal[i]||''}</div>
     <span class="chip absolute top-3 right-2" style="background:${CATC(r.category)}">${H(r.category)}</span>
     <div class="absolute inset-x-0 bottom-0 px-3 py-2 text-white text-sm font-semibold" style="background:linear-gradient(transparent,rgba(0,0,0,.7))">▶ ดูคลิปจริง</div>
    </a>
@@ -223,7 +230,7 @@ function render(DATA){
   </div>`).join('');
   const fltLabel=[tpGroup!=='ทั้งหมด'?tpGroup:null, tpPlat!=='ทั้งหมด'?(PLAT[tpPlat]?PLAT[tpPlat][0]:tpPlat):null].filter(Boolean).join(' + ')||'ทั้งหมด';
   if(top.length===0){cards=`<div class="text-sm col-span-full" style="color:var(--muted)">ไม่มีโพสต์ในตัวกรอง "<b>${H(fltLabel)}</b>"</div>`;}
-  else if(pool.length<3){cards+=`<div class="card p-4 flex flex-col items-center justify-center text-center" style="color:var(--muted);border-style:dashed"><div class="text-2xl mb-1">ℹ️</div><div class="text-sm">ตัวกรอง "<b>${H(fltLabel)}</b>" มีแค่ <b>${pool.length}</b> โพสต์</div></div>`;}
+  else if(!INFLUENCER_VIEW && pool.length<3){cards+=`<div class="card p-4 flex flex-col items-center justify-center text-center" style="color:var(--muted);border-style:dashed"><div class="text-2xl mb-1">ℹ️</div><div class="text-sm">ตัวกรอง "<b>${H(fltLabel)}</b>" มีแค่ <b>${pool.length}</b> โพสต์</div></div>`;}
   document.getElementById('podium').innerHTML=cards;
  }
  function drawTP(){
