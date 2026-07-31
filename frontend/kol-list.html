@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KOL List — Influencer Real Time Report</title>
+<script src="/static/auth.js?v=73"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f4f6fa;--card:#fff;--line:#e5e7eb;--muted:#64748b;--text:#0f172a}
+html{background:#fff}
+body{background:radial-gradient(125% 88% at 50% 132%,#f6cb38 0%,#fadd6a 18%,#fcea9f 36%,#fef6da 56%,#ffffff 76%) no-repeat fixed;background-color:#fff;color:var(--text);font-family:'Noto Sans Thai',system-ui,sans-serif}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 3px rgba(15,23,42,.05)}
+.nav{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin-bottom:1rem}
+.nav-brand{font-weight:700;font-size:1rem;margin-right:1.75rem}
+.navtab{padding:.4rem .9rem;border-radius:999px;font-size:.85rem;font-weight:600;color:#475569;text-decoration:none;border:1px solid var(--line);background:#fff}
+.navtab:hover{background:#eef2f7}
+.navtab-active{background:#0f172a;color:#fff;border-color:#0f172a}
+.plat{display:inline-block;padding:.05rem .5rem;border-radius:999px;font-size:.68rem;color:#fff;font-weight:600;margin-right:.2rem}
+table th{cursor:pointer;user-select:none;white-space:nowrap}
+.krow:hover{background:#f8fafc;cursor:pointer}
+.inp{border:1px solid var(--line);border-radius:10px;padding:.55rem .9rem;font-size:.9rem;background:#fff;width:100%;max-width:380px}
+::-webkit-scrollbar{height:8px;width:8px}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:8px}
+</style>
+</head>
+<body class="min-h-screen">
+<div class="max-w-7xl mx-auto px-3 sm:px-5 py-4">
+<nav class="nav">
+  <span data-global-menu style="margin-right:.6rem"></span>
+  <a href="/" class="nav-brand" style="margin-right:auto"><span style="display:inline-flex;align-items:center;gap:.4rem;white-space:nowrap"><img src="/static/logo.png" alt="Far East Fame Line" style="height:52px">Influencer Real Time Report</span></a>
+  <a href="/" class="navtab">Home</a>
+  <a href="/kol-list" class="navtab navtab-active">KOL List</a>
+  <a href="/token" class="navtab">Apify Token</a>
+</nav>
+
+<header class="mb-4">
+  <h1 class="text-xl sm:text-2xl font-bold">👥 KOL List — ทำเนียบ KOL ทุกแคมเปญ</h1>
+  <p class="text-sm" style="color:var(--muted)">บันทึกว่าเคยใช้งานใครในแคมเปญไหนบ้าง · คลิกที่รายชื่อเพื่อดู stat ย้อนหลังรายแคมเปญ</p>
+</header>
+
+<div class="flex flex-wrap items-center gap-3 mb-4">
+  <input id="q" class="inp" placeholder="🔍 ค้นหาชื่อ / @handle …">
+  <span id="count" class="text-sm" style="color:var(--muted)"></span>
+</div>
+
+<div class="card p-4">
+<div class="overflow-x-auto">
+<table class="w-full text-sm">
+<thead><tr style="color:var(--muted)" class="text-left border-b">
+<th class="py-2 pr-3">KOL</th>
+<th class="pr-3">แพลตฟอร์ม</th>
+<th class="pr-3 text-right" data-k="followers">Followers</th>
+<th class="pr-3 text-right" data-k="campaign_count">แคมเปญ</th>
+<th class="pr-3 text-right" data-k="posts">โพสต์</th>
+<th class="pr-3 text-right" data-k="views">Views รวม</th>
+<th class="pr-3 text-right" data-k="eng">Engagement รวม</th>
+<th class="pr-3" data-k="last_posted">ลงงานล่าสุด</th>
+</tr></thead>
+<tbody id="tb"><tr><td colspan="8" class="py-8 text-center" style="color:var(--muted)">กำลังโหลด…</td></tr></tbody>
+</table>
+</div>
+</div>
+</div>
+
+<script>
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>{n=+n||0;if(n>=1e6)return (n/1e6).toFixed(n>=1e7?0:1)+'M';if(n>=1e3)return (n/1e3).toFixed(n>=1e4?0:1)+'K';return n.toLocaleString()};
+const PLAT={tiktok:['TikTok','#000'],facebook:['Facebook','#1877f2'],instagram:['Instagram','#d62976'],youtube:['YouTube','#ff0000'],x:['X','#14171a'],website:['Website','#0ea5e9'],other:['อื่นๆ','#64748b']};
+const platB=p=>{const m=PLAT[p]||PLAT.other;return `<span class="plat" style="background:${m[1]}">${m[0]}</span>`};
+const dstr=s=>{if(!s)return '—';try{const d=new Date(s);return d.toLocaleDateString('th-TH',{year:'2-digit',month:'short',day:'numeric'})}catch(e){return s.slice(0,10)}};
+let ALL=[],sortK='campaign_count',sortDesc=true,open=new Set();
+
+function eng(d){return (d.likes||0)+(d.comments||0)+(d.shares||0)+(d.saves||0)}
+
+function render(){
+ const q=(document.getElementById('q').value||'').trim().toLowerCase();
+ let rows=ALL.filter(k=>!q||k.username.includes(q)||(k.display||'').toLowerCase().includes(q));
+ rows.sort((a,b)=>{
+  let va=sortK==='eng'?eng(a):(a[sortK]??''), vb=sortK==='eng'?eng(b):(b[sortK]??'');
+  if(typeof va==='string') return sortDesc?String(vb).localeCompare(String(va)):String(va).localeCompare(String(vb));
+  return sortDesc?vb-va:va-vb;
+ });
+ document.getElementById('count').textContent=`${rows.length} คน · รวมทุกแคมเปญ`;
+ const tb=document.getElementById('tb');
+ if(!rows.length){tb.innerHTML='<tr><td colspan="8" class="py-8 text-center" style="color:#64748b">ไม่พบรายชื่อ</td></tr>';return}
+ tb.innerHTML=rows.map(k=>{
+  const av=k.avatar?`<img src="${esc(k.avatar)}" style="width:34px;height:34px;border-radius:50%;object-fit:cover" onerror="this.style.display='none'">`
+                   :`<div style="width:34px;height:34px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-weight:700;color:#475569">${esc((k.display||k.username)[0]||'?').toUpperCase()}</div>`;
+  const main=`<tr class="krow border-b" data-u="${esc(k.username)}">
+   <td class="py-2 pr-3"><div class="flex items-center gap-2">${av}<div><div class="font-semibold">${esc(k.display)}</div><div class="text-xs" style="color:#64748b">@${esc(k.username)}</div></div></div></td>
+   <td class="pr-3">${k.platforms.map(platB).join('')}</td>
+   <td class="pr-3 text-right">${fmt(k.followers)}</td>
+   <td class="pr-3 text-right font-semibold">${k.campaign_count}</td>
+   <td class="pr-3 text-right">${k.posts}</td>
+   <td class="pr-3 text-right font-semibold">${fmt(k.views)}</td>
+   <td class="pr-3 text-right">${fmt(eng(k))}</td>
+   <td class="pr-3">${dstr(k.last_posted)}</td></tr>`;
+  if(!open.has(k.username)) return main;
+  const det=k.campaigns.map(c=>{
+   const er=c.views?((eng(c)/c.views)*100).toFixed(2)+'%':'—';
+   return `<div class="card p-3 mb-2" style="background:#f8fafc">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+     <div class="font-semibold">${esc(c.emoji)} ${esc(c.name)} <span class="text-xs font-normal" style="color:#64748b">${c.category?'· '+esc(c.category):''}</span></div>
+     <a href="/c/${encodeURIComponent(c.key)}" class="text-xs" style="color:#2563eb">เปิดรายงาน ↗</a>
+    </div>
+    <div class="flex flex-wrap gap-x-5 gap-y-1 mt-1 text-xs" style="color:#334155">
+     <span>${c.platforms.map(platB).join('')}</span>
+     <span>โพสต์ <b>${c.posts}</b></span><span>Views <b>${fmt(c.views)}</b></span>
+     <span>❤️ <b>${fmt(c.likes)}</b></span><span>💬 <b>${fmt(c.comments)}</b></span>
+     <span>🔁 <b>${fmt(c.shares)}</b></span><span>🔖 <b>${fmt(c.saves)}</b></span>
+     <span>ER <b>${er}</b></span><span>ลงงาน ${dstr(c.last_posted)}</span>
+    </div></div>`;
+  }).join('');
+  return main+`<tr class="border-b"><td colspan="8" class="py-3 px-2" style="background:#fff">${det}</td></tr>`;
+ }).join('');
+ tb.querySelectorAll('.krow').forEach(tr=>tr.onclick=()=>{
+  const u=tr.getAttribute('data-u');
+  if(open.has(u)) open.delete(u); else open.add(u);
+  render();
+ });
+}
+
+document.getElementById('q').addEventListener('input',render);
+document.querySelectorAll('th[data-k]').forEach(th=>th.onclick=()=>{
+ const k=th.getAttribute('data-k');
+ if(sortK===k) sortDesc=!sortDesc; else {sortK=k;sortDesc=true;}
+ render();
+});
+
+fetch('/api/kol-directory').then(r=>r.json()).then(d=>{ALL=d.kols||[];render();})
+ .catch(()=>{document.getElementById('tb').innerHTML='<tr><td colspan="8" class="py-8 text-center" style="color:#dc2626">โหลดข้อมูลไม่สำเร็จ — ลองรีเฟรชหน้า</td></tr>';});
+</script>
+</body>
+</html>

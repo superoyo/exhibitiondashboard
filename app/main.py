@@ -90,7 +90,7 @@ def _seed_on_startup() -> None:
 @app.get("/api/version")
 def version():
     """Build marker — lets us confirm which commit Railway is actually running."""
-    return {"build": "campaign-hub-v96"}
+    return {"build": "campaign-hub-v97"}
 
 
 FRONTEND_DIR = pathlib.Path(__file__).resolve().parent.parent / "frontend"
@@ -222,6 +222,12 @@ def legacy_tracker():
 def kols_page():
     """KOL roster editor (Tracker + Report) — open, no auth."""
     return _page(KOLS_PAGE)
+
+
+@app.get("/kol-list")
+def kol_list_page():
+    """KOL directory across all campaigns (page guarded client-side)."""
+    return _page(FRONTEND_DIR / "kol-list.html")
 
 
 @app.get("/token")
