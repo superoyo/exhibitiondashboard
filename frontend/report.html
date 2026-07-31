@@ -51,6 +51,10 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
  #kpis,#engbreak,#podium{break-inside:avoid}
  a{color:#0f172a;text-decoration:none}
 }
+/* influencer view (/vi/): posts table drops the metric columns
+   views/likes/comments/shares/saves/er — these sit at positions 4–9 */
+body.influencer-view #tbl th:nth-child(n+4):nth-child(-n+9),
+body.influencer-view #tbl td:nth-child(n+4):nth-child(-n+9){display:none}
 </style></head><body class="min-h-screen">
 <div class="max-w-7xl mx-auto px-3 sm:px-5 py-5">
 <nav class="nav">
@@ -109,7 +113,7 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 <div class="card p-4 lg:col-span-2"><h3 class="font-semibold mb-1">Followers vs Views</h3><div id="cScatter" style="height:340px"></div></div>
 </div>
 <div class="card p-4">
-<div class="flex items-center justify-between gap-2 mb-2"><h3 class="font-semibold">รายโพสต์ทั้งหมด (คลิกหัวคอลัมน์เพื่อจัดเรียง)</h3><button id="csv" class="seg">⬇ ดาวน์โหลด CSV</button></div>
+<div class="flex items-center justify-between gap-2 mb-2"><h3 id="postsTitle" class="font-semibold">รายโพสต์ทั้งหมด (คลิกหัวคอลัมน์เพื่อจัดเรียง)</h3><button id="csv" class="seg">⬇ ดาวน์โหลด CSV</button></div>
 <div class="overflow-x-auto"><table class="w-full text-sm" id="tbl"><thead><tr style="color:var(--muted)" class="text-left border-b">
 <th class="py-2 pr-3" data-k="category">หมวด</th><th class="pr-3" data-k="username">KOL</th>
 <th class="pr-3 text-right" data-k="followers">Followers</th><th class="pr-3 text-right" data-k="views">Views</th>
@@ -274,8 +278,11 @@ if(VIEW_ONLY){
  const nav=document.querySelector('nav.nav'); if(nav) nav.style.display='none';
 }
 if(INFLUENCER_VIEW){
+ document.body.classList.add('influencer-view');
  // hide the summary cards shown in the client view — this page is a plain list
  ['kpis','engbreakTitle','engbreak','chartGrid'].forEach(id=>{const el=document.getElementById(id); if(el) el.style.display='none';});
+ // relabel the posts card (the metric columns are dropped via CSS below)
+ const pt=document.getElementById('postsTitle'); if(pt) pt.textContent='Influencer ทั้งหมด';
 }
 // "🖼️ ภาพสินค้า" — upload the campaign's product pack shot; the tie-in AI
 // then picks video frames by matching THIS image instead of a text guess
