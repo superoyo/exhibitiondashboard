@@ -10,7 +10,7 @@
   gtag('config', 'G-LR32XF3T80');
 </script>
 
-<script src="/static/auth.js?v=73"></script>
+<script src="/static/auth.js?v=74"></script>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -51,6 +51,31 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
  #kpis,#engbreak,#podium{break-inside:avoid}
  a{color:#0f172a;text-decoration:none}
 }
+/* influencer view (/vi/): the Active + Waiting tables drop the metric columns
+   views/likes/comments/shares/saves/er — these sit at positions 4–9 */
+body.influencer-view #tbl th:nth-child(n+4):nth-child(-n+9),
+body.influencer-view #tbl td:nth-child(n+4):nth-child(-n+9),
+body.influencer-view #tblW th:nth-child(n+4):nth-child(-n+9),
+body.influencer-view #tblW td:nth-child(n+4):nth-child(-n+9){display:none}
+/* influencer view: podium ("Posted Content") cards drop the metric block + medal */
+body.influencer-view .pod-metrics,
+body.influencer-view .pod-medal{display:none}
+/* influencer view: Posted Content is a CAROUSEL — a horizontal card track of all
+   active (linked) influencers, navigated by the ❮ ❯ arrows (scrollbar hidden) */
+body.influencer-view #podium{display:flex;overflow-x:auto;gap:12px;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+body.influencer-view #podium::-webkit-scrollbar{display:none}
+body.influencer-view #podium>.card{flex:0 0 300px;max-width:85%;scroll-snap-align:start}
+.carousel-nav{display:none}
+body.influencer-view .carousel-nav{display:flex;align-items:center;justify-content:center;position:absolute;top:50%;transform:translateY(-50%);z-index:5;width:40px;height:40px;border-radius:9999px;background:#fff;border:1px solid #e5e7eb;box-shadow:0 2px 10px rgba(15,23,42,.18);cursor:pointer;font-size:1.05rem;font-weight:700;line-height:1;color:#0f172a}
+body.influencer-view #podPrev{left:-6px}
+body.influencer-view #podNext{right:-6px}
+body.influencer-view .carousel-nav:hover{background:#f1f5f9}
+/* influencer view: draggable scrollbar under the carousel (syncs with scroll) */
+.pod-bar{display:none}
+body.influencer-view .pod-bar{display:block;position:relative;width:100%;height:8px;margin-top:14px;background:#e5e7eb;border-radius:9999px;cursor:pointer}
+body.influencer-view .pod-bar-thumb{position:absolute;top:0;left:0;height:100%;min-width:30px;width:30px;background:#94a3b8;border-radius:9999px;cursor:grab}
+body.influencer-view .pod-bar-thumb:hover{background:#64748b}
+body.influencer-view .pod-bar-thumb:active{background:#475569;cursor:grabbing}
 </style></head><body class="min-h-screen">
 <div class="max-w-7xl mx-auto px-3 sm:px-5 py-5">
 <nav class="nav">
@@ -70,6 +95,7 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 <input id="packFile" type="file" accept="image/*" style="display:none">
 <button id="pptxBtn" class="btn-refresh" style="background:#b45309">📥 PowerPoint</button>
 <button id="shareBtn" class="btn-refresh" style="background:#2563eb">🔗 View Only for Client</button>
+<button id="viewInfBtn" class="btn-refresh" style="background:#0891b2">👥 Influencer Status</button>
 <button id="refreshBtn" class="btn-refresh">🔄 Refresh Data</button>
 </div>
 <div id="refreshInfo" class="text-xs mt-1" style="color:var(--muted)"></div>
@@ -87,20 +113,25 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 <div id="bigFilter" class="flex flex-wrap gap-2 mb-4"></div>
 <div id="kpis" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4"></div>
 
-<h2 class="text-sm font-semibold mb-2" style="color:var(--muted)">รายละเอียด Engagement (like + comment + share + save)</h2>
+<h2 id="engbreakTitle" class="text-sm font-semibold mb-2" style="color:var(--muted)">รายละเอียด Engagement (like + comment + share + save)</h2>
 <div id="engbreak" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5"></div>
 
 <section class="card p-4 mb-5">
 <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
-<h3 class="font-semibold text-lg">🏆 Top 3 KOL</h3>
+<h3 id="podiumTitle" class="font-semibold text-lg">🏆 Top 3 KOL</h3>
 <div id="tpMetrics" class="flex flex-wrap gap-2"></div>
 </div>
 <div id="tpGroups" class="flex flex-wrap gap-2 mb-2 items-center"></div>
 <div id="tpPlats" class="flex flex-wrap gap-2 mb-4 items-center"></div>
+<div id="podiumWrap" class="relative">
+<button id="podPrev" type="button" class="carousel-nav" aria-label="ก่อนหน้า">❮</button>
 <div id="podium" class="grid grid-cols-1 sm:grid-cols-3 gap-3"></div>
+<button id="podNext" type="button" class="carousel-nav" aria-label="ถัดไป">❯</button>
+</div>
+<div id="podBar" class="pod-bar" role="scrollbar" aria-label="เลื่อนดูคอนเทนต์"><div id="podBarThumb" class="pod-bar-thumb"></div></div>
 </section>
 
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
+<div id="chartGrid" class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
 <div class="card p-4"><h3 class="font-semibold mb-1">Views ตามหมวด KOL</h3><div id="cDonut" style="height:300px"></div></div>
 <div class="card p-4"><h3 class="font-semibold mb-1">Engagement Rate ตามหมวด</h3><div id="cER" style="height:300px"></div></div>
 <div class="card p-4 lg:col-span-2"><h3 class="font-semibold mb-1">Engagement แยกชนิดตามหมวด (like / comment / share / save)</h3><div id="cStack" style="height:320px"></div></div>
@@ -108,13 +139,22 @@ table th{cursor:pointer;user-select:none;white-space:nowrap}
 <div class="card p-4 lg:col-span-2"><h3 class="font-semibold mb-1">Followers vs Views</h3><div id="cScatter" style="height:340px"></div></div>
 </div>
 <div class="card p-4">
-<div class="flex items-center justify-between gap-2 mb-2"><h3 class="font-semibold">รายโพสต์ทั้งหมด (คลิกหัวคอลัมน์เพื่อจัดเรียง)</h3><button id="csv" class="seg">⬇ ดาวน์โหลด CSV</button></div>
+<div class="flex items-center justify-between gap-2 mb-2"><h3 id="postsTitle" class="font-semibold">รายโพสต์ทั้งหมด (คลิกหัวคอลัมน์เพื่อจัดเรียง)</h3><button id="csv" class="seg">⬇ ดาวน์โหลด CSV</button></div>
 <div class="overflow-x-auto"><table class="w-full text-sm" id="tbl"><thead><tr style="color:var(--muted)" class="text-left border-b">
 <th class="py-2 pr-3" data-k="category">หมวด</th><th class="pr-3" data-k="username">KOL</th>
 <th class="pr-3 text-right" data-k="followers">Followers</th><th class="pr-3 text-right" data-k="views">Views</th>
 <th class="pr-3 text-right" data-k="likes">❤️ Likes</th><th class="pr-3 text-right" data-k="comments">💬 Cmt</th>
 <th class="pr-3 text-right" data-k="shares">🔁 Share</th><th class="pr-3 text-right" data-k="saves">🔖 Save</th>
 <th class="pr-3 text-right" data-k="er">ER%</th><th class="pr-3" data-k="posted">โพสต์เมื่อ</th><th>ลิงก์</th></tr></thead><tbody id="tb"></tbody></table></div>
+</div>
+<div id="waitingCard" class="card p-4 mt-5" style="display:none">
+<div class="flex items-center justify-between gap-2 mb-2"><h3 class="font-semibold">Waiting</h3></div>
+<div class="overflow-x-auto"><table class="w-full text-sm" id="tblW"><thead><tr style="color:var(--muted)" class="text-left border-b">
+<th class="py-2 pr-3">หมวด</th><th class="pr-3">KOL</th>
+<th class="pr-3 text-right">Followers</th><th class="pr-3 text-right">Views</th>
+<th class="pr-3 text-right">❤️ Likes</th><th class="pr-3 text-right">💬 Cmt</th>
+<th class="pr-3 text-right">🔁 Share</th><th class="pr-3 text-right">🔖 Save</th>
+<th class="pr-3 text-right">ER%</th><th class="pr-3">โพสต์เมื่อ</th><th>ลิงก์</th></tr></thead><tbody id="tbW"></tbody></table></div>
 </div>
 <footer class="text-xs mt-5" style="color:var(--muted)">ER = engagement(like+cmt+share+save)/views · โพสต์ที่ไม่มียอด views (เช่น รูปภาพบน Facebook/IG) ใช้ engagement/followers แทน (มี * กำกับ) · — = คำนวณไม่ได้ (ไม่มีทั้ง views และ followers) · ข้อมูลดึงจากลิงก์โพสต์แคมเปญผ่าน Apify (เฉพาะ KOL ที่ active) · กด Refresh Data เพื่ออัปเดต</footer>
 </div>
@@ -172,14 +212,17 @@ function render(DATA){
   if(tpGroup!=='ทั้งหมด') pool=pool.filter(r=>r.category===tpGroup);
   if(tpPlat!=='ทั้งหมด') pool=pool.filter(r=>r.platform===tpPlat);
   const m=METRICS.find(x=>x[0]===tpMetric);
-  const top=[...pool].sort((a,b)=>b[tpMetric]-a[tpMetric]).slice(0,3);
+  // influencer view: show ALL active influencers (those with a link) as a
+  // horizontal slider; the normal/client view keeps the top-3 podium
+  const top=INFLUENCER_VIEW?[...pool].filter(r=>r.url).sort((a,b)=>b[tpMetric]-a[tpMetric])
+                           :[...pool].sort((a,b)=>b[tpMetric]-a[tpMetric]).slice(0,3);
   const medal=['🥇','🥈','🥉'];
   let cards=top.map((r,i)=>`
   <div class="card overflow-hidden" style="${i===0?'border:2px solid '+CATC(r.category):''}">
    <a href="${H(r.url)||'#'}" target="_blank" class="block relative" style="display:block;height:190px;background:#e2e8f0;overflow:hidden">
     <div class="absolute inset-0 flex items-center justify-center" style="color:#94a3b8;font-size:.8rem">ตัวอย่างคอนเทนต์</div>
     ${r.thumb?`<img src="${IMG(r.thumb)}" loading="lazy" referrerpolicy="no-referrer" style="position:relative;width:100%;height:190px;object-fit:cover;display:block" onerror="this.style.display='none'">`:''}
-    <div class="absolute top-2 left-2 text-3xl" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))">${medal[i]}</div>
+    <div class="pod-medal absolute top-2 left-2 text-3xl" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))">${medal[i]||''}</div>
     <span class="chip absolute top-3 right-2" style="background:${CATC(r.category)}">${H(r.category)}</span>
     <div class="absolute inset-x-0 bottom-0 px-3 py-2 text-white text-sm font-semibold" style="background:linear-gradient(transparent,rgba(0,0,0,.7))">▶ ดูคลิปจริง</div>
    </a>
@@ -192,18 +235,20 @@ function render(DATA){
       <div class="mt-1">${platBadge(r)}</div>
      </div>
     </div>
+    <div class="pod-metrics">
     <div class="mt-2 text-2xl font-extrabold" style="color:${CATC(r.category)}">${m[2](r[tpMetric])}</div>
     <div class="text-xs" style="color:var(--muted)">${m[1]}</div>
     <div class="grid grid-cols-3 gap-y-1 mt-3 text-xs" style="color:#334155">
      <div>👁 ${fmt(r.views)}</div><div>❤️ ${fmt(r.likes)}</div><div>💬 ${fmt(r.comments)}</div>
      <div>🔁 ${fmt(r.shares)}</div><div>🔖 ${fmt(r.saves||0)}</div><div>📊 ${erTxt(r)}</div>
     </div>
+    </div>
     ${r.url?`<a href="${H(r.url)}" target="_blank" rel="noopener" class="post-link">🔗 ดูโพสต์ต้นทาง ↗</a>`:`<span class="post-link disabled">— ยังไม่มีลิงก์โพสต์ —</span>`}
    </div>
   </div>`).join('');
   const fltLabel=[tpGroup!=='ทั้งหมด'?tpGroup:null, tpPlat!=='ทั้งหมด'?(PLAT[tpPlat]?PLAT[tpPlat][0]:tpPlat):null].filter(Boolean).join(' + ')||'ทั้งหมด';
   if(top.length===0){cards=`<div class="text-sm col-span-full" style="color:var(--muted)">ไม่มีโพสต์ในตัวกรอง "<b>${H(fltLabel)}</b>"</div>`;}
-  else if(pool.length<3){cards+=`<div class="card p-4 flex flex-col items-center justify-center text-center" style="color:var(--muted);border-style:dashed"><div class="text-2xl mb-1">ℹ️</div><div class="text-sm">ตัวกรอง "<b>${H(fltLabel)}</b>" มีแค่ <b>${pool.length}</b> โพสต์</div></div>`;}
+  else if(!INFLUENCER_VIEW && pool.length<3){cards+=`<div class="card p-4 flex flex-col items-center justify-center text-center" style="color:var(--muted);border-style:dashed"><div class="text-2xl mb-1">ℹ️</div><div class="text-sm">ตัวกรอง "<b>${H(fltLabel)}</b>" มีแค่ <b>${pool.length}</b> โพสต์</div></div>`;}
   document.getElementById('podium').innerHTML=cards;
  }
  function drawTP(){
@@ -226,14 +271,20 @@ function render(DATA){
  mk('cScatter').setOption({tooltip:{trigger:'item',formatter:p=>`${H(p.data[2])}<br>Followers: ${fmt(p.data[0])}<br>Views: ${fmt(p.data[1])}`},grid:{left:60,right:30,top:20,bottom:35},xAxis:{type:'log',name:'Followers',...AX,axisLabel:{...AX.axisLabel,formatter:fmt}},yAxis:{type:'log',name:'Views',...AX,axisLabel:{...AX.axisLabel,formatter:fmt}},series:[{type:'scatter',symbolSize:12,data:E.map(r=>[Math.max(r.followers,1),Math.max(r.views,1),r.username,r.category]),itemStyle:{color:p=>CATC(p.data[3])}}]});
 
  let sortK='views',asc=false;
- function table(){const d=[...E];d.sort((a,b)=>{let x=a[sortK],y=b[sortK];if(typeof x==='string'){return asc?(''+x).localeCompare(y):(''+y).localeCompare(x)}return asc?x-y:y-x});
-  document.getElementById('tb').innerHTML=d.map(r=>`<tr class="border-b hover:bg-black/5" style="border-color:var(--line)">
+ const rowHtml=r=>`<tr class="border-b hover:bg-black/5" style="border-color:var(--line)">
   <td class="py-2 pr-3"><span class="chip" style="background:${CATC(r.category)}">${H(r.category)}</span></td>
   <td class="pr-3 font-medium"><span style="display:inline-flex;align-items:center;gap:8px">${r.avatar?`<img src="${IMG(r.avatar)}" referrerpolicy="no-referrer" loading="lazy" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex:none;background:#e2e8f0" onerror="this.style.display='none'">`:''}@${H(r.username||'')} ${platBadge(r)}</span></td><td class="pr-3 text-right">${fmt(r.followers)}</td>
   <td class="pr-3 text-right font-semibold">${(r.views||0).toLocaleString()}</td><td class="pr-3 text-right">${(r.likes||0).toLocaleString()}</td>
   <td class="pr-3 text-right">${(r.comments||0).toLocaleString()}</td><td class="pr-3 text-right">${(r.shares||0).toLocaleString()}</td>
   <td class="pr-3 text-right">${(r.saves||0).toLocaleString()}</td><td class="pr-3 text-right">${erTxt(r)}</td>
-  <td class="pr-3" style="color:var(--muted)">${r.posted||''}</td><td>${r.url?`<a href="${H(r.url)}" target="_blank">เปิด ↗</a>`:''}</td></tr>`).join('');}
+  <td class="pr-3" style="color:var(--muted)">${r.posted||''}</td><td>${r.url?`<a href="${H(r.url)}" target="_blank">เปิด ↗</a>`:''}</td></tr>`;
+ function table(){const d=[...E].sort((a,b)=>{let x=a[sortK],y=b[sortK];if(typeof x==='string'){return asc?(''+x).localeCompare(y):(''+y).localeCompare(x)}return asc?x-y:y-x});
+  // influencer view splits by link: Active (has link) here, Waiting (no link) below
+  const act=INFLUENCER_VIEW?d.filter(r=>r.url):d;
+  document.getElementById('tb').innerHTML=act.map(rowHtml).join('');
+  if(INFLUENCER_VIEW){const w=d.filter(r=>!r.url), tbW=document.getElementById('tbW');
+   if(tbW) tbW.innerHTML=w.length?w.map(rowHtml).join(''):'<tr><td colspan="11" class="py-3" style="color:var(--muted)">— ไม่มี (ทุกคนมี link แล้ว) —</td></tr>';}
+ }
  document.querySelectorAll('#tbl th').forEach(th=>th.onclick=()=>{const k=th.dataset.k;if(k){asc=sortK===k?!asc:false;sortK=k;table();}});
  table();
  document.getElementById('csv').onclick=()=>{
@@ -256,16 +307,66 @@ function inferCampaign(){
  return 'sahagroup'; // fallback (old bookmark of '/')
 }
 const CAMPAIGN = inferCampaign();
-// View-only mode (shareable client link): /v/<key> or ?view=1 — show stats,
-// hide every edit/refresh/share control so clients can only look.
-const VIEW_ONLY = /^\/v\//i.test(location.pathname) || new URLSearchParams(location.search).get('view')==='1';
+// View-only mode (shareable public link): client /v/<key>, influencer
+// /vi/<key>, or ?view=1 — show stats, hide every edit/refresh/share control
+// so the recipient can only look.
+const VIEW_ONLY = /^\/vi?\//i.test(location.pathname) || new URLSearchParams(location.search).get('view')==='1';
+// Influencer view (/vi/) is a list-only variant of the view-only page: drop the
+// KPI summary + engagement-breakdown cards and relabel the header (below).
+const INFLUENCER_VIEW = /^\/vi\//i.test(location.pathname);
+const REPORT_LABEL = INFLUENCER_VIEW ? 'Campaign Influencer List' : 'Campaign Report';
 // Point every "แก้ไข KOL" link at this campaign's roster
 {const q='/kols?campaign='+encodeURIComponent(CAMPAIGN);
  ['editLink','navEdit'].forEach(id=>{const el=document.getElementById(id); if(el) el.href=q;});}
 if(VIEW_ONLY){
  document.body.classList.add('view-only');
- ['refreshBtn','shareBtn','navEdit','costInfo','editLink','pptxBtn','packBtn'].forEach(id=>{const el=document.getElementById(id); if(el) el.style.display='none';});
+ ['refreshBtn','shareBtn','viewInfBtn','navEdit','costInfo','editLink','pptxBtn','packBtn'].forEach(id=>{const el=document.getElementById(id); if(el) el.style.display='none';});
  const nav=document.querySelector('nav.nav'); if(nav) nav.style.display='none';
+}
+if(INFLUENCER_VIEW){
+ document.body.classList.add('influencer-view');
+ // hide the summary cards + the Top-3 metric toggle — this page is a plain list
+ ['kpis','engbreakTitle','engbreak','chartGrid','tpMetrics'].forEach(id=>{const el=document.getElementById(id); if(el) el.style.display='none';});
+ // relabel the podium section: "Top 3 KOL" -> "Posted Content"
+ const tt=document.getElementById('podiumTitle'); if(tt) tt.textContent='Posted Content';
+ // "Active" = influencers with a post link; "Waiting" (card below) = no link yet
+ const pt=document.getElementById('postsTitle'); if(pt) pt.textContent='Active';
+ const wc=document.getElementById('waitingCard'); if(wc) wc.style.display='';
+ // Posted Content carousel — arrows move 3 cards; a proportional scrollbar
+ // thumb below reflects/controls position; the track auto-advances one card
+ // every 3s (looping at the end) and pauses while the pointer is over it
+ {const pod=document.getElementById('podium'), pv=document.getElementById('podPrev'), nx=document.getElementById('podNext'),
+       wrap=document.getElementById('podiumWrap'), bar=document.getElementById('podBar'), thumb=document.getElementById('podBarThumb');
+  if(pod&&pv&&nx){
+   const step=()=>{const c=pod.querySelector('.card'); return (c?c.getBoundingClientRect().width:300)+12;};
+   const maxScroll=()=>Math.max(0,pod.scrollWidth-pod.clientWidth);
+   const upd=()=>{const max=maxScroll();
+    pv.style.visibility=pod.scrollLeft>2?'visible':'hidden'; nx.style.visibility=pod.scrollLeft<max-2?'visible':'hidden';
+    if(bar&&thumb){const bw=bar.clientWidth, tw=Math.max(30,Math.round(bw*(pod.scrollWidth>0?pod.clientWidth/pod.scrollWidth:1)));
+     thumb.style.width=tw+'px'; thumb.style.left=Math.round((max>0?pod.scrollLeft/max:0)*(bw-tw))+'px'; bar.style.display=max>2?'block':'none';}};
+   pv.onclick=()=>pod.scrollBy({left:-step()*3,behavior:'smooth'}); // 3 cards per click
+   nx.onclick=()=>pod.scrollBy({left:step()*3,behavior:'smooth'});
+   pod.addEventListener('scroll',upd); window.addEventListener('resize',upd);
+   new MutationObserver(upd).observe(pod,{childList:true});
+   // auto-advance 3 cards every 3s, looping back at the end; pause on hover
+   let auto=null;
+   const tick=()=>{const max=maxScroll(); if(max<=2)return; if(pod.scrollLeft>=max-2) pod.scrollTo({left:0,behavior:'smooth'}); else pod.scrollBy({left:step()*3,behavior:'smooth'});};
+   const start=()=>{if(!auto)auto=setInterval(tick,3000);};
+   const stop=()=>{if(auto){clearInterval(auto);auto=null;}};
+   if(wrap){wrap.addEventListener('mouseenter',stop); wrap.addEventListener('mouseleave',start);}
+   // drag the scrollbar thumb (and click the track to jump); dragging pauses auto
+   if(bar&&thumb){let drag=false,sx=0,sl=0;
+    const move=e=>{if(!drag)return; const x=(e.touches?e.touches[0].clientX:e.clientX), bw=bar.clientWidth, tw=thumb.offsetWidth,
+      nl=Math.min(Math.max(0,sl+(x-sx)),bw-tw); pod.scrollLeft=((bw-tw)>0?nl/(bw-tw):0)*maxScroll();};
+    const up=()=>{drag=false; start(); document.removeEventListener('mousemove',move); document.removeEventListener('mouseup',up);};
+    thumb.addEventListener('mousedown',e=>{drag=true; stop(); sx=e.clientX; sl=parseFloat(thumb.style.left)||0; document.addEventListener('mousemove',move); document.addEventListener('mouseup',up); e.preventDefault();});
+    thumb.addEventListener('touchstart',e=>{drag=true; stop(); sx=e.touches[0].clientX; sl=parseFloat(thumb.style.left)||0;},{passive:true});
+    thumb.addEventListener('touchmove',move,{passive:true});
+    thumb.addEventListener('touchend',()=>{drag=false; start();});
+    bar.addEventListener('click',e=>{if(e.target===thumb)return; const r=bar.getBoundingClientRect(); pod.scrollLeft=Math.min(1,Math.max(0,(e.clientX-r.left)/r.width))*maxScroll();});
+   }
+   start();
+  }}
 }
 // "🖼️ ภาพสินค้า" — upload the campaign's product pack shot; the tie-in AI
 // then picks video frames by matching THIS image instead of a text guess
@@ -340,21 +441,37 @@ if(VIEW_ONLY){
   }catch(e){ setInfo('⚠️ สร้างไฟล์ไม่สำเร็จ: '+e.message); }
   finally{ pb.disabled=false; pb.innerHTML=old; }
  };}
-// "View Only for Client" — copy the client link: /v/<campaign-slug>/<token>
-// (slug is readable so the team knows which campaign they're sending; the
-// random token is what actually grants access)
+// "View Only for Client" — open the client view-only page (/v/<slug>/<token>)
+// in a new tab (the slug is readable; the random token is what grants access)
 {const sb=document.getElementById('shareBtn');
  const slugify=s=>(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'').slice(0,40);
  if(sb) sb.onclick=async()=>{
+  const w=window.open('','_blank'); // open synchronously on the click so popup blockers allow it
   try{
    const r=await fetch('/api/campaigns/'+encodeURIComponent(CAMPAIGN)+'/view-token');
    const d=await r.json();
    if(!r.ok||!d.token) throw new Error(d.detail||'ขอลิงก์ไม่สำเร็จ');
    const slug=slugify(window.__CAMP_NAME__)||CAMPAIGN;
    const link=location.origin+'/v/'+slug+'/'+d.token;
-   try{ await navigator.clipboard.writeText(link); setInfo('✅ คัดลอกลิงก์สำหรับลูกค้าแล้ว — '+link); }
-   catch(e){ window.prompt('คัดลอกลิงก์นี้ส่งให้ลูกค้า (ดูได้อย่างเดียว):', link); }
-  }catch(e){ setInfo('⚠️ '+e.message); }
+   if(w) w.location.href=link; else window.open(link,'_blank');
+   setInfo('✅ เปิดหน้าสำหรับลูกค้าในแท็บใหม่แล้ว');
+  }catch(e){ if(w) w.close(); setInfo('⚠️ '+e.message); }
+ };}
+// "Influencer Status" — open the influencer view-only page (/vi/<slug>/<token>)
+// in a new tab (its own dedicated page, separate from the client /v/ link)
+{const ib=document.getElementById('viewInfBtn');
+ const slugify=s=>(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'').slice(0,40);
+ if(ib) ib.onclick=async()=>{
+  const w=window.open('','_blank'); // open synchronously on the click so popup blockers allow it
+  try{
+   const r=await fetch('/api/campaigns/'+encodeURIComponent(CAMPAIGN)+'/view-token');
+   const d=await r.json();
+   if(!r.ok||!d.token) throw new Error(d.detail||'ขอลิงก์ไม่สำเร็จ');
+   const slug=slugify(window.__CAMP_NAME__)||CAMPAIGN;
+   const link=location.origin+'/vi/'+slug+'/'+d.token;
+   if(w) w.location.href=link; else window.open(link,'_blank');
+   setInfo('✅ เปิดหน้า Influencer ในแท็บใหม่แล้ว');
+  }catch(e){ if(w) w.close(); setInfo('⚠️ '+e.message); }
  };}
 
 // Fetch campaign metadata for title/subtitle + top-5 quick nav
@@ -363,11 +480,11 @@ async function loadCampaignMeta(){
   const meta = await (await fetch('/api/campaigns/'+encodeURIComponent(CAMPAIGN))).json();
   window.__CAMP_NAME__ = meta.name || '';
   const emoji = meta.emoji || '📊';
-  document.getElementById('repTitle').textContent = `${emoji} ${meta.name || CAMPAIGN} — Campaign Report`;
+  document.getElementById('repTitle').textContent = `${emoji} ${meta.name || CAMPAIGN} — ${REPORT_LABEL}`;
   document.getElementById('repSub').textContent = meta.subtitle || 'ข้อมูลจริงจาก TikTok/Facebook ผ่าน Apify';
-  document.title = `${meta.name || CAMPAIGN} — Campaign Report`;
+  document.title = `${meta.name || CAMPAIGN} — ${REPORT_LABEL}`;
  }catch(e){
-  document.getElementById('repTitle').textContent = CAMPAIGN + ' — Campaign Report';
+  document.getElementById('repTitle').textContent = CAMPAIGN + ' — ' + REPORT_LABEL;
  }
 }
 loadCampaignMeta();

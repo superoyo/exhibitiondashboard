@@ -598,6 +598,67 @@ def ai_status_route(force: bool = False):
     return ai_status(force)
 
 
+@router.get("/kol-directory")
+def kol_directory(session: Session = Depends(db_dependency)):
+    """Master directory: every KOL ever used in ANY campaign, with per-campaign
+    aggregated stats — the team's record of who worked on what and how it did."""
+    camps = {c.key: {"name": c.name, "emoji": c.emoji or "📊"}
+             for c in session.scalars(select(Campaign)).all()}
+    posts_by: dict = {}
+    for p in session.scalars(select(ReportPost)).all():
+        posts_by.setdefault((p.campaign, (p.username or "").lower()), []).append(p)
+    out: dict = {}
+    for k in session.scalars(select(ReportKol)).all():
+        u = (k.username or "").strip().lower()
+        if not u:
+            continue
+        d = out.setdefault(u, {
+            "username": u, "display": None, "avatar": None, "followers": 0,
+            "campaigns": [], "views": 0, "likes": 0, "comments": 0,
+            "shares": 0, "saves": 0, "posts": 0, "platforms": set(),
+            "last_posted": None,
+        })
+        if k.display and k.display != k.username and not d["display"]:
+            d["display"] = k.display
+        if k.avatar_url and not d["avatar"]:
+            d["avatar"] = k.avatar_url
+        if (k.followers or 0) > d["followers"]:
+            d["followers"] = k.followers or 0
+        cm = camps.get(k.campaign) or {"name": k.campaign, "emoji": "📊"}
+        c = {"key": k.campaign, "name": cm["name"], "emoji": cm["emoji"],
+             "category": k.content_group, "posts": 0, "views": 0, "likes": 0,
+             "comments": 0, "shares": 0, "saves": 0, "platforms": [],
+             "last_posted": None}
+        plats = set()
+        for p in posts_by.get((k.campaign, u), []):
+            c["posts"] += 1
+            for f in ("views", "likes", "comments", "shares", "saves"):
+                c[f] += getattr(p, f) or 0
+            if p.platform:
+                plats.add(p.platform)
+            if p.posted_at:
+                iso = p.posted_at.isoformat()
+                if not c["last_posted"] or iso > c["last_posted"]:
+                    c["last_posted"] = iso
+        c["platforms"] = sorted(plats)
+        d["campaigns"].append(c)
+        d["posts"] += c["posts"]
+        for f in ("views", "likes", "comments", "shares", "saves"):
+            d[f] += c[f]
+        d["platforms"].update(plats)
+        if c["last_posted"] and (not d["last_posted"] or c["last_posted"] > d["last_posted"]):
+            d["last_posted"] = c["last_posted"]
+    kols = []
+    for d in out.values():
+        d["platforms"] = sorted(d["platforms"])
+        d["display"] = d["display"] or d["username"]
+        d["campaign_count"] = len(d["campaigns"])
+        d["campaigns"].sort(key=lambda c: c["last_posted"] or "", reverse=True)
+        kols.append(d)
+    kols.sort(key=lambda d: (-d["campaign_count"], -d["views"]))
+    return {"kols": kols, "total": len(kols)}
+
+
 class PackshotIn(BaseModel):
     image_base64: str
 

@@ -92,7 +92,7 @@ def _seed_on_startup() -> None:
 @app.get("/api/version")
 def version():
     """Build marker — lets us confirm which commit Railway is actually running."""
-    return {"build": "campaign-hub-v96"}
+    return {"build": "campaign-hub-v97"}
 
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -236,6 +236,21 @@ def campaign_report_view_named(slug: str, view_token: str):
     return _serve_view(view_token)
 
 
+@app.get("/vi/{view_token}")
+def campaign_report_view_influencer(view_token: str):
+    """Public, view-only report for INFLUENCERS. Same content as /v/ but a
+    distinct entry point (URL namespace) so influencer links stay separate
+    from client links and can be evolved independently later."""
+    return _serve_view(view_token)
+
+
+@app.get("/vi/{slug}/{view_token}")
+def campaign_report_view_influencer_named(slug: str, view_token: str):
+    """Same as /vi/<token> but with a readable campaign-name slug in front
+    (cosmetic only — resolution is by the token; the slug is ignored)."""
+    return _serve_view(view_token)
+
+
 # ---- legacy paths kept alive so old bookmarks + shared links still work ----
 # React redirects these to /c/<key> on mount; the server still applies the right
 # campaign's OG tags so link previews keep working for crawlers.
@@ -267,6 +282,12 @@ def legacy_tracker():
 def kols_page():
     """KOL roster editor."""
     return _serve_shell()
+
+
+@app.get("/kol-list")
+def kol_list_page():
+    """KOL directory across all campaigns (page guarded client-side)."""
+    return _page(FRONTEND_DIR / "kol-list.html")
 
 
 @app.get("/token")
