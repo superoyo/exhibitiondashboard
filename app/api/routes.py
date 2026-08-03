@@ -314,15 +314,33 @@ def bulk_replace_report(body: BulkRosterIn, campaign: str = "pao",
     seen: dict = {}
     for k in body.kols:
         u = (k.username or "").strip().lstrip("@").lower()
-        if u:
-            seen[u] = k  # last wins
+        if not u:
+            continue
+        if u in seen:
+            # same account listed on several rows (a page posting more than
+            # once) — merge the links; the first row keeps name/group/order
+            prev = seen[u]
+            prev.links = (prev.links or []) + (k.links or [])
+            if not prev.followers and k.followers:
+                prev.followers = k.followers
+        else:
+            seen[u] = k
     if not seen:
         raise HTTPException(400, "ไม่พบรายชื่อ KOL ที่ใช้ได้ในไฟล์/ชีต")
 
     session.execute(delete(ReportKol).where(ReportKol.campaign == campaign))
     for i, (u, k) in enumerate(seen.items()):
-        links = [{"platform": (ln.platform or ""), "url": ln.url.strip(),
-                  "handle": (ln.handle or "")} for ln in (k.links or []) if ln.url and ln.url.strip()]
+        links, dedup = [], set()
+        for ln in (k.links or []):
+            if not (ln.url and ln.url.strip()):
+                continue
+            url = ln.url.strip()
+            key = ((ln.platform or ""), url.split("?")[0].rstrip("/").lower())
+            if key in dedup:
+                continue
+            dedup.add(key)
+            links.append({"platform": (ln.platform or ""), "url": url,
+                          "handle": (ln.handle or "")})
         primary = (k.url.strip() if k.url else "") or (links[0]["url"] if links else "")
         session.add(ReportKol(
             sort_order=i,  # keep the source file's row order
