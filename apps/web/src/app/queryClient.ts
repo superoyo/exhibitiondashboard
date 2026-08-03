@@ -42,6 +42,9 @@ export const queryKeys = {
     detail: (key: string) => ['campaigns', 'detail', key] as const,
     summary: ['campaigns', 'summary'] as const,
   },
+  kols: {
+    directory: ['kols', 'directory'] as const,
+  },
   report: {
     data: (campaign: string) => ['report', 'data', campaign] as const,
     refreshStatus: (campaign: string) => ['report', 'refresh-status', campaign] as const,

@@ -153,9 +153,9 @@ def _serve_shell(campaign_key: Optional[str] = None, inject_campaign: bool = Fal
             "apps/web/dist/index.html not found — the frontend was not built. "
             "Run `pnpm install && pnpm --filter @kol/web build` (see railway.json)."
         )
-        legacy = LEGACY_DIR / ("report.html" if campaign_key else "home.html")
-        if legacy.exists():
-            return FileResponse(legacy, headers=_NO_CACHE)
+        page = "report.html" if campaign_key else "home.html"
+        if (LEGACY_DIR / page).exists():
+            return _serve_legacy(page, campaign_key, inject_campaign)
         return JSONResponse({"error": "frontend not built"}, status_code=503)
 
     return HTMLResponse(_inject_meta(html, campaign_key, inject_campaign),
@@ -166,8 +166,8 @@ def _inject_meta(html: str, campaign_key: Optional[str] = None,
                  inject_campaign: bool = False) -> str:
     """Bake the per-campaign <title> + Open Graph tags into an HTML page.
 
-    Shared by the SPA shell and the legacy pages that have not been ported yet,
-    so a shared link previews the same either way.
+    Shared by the SPA shell and the legacy fallback pages, so a shared link
+    previews the same either way.
     """
     title, desc = _DEFAULT_TITLE, _DEFAULT_DESC
     if campaign_key:
@@ -196,8 +196,8 @@ def _serve_legacy(name: str, campaign_key: Optional[str] = None,
                   inject_campaign: bool = False):
     """Serve a pre-migration page from frontend/.
 
-    Only for views the React app does not implement yet (see the /vi/ and
-    /kol-list routes). Everything else goes through _serve_shell.
+    Only reached when the React build is missing — every view is ported now, so
+    this exists so a failed build degrades to the old site instead of a 503.
     """
     page = LEGACY_DIR / name
     if not page.exists():
@@ -239,18 +239,6 @@ def _serve_view(view_token: str):
     return _serve_shell(key, inject_campaign=True)
 
 
-def _serve_influencer_view(view_token: str):
-    """Influencer link (/vi/) — still the legacy report page.
-
-    The React app has neither a /vi route nor the influencer-only layout
-    (report.html switches on body.influencer-view), so serving the SPA shell
-    here would render the not-found page and lose the feature. Point this at
-    _serve_view once the influencer view is ported.
-    """
-    key = _campaign_for_view_token(view_token)
-    if not key:
-        return _view_not_found()
-    return _serve_legacy("report.html", key, inject_campaign=True)
 
 
 # ---------------------------------------------------------------------------
@@ -289,14 +277,14 @@ def campaign_report_view_influencer(view_token: str):
     """Public, view-only report for INFLUENCERS. Same content as /v/ but a
     distinct entry point (URL namespace) so influencer links stay separate
     from client links and can be evolved independently later."""
-    return _serve_influencer_view(view_token)
+    return _serve_view(view_token)
 
 
 @app.get("/vi/{slug}/{view_token}")
 def campaign_report_view_influencer_named(slug: str, view_token: str):
     """Same as /vi/<token> but with a readable campaign-name slug in front
     (cosmetic only — resolution is by the token; the slug is ignored)."""
-    return _serve_influencer_view(view_token)
+    return _serve_view(view_token)
 
 
 # ---- legacy paths kept alive so old bookmarks + shared links still work ----
@@ -334,13 +322,8 @@ def kols_page():
 
 @app.get("/kol-list")
 def kol_list_page():
-    """KOL directory across all campaigns (page guarded client-side).
-
-    Still the legacy page — the React app does not implement this view yet.
-    (FRONTEND_DIR became LEGACY_DIR in the migration; the merge left this
-    reference dangling, which crashed the route.)
-    """
-    return _serve_legacy("kol-list.html")
+    """KOL directory across all campaigns (page guarded client-side)."""
+    return _serve_shell()
 
 
 @app.get("/token")

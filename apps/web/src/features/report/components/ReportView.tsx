@@ -41,10 +41,18 @@ const FOOTER_NOTE =
 export function ReportView({
   campaign,
   viewOnly,
+  influencerView = false,
 }: {
   campaign: string;
   /** Client-facing mode: stats only, every control hidden. */
   viewOnly: boolean;
+  /**
+   * Influencer-facing mode (/vi/): a list of who has posted and who has not.
+   * Drops the KPI summary, the engagement breakdown and every chart — those
+   * are campaign performance, which is the client's report, not the
+   * influencers'.
+   */
+  influencerView?: boolean;
 }) {
   const [info, setInfo] = useState('');
 
@@ -86,6 +94,10 @@ export function ReportView({
     if (!twoLevel || filters.bigGroup === FILTER_ALL) return allRows;
     return allRows.filter((r) => r.biggroup === filters.bigGroup);
   }, [allRows, twoLevel, filters.bigGroup]);
+
+  // Influencer view splits the table by whether a post link exists.
+  const activeRows = useMemo(() => rows.filter((r) => r.url), [rows]);
+  const waitingRows = useMemo(() => rows.filter((r) => !r.url), [rows]);
 
   const colors = useMemo(() => buildCategoryColors(distinctCategories(rows)), [rows]);
   const totals = useMemo(() => computeTotals(rows), [rows]);
@@ -136,7 +148,8 @@ export function ReportView({
       <header className="mb-4">
         <div className="min-w-0">
           <h1 className="text-xl font-bold sm:text-3xl">
-            {emoji} {campaignName} — Campaign Report
+            {emoji} {campaignName} —{' '}
+            {influencerView ? 'Campaign Influencer List' : 'Campaign Report'}
           </h1>
           <p className="text-sm text-muted-foreground">
             {meta.data?.subtitle || 'ข้อมูลจริงจาก TikTok/Facebook ผ่าน Apify'}
@@ -199,14 +212,19 @@ export function ReportView({
             />
           )}
 
-          <KpiRow totals={totals} />
+          {!influencerView && (
+            <>
+              <KpiRow totals={totals} />
 
-          <h2 className="mb-2 text-sm font-semibold text-muted-foreground">
-            รายละเอียด Engagement (like + comment + share + save)
-          </h2>
-          <EngagementBreakdown totals={totals} byKind={byKind} />
+              <h2 className="mb-2 text-sm font-semibold text-muted-foreground">
+                รายละเอียด Engagement (like + comment + share + save)
+              </h2>
+              <EngagementBreakdown totals={totals} byKind={byKind} />
+            </>
+          )}
 
           <Podium
+            influencerView={influencerView}
             rows={rows}
             categories={colors.categories}
             platforms={distinctPlatforms(rows)}
@@ -219,59 +237,83 @@ export function ReportView({
             onMetricChange={filters.setMetric}
           />
 
-          <div className="mb-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {!influencerView && (
+            <div className="mb-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <Card>
+                <CardContent className="p-4">
+                  <h3 className="mb-1 font-semibold">Views ตามหมวด KOL</h3>
+                  <CategoryDonut rows={rows} colors={colors} />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <h3 className="mb-1 font-semibold">Engagement Rate ตามหมวด</h3>
+                  <CategoryErBar rows={rows} colors={colors} />
+                </CardContent>
+              </Card>
+              <Card className="lg:col-span-2">
+                <CardContent className="p-4">
+                  <h3 className="mb-1 font-semibold">
+                    Engagement แยกชนิดตามหมวด (like / comment / share / save)
+                  </h3>
+                  <EngagementStack rows={rows} colors={colors} />
+                </CardContent>
+              </Card>
+              <Card className="lg:col-span-2">
+                <CardContent className="p-4">
+                  <h3 className="mb-1 font-semibold">Top 10 โพสต์ (ตาม Views)</h3>
+                  <TopPostsBar rows={rows} colors={colors} />
+                </CardContent>
+              </Card>
+              <Card className="lg:col-span-2">
+                <CardContent className="p-4">
+                  <h3 className="mb-1 font-semibold">Followers vs Views</h3>
+                  <FollowersViewsScatter rows={rows} colors={colors} />
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {influencerView ? (
+            // Split by whether a post link exists: "Active" has posted,
+            // "Waiting" has not. That single question is what an influencer
+            // opens this link to answer.
+            <>
+              <Card>
+                <CardContent className="p-4">
+                  <h3 className="mb-2 font-semibold">Active</h3>
+                  <PostsTable rows={activeRows} colors={colors} hideMetrics />
+                </CardContent>
+              </Card>
+              <Card className="mt-4">
+                <CardContent className="p-4">
+                  <h3 className="mb-2 font-semibold">Waiting</h3>
+                  <PostsTable rows={waitingRows} colors={colors} hideMetrics />
+                </CardContent>
+              </Card>
+            </>
+          ) : (
             <Card>
               <CardContent className="p-4">
-                <h3 className="mb-1 font-semibold">Views ตามหมวด KOL</h3>
-                <CategoryDonut rows={rows} colors={colors} />
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <h3 className="font-semibold">รายโพสต์ทั้งหมด (คลิกหัวคอลัมน์เพื่อจัดเรียง)</h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full"
+                    onClick={() => downloadReportCsv(rows, campaignName)}
+                  >
+                    ⬇ ดาวน์โหลด CSV
+                  </Button>
+                </div>
+                <PostsTable rows={rows} colors={colors} />
               </CardContent>
             </Card>
-            <Card>
-              <CardContent className="p-4">
-                <h3 className="mb-1 font-semibold">Engagement Rate ตามหมวด</h3>
-                <CategoryErBar rows={rows} colors={colors} />
-              </CardContent>
-            </Card>
-            <Card className="lg:col-span-2">
-              <CardContent className="p-4">
-                <h3 className="mb-1 font-semibold">
-                  Engagement แยกชนิดตามหมวด (like / comment / share / save)
-                </h3>
-                <EngagementStack rows={rows} colors={colors} />
-              </CardContent>
-            </Card>
-            <Card className="lg:col-span-2">
-              <CardContent className="p-4">
-                <h3 className="mb-1 font-semibold">Top 10 โพสต์ (ตาม Views)</h3>
-                <TopPostsBar rows={rows} colors={colors} />
-              </CardContent>
-            </Card>
-            <Card className="lg:col-span-2">
-              <CardContent className="p-4">
-                <h3 className="mb-1 font-semibold">Followers vs Views</h3>
-                <FollowersViewsScatter rows={rows} colors={colors} />
-              </CardContent>
-            </Card>
-          </div>
+          )}
 
-          <Card>
-            <CardContent className="p-4">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <h3 className="font-semibold">รายโพสต์ทั้งหมด (คลิกหัวคอลัมน์เพื่อจัดเรียง)</h3>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="rounded-full"
-                  onClick={() => downloadReportCsv(rows, campaignName)}
-                >
-                  ⬇ ดาวน์โหลด CSV
-                </Button>
-              </div>
-              <PostsTable rows={rows} colors={colors} />
-            </CardContent>
-          </Card>
-
-          <footer className="mt-5 text-xs text-muted-foreground">{FOOTER_NOTE}</footer>
+          {!influencerView && (
+            <footer className="mt-5 text-xs text-muted-foreground">{FOOTER_NOTE}</footer>
+          )}
         </>
       )}
     </>

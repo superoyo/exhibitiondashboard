@@ -41,5 +41,6 @@ export function NavBar({ tabs = [] }: { tabs?: NavTab[] }) {
 /** Tabs shown by the settings page. */
 export const SETTINGS_TABS: NavTab[] = [
   { to: routes.home, label: '← Home', end: true },
+  { to: routes.kolList, label: 'KOL List' },
   { to: routes.settings, label: 'Apify Token' },
 ];

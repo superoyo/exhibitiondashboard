@@ -9,6 +9,7 @@ import { fmt } from '@/lib/format';
 import { platformMeta } from '@/lib/platforms';
 import type { CategoryColors } from '@/lib/colors';
 import { erText } from '@/features/report/lib/metrics';
+import { PostedContentCarousel } from './PostedContentCarousel';
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 
@@ -23,6 +24,11 @@ const METRIC_META: Record<ReportMetric, { label: string; format: (v: number) => 
 
 interface PodiumProps {
   rows: ReportRecordDerived[];
+  /**
+   * Influencer view (/vi/): every influencer who has posted, as a carousel,
+   * with no ranking and no numbers. See PostedContentCarousel.
+   */
+  influencerView?: boolean;
   categories: string[];
   platforms: string[];
   colors: CategoryColors;
@@ -123,6 +129,7 @@ function PodiumCard({
 
 export function Podium({
   rows,
+  influencerView = false,
   categories,
   platforms,
   colors,
@@ -145,6 +152,13 @@ export function Podium({
     [pool, metric],
   );
 
+  // Influencer view shows everyone with a link — a card that goes nowhere is
+  // useless to the person looking for their own post.
+  const posted = useMemo(
+    () => [...pool].filter((r) => r.url).sort((a, b) => b[metric] - a[metric]),
+    [pool, metric],
+  );
+
   /** Human description of the active filter, for the empty/thin states. */
   const filterLabel =
     [
@@ -157,16 +171,22 @@ export function Podium({
   return (
     <section className="mb-5 rounded-[14px] border border-border bg-card p-4 shadow-card">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-lg font-semibold">🏆 Top 3 KOL</h3>
-        <SegmentedControl
-          options={Object.entries(METRIC_META).map(([value, m]) => ({
-            value,
-            label: m.label,
-          }))}
-          value={metric}
-          onChange={(v) => onMetricChange(v as ReportMetric)}
-          ariaLabel="เลือกตัวชี้วัด"
-        />
+        <h3 className="text-lg font-semibold">
+          {influencerView ? 'Posted Content' : '🏆 Top 3 KOL'}
+        </h3>
+        {/* No metric switch in the influencer view — nothing on the cards
+            changes with it, since the numbers are hidden. */}
+        {!influencerView && (
+          <SegmentedControl
+            options={Object.entries(METRIC_META).map(([value, m]) => ({
+              value,
+              label: m.label,
+            }))}
+            value={metric}
+            onChange={(v) => onMetricChange(v as ReportMetric)}
+            ariaLabel="เลือกตัวชี้วัด"
+          />
+        )}
       </div>
 
       <SegmentedControl
@@ -187,35 +207,39 @@ export function Podium({
         onChange={onPlatformChange}
       />
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        {top.length === 0 ? (
-          <div className="col-span-full text-sm text-muted-foreground">
-            ไม่มีโพสต์ในตัวกรอง &quot;<b>{filterLabel}</b>&quot;
-          </div>
-        ) : (
-          <>
-            {top.map((row, i) => (
-              <PodiumCard
-                key={`${row.username}-${row.platform}`}
-                row={row}
-                rank={i}
-                metric={metric}
-                color={colors.colorOf(row.category)}
-              />
-            ))}
-            {/* Say so when the filter has fewer than 3 posts, rather than
+      {influencerView ? (
+        <PostedContentCarousel rows={posted} colors={colors} emptyLabel={filterLabel} />
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {top.length === 0 ? (
+            <div className="col-span-full text-sm text-muted-foreground">
+              ไม่มีโพสต์ในตัวกรอง &quot;<b>{filterLabel}</b>&quot;
+            </div>
+          ) : (
+            <>
+              {top.map((row, i) => (
+                <PodiumCard
+                  key={`${row.username}-${row.platform}`}
+                  row={row}
+                  rank={i}
+                  metric={metric}
+                  color={colors.colorOf(row.category)}
+                />
+              ))}
+              {/* Say so when the filter has fewer than 3 posts, rather than
                 silently showing a short podium. */}
-            {pool.length < 3 && (
-              <Card className="flex flex-col items-center justify-center border-dashed p-4 text-center text-muted-foreground">
-                <div className="mb-1 text-2xl">ℹ️</div>
-                <div className="text-sm">
-                  ตัวกรอง &quot;<b>{filterLabel}</b>&quot; มีแค่ <b>{pool.length}</b> โพสต์
-                </div>
-              </Card>
-            )}
-          </>
-        )}
-      </div>
+              {pool.length < 3 && (
+                <Card className="flex flex-col items-center justify-center border-dashed p-4 text-center text-muted-foreground">
+                  <div className="mb-1 text-2xl">ℹ️</div>
+                  <div className="text-sm">
+                    ตัวกรอง &quot;<b>{filterLabel}</b>&quot; มีแค่ <b>{pool.length}</b> โพสต์
+                  </div>
+                </Card>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </section>
   );
 }

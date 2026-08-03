@@ -12,6 +12,10 @@ const TrackerPage = lazy(() => import('@/features/tracker/pages/TrackerPage'));
 const TokenPage = lazy(() => import('@/features/settings/pages/TokenPage'));
 const CampaignReportPage = lazy(() => import('@/features/report/pages/CampaignReportPage'));
 const PublicReportPage = lazy(() => import('@/features/report/pages/PublicReportPage'));
+const InfluencerReportPage = lazy(
+  () => import('@/features/report/pages/InfluencerReportPage'),
+);
+const KolListPage = lazy(() => import('@/features/kols/pages/KolListPage'));
 const NotFoundPage = lazy(() => import('@/app/NotFoundPage'));
 
 function Fallback() {
@@ -48,6 +52,8 @@ export const router = createBrowserRouter([
       { path: routes.login, element: <LoginPage /> },
       { path: routes.viewPattern, element: <PublicReportPage /> },
       { path: routes.viewNamedPattern, element: <PublicReportPage /> },
+      { path: routes.influencerViewPattern, element: <InfluencerReportPage /> },
+      { path: routes.influencerViewNamedPattern, element: <InfluencerReportPage /> },
 
       // ---- guarded ----
       {
@@ -56,6 +62,7 @@ export const router = createBrowserRouter([
           { path: routes.home, element: <HomePage /> },
           { path: routes.campaignPattern, element: <CampaignReportPage /> },
           { path: routes.roster, element: <RosterPage /> },
+          { path: routes.kolList, element: <KolListPage /> },
           { path: routes.tracker, element: <TrackerPage /> },
           { path: routes.settings, element: <TokenPage /> },
 

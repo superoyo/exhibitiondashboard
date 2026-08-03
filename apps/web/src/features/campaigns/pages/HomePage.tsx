@@ -22,6 +22,9 @@ import {
 
 const HOME_TABS = [
   { to: routes.home, label: 'Home', end: true },
+  // Same three tabs the legacy home page had — without this, /kol-list is only
+  // reachable by typing the URL.
+  { to: routes.kolList, label: 'KOL List' },
   { to: routes.settings, label: 'Apify Token' },
 ];
 

@@ -22,28 +22,38 @@ type SortKey = keyof Pick<
   | 'posted'
 >;
 
-const COLUMNS: Array<{ key: SortKey; label: string; align?: 'right' }> = [
+/** `metric: true` = a performance number, hidden from the influencer view. */
+const COLUMNS: Array<{ key: SortKey; label: string; align?: 'right'; metric?: true }> = [
   { key: 'category', label: 'หมวด' },
   { key: 'username', label: 'KOL' },
   { key: 'followers', label: 'Followers', align: 'right' },
-  { key: 'views', label: 'Views', align: 'right' },
-  { key: 'likes', label: '❤️ Likes', align: 'right' },
-  { key: 'comments', label: '💬 Cmt', align: 'right' },
-  { key: 'shares', label: '🔁 Share', align: 'right' },
-  { key: 'saves', label: '🔖 Save', align: 'right' },
-  { key: 'er', label: 'ER%', align: 'right' },
+  { key: 'views', label: 'Views', align: 'right', metric: true },
+  { key: 'likes', label: '❤️ Likes', align: 'right', metric: true },
+  { key: 'comments', label: '💬 Cmt', align: 'right', metric: true },
+  { key: 'shares', label: '🔁 Share', align: 'right', metric: true },
+  { key: 'saves', label: '🔖 Save', align: 'right', metric: true },
+  { key: 'er', label: 'ER%', align: 'right', metric: true },
   { key: 'posted', label: 'โพสต์เมื่อ' },
 ];
 
 export function PostsTable({
   rows,
   colors,
+  hideMetrics = false,
 }: {
   rows: ReportRecordDerived[];
   colors: CategoryColors;
+  /**
+   * Influencer view: drop views/likes/comments/shares/saves/ER. An influencer
+   * seeing everyone else's numbers is a different (client) report.
+   */
+  hideMetrics?: boolean;
 }) {
-  const [sortKey, setSortKey] = useState<SortKey>('views');
+  // Sorting by views is meaningless when the column is hidden.
+  const [sortKey, setSortKey] = useState<SortKey>(hideMetrics ? 'category' : 'views');
   const [ascending, setAscending] = useState(false);
+
+  const columns = hideMetrics ? COLUMNS.filter((c) => !c.metric) : COLUMNS;
 
   const sorted = useMemo(() => {
     return [...rows].sort((a, b) => {
@@ -70,7 +80,7 @@ export function PostsTable({
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border text-left text-muted-foreground">
-            {COLUMNS.map((col) => (
+            {columns.map((col) => (
               <th
                 key={col.key}
                 onClick={() => toggleSort(col.key)}
@@ -88,6 +98,13 @@ export function PostsTable({
           </tr>
         </thead>
         <tbody>
+          {sorted.length === 0 && (
+            <tr>
+              <td colSpan={columns.length + 1} className="py-3 text-muted-foreground">
+                — ไม่มี (ทุกคนมี link แล้ว) —
+              </td>
+            </tr>
+          )}
           {sorted.map((row) => (
             <tr
               key={`${row.username}-${row.platform}-${row.url}`}
@@ -109,12 +126,16 @@ export function PostsTable({
                 </span>
               </td>
               <td className="pr-3 text-right">{fmt(row.followers)}</td>
-              <td className="pr-3 text-right font-semibold">{fmtFull(row.views)}</td>
-              <td className="pr-3 text-right">{fmtFull(row.likes)}</td>
-              <td className="pr-3 text-right">{fmtFull(row.comments)}</td>
-              <td className="pr-3 text-right">{fmtFull(row.shares)}</td>
-              <td className="pr-3 text-right">{fmtFull(row.saves)}</td>
-              <td className="pr-3 text-right">{erText(row)}</td>
+              {!hideMetrics && (
+                <>
+                  <td className="pr-3 text-right font-semibold">{fmtFull(row.views)}</td>
+                  <td className="pr-3 text-right">{fmtFull(row.likes)}</td>
+                  <td className="pr-3 text-right">{fmtFull(row.comments)}</td>
+                  <td className="pr-3 text-right">{fmtFull(row.shares)}</td>
+                  <td className="pr-3 text-right">{fmtFull(row.saves)}</td>
+                  <td className="pr-3 text-right">{erText(row)}</td>
+                </>
+              )}
               <td className="pr-3 text-muted-foreground">{row.posted || ''}</td>
               <td>
                 {row.url && (
