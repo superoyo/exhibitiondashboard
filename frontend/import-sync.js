@@ -70,9 +70,17 @@ window.ImportSync = (function () {
 
   const SOCIAL = /(tiktok\.com|facebook\.com|fb\.watch|instagram\.com|youtu|x\.com|twitter\.com)/i;
   const ADDR = ['address', 'addr', 'ที่อยู่', 'จัดส่ง', 'ส่งของ', 'shipping', 'delivery', 'ไปรษณีย์', 'พัสดุ', 'tracking', 'ผู้รับ', 'เบอร์', 'โทร', 'ของรางวัล', 'เลขที่บ้าน'];
+  // Sheets hidden inside the file are almost always leftovers from an old
+  // campaign the team copied the file from — never import them.
+  function visibleSheetNames(wb) {
+    const meta = (wb.Workbook && wb.Workbook.Sheets) || [];
+    const hidden = new Set(meta.filter(s => s && s.Hidden).map(s => s.name));
+    const vis = wb.SheetNames.filter(n => !hidden.has(n));
+    return vis.length ? vis : wb.SheetNames;
+  }
   function parseWorkbook(wb) {
-    const out = []; const multi = wb.SheetNames.length > 1;
-    wb.SheetNames.forEach(sheetName => {
+    const out = []; const sheetNames = visibleSheetNames(wb); const multi = sheetNames.length > 1;
+    sheetNames.forEach(sheetName => {
       const ws = wb.Sheets[sheetName]; if (!ws) return;
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: true, defval: '' });
       if (!rows.length) return;
@@ -92,7 +100,7 @@ window.ImportSync = (function () {
       const hasUrl = rows.some(r => r.some(c => SOCIAL.test(_n(c))));
       const nmeta = _low(sheetName) + ' ' + headers.join(' ');
       if (!hasUrl && ADDR.some(k => nmeta.includes(k))) return;
-      let cU = pickCol(headers, ['username', 'handle', 'ผู้ใช้', 'บัญชี', 'user', 'ไอดี', 'ชื่อบัญชี', 'account', 'ช่อง', 'channel', 'kol', 'influencer', 'influ', 'อินฟลู', 'ชื่อ', 'name']);
+      let cU = pickCol(headers, ['username', 'handle', 'ผู้ใช้', 'บัญชี', 'user', 'ไอดี', 'ชื่อบัญชี', 'account', 'acc', 'เพจ', 'fanpage', 'ช่อง', 'channel', 'kol', 'influencer', 'influ', 'อินฟลู', 'ชื่อ', 'name']);
       const cGrp = pickCol(headers, ['หมวด', 'ประเภท', 'group', 'category', 'type', 'tier', 'กลุ่ม']);
       const cSub = pickCol(headers, ['ย่อย', 'subgroup', 'sub']);
       const cFol = pickCol(headers, ['follow', 'ติดตาม', 'fan']);
@@ -109,11 +117,17 @@ window.ImportSync = (function () {
         }
         const profUrls = urls.filter(isProfileUrl);
         const workUrls = urls.filter(u => !isProfileUrl(u));
-        let username = cU >= 0 ? _n(row[cU]).replace(/^@/, '') : '';
-        if (/https?:|\//.test(username)) username = handleFromUrl(username);
+        let colName = cU >= 0 ? _n(row[cU]).replace(/^@/, '') : '';
+        if (/https?:|\//.test(colName)) colName = handleFromUrl(colName);
+        // handle-like column text IS the username; free text is display-only
+        let username = /^[\w.]{2,}$/.test(colName) ? colName : '';
         if (!username) { const at = filled.map(_n).find(v => /^@[\w.]+$/.test(v)); if (at) username = at.slice(1); }
         if (!username && profUrls.length) username = handleFromUrl(profUrls[0]);
         if (!username && workUrls.length) username = handleFromUrl(workUrls.find(u => platformOf(u) === 'tiktok') || workUrls[0]);
+        // named row whose links yield no handle (e.g. FB share short link) —
+        // keep it under the written name instead of silently dropping it
+        if (!username && colName && colName.length <= 40 && colName.split(/\s+/).length <= 5 &&
+            !HEADER_WORDS.includes(colName.toLowerCase())) username = colName;
         if (!username && !workUrls.length) continue;
         if (!workUrls.length && HEADER_WORDS.includes((username || '').toLowerCase())) continue;
         const links = dedupeLinks(workUrls);
