@@ -70,9 +70,17 @@ window.ImportSync = (function () {
 
   const SOCIAL = /(tiktok\.com|facebook\.com|fb\.watch|instagram\.com|youtu|x\.com|twitter\.com)/i;
   const ADDR = ['address', 'addr', 'ที่อยู่', 'จัดส่ง', 'ส่งของ', 'shipping', 'delivery', 'ไปรษณีย์', 'พัสดุ', 'tracking', 'ผู้รับ', 'เบอร์', 'โทร', 'ของรางวัล', 'เลขที่บ้าน'];
+  // Sheets hidden inside the file are almost always leftovers from an old
+  // campaign the team copied the file from — never import them.
+  function visibleSheetNames(wb) {
+    const meta = (wb.Workbook && wb.Workbook.Sheets) || [];
+    const hidden = new Set(meta.filter(s => s && s.Hidden).map(s => s.name));
+    const vis = wb.SheetNames.filter(n => !hidden.has(n));
+    return vis.length ? vis : wb.SheetNames;
+  }
   function parseWorkbook(wb) {
-    const out = []; const multi = wb.SheetNames.length > 1;
-    wb.SheetNames.forEach(sheetName => {
+    const out = []; const sheetNames = visibleSheetNames(wb); const multi = sheetNames.length > 1;
+    sheetNames.forEach(sheetName => {
       const ws = wb.Sheets[sheetName]; if (!ws) return;
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: true, defval: '' });
       if (!rows.length) return;
