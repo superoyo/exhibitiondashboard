@@ -76,10 +76,15 @@ export default tseslint.config(
     },
   },
 
-  // ---- Config files -------------------------------------------------------
+  // ---- Config files + plain Node scripts ----------------------------------
+  // These sit outside any tsconfig project, so type-aware rules cannot run on
+  // them. Still linted, just without the typed ruleset.
   {
-    files: ['**/*.config.{ts,js}', 'eslint.config.js'],
+    // disableTypeChecked carries its own languageOptions, so it is spread FIRST —
+    // otherwise it overwrites the node globals and `console` reads as undefined.
     ...tseslint.configs.disableTypeChecked,
+    files: ['**/*.config.{ts,js}', 'eslint.config.js', '**/*.mjs', '**/scripts/**/*.{js,mjs}'],
+    languageOptions: { globals: globals.node },
   },
 
   prettier,

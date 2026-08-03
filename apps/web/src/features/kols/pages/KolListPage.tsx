@@ -208,10 +208,7 @@ function KolRow({
         <td className="py-2 pr-3">
           <div className="flex items-center gap-2">
             {kol.avatar ? (
-              <CachedImage
-                src={kol.avatar}
-                className="size-[34px] rounded-full object-cover"
-              />
+              <CachedImage src={kol.avatar} className="size-[34px] rounded-full object-cover" />
             ) : (
               <div className="flex size-[34px] items-center justify-center rounded-full bg-slate-200 font-bold text-slate-600">
                 {(kol.display || kol.username).charAt(0).toUpperCase()}
@@ -259,7 +256,9 @@ function CampaignDetail({ campaign: c }: { campaign: KolCampaignEntry }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="font-semibold">
           {c.emoji} {c.name}{' '}
-          {c.category && <span className="text-xs font-normal text-muted-foreground">· {c.category}</span>}
+          {c.category && (
+            <span className="text-xs font-normal text-muted-foreground">· {c.category}</span>
+          )}
         </div>
         <a href={routes.campaign(c.key)} className="text-xs text-blue-600">
           เปิดรายงาน ↗

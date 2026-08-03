@@ -61,6 +61,9 @@ const COL_USERNAME = [
   'ไอดี',
   'ชื่อบัญชี',
   'account',
+  'acc',
+  'เพจ',
+  'fanpage',
   'ช่อง',
   'channel',
   'kol',
@@ -150,13 +153,33 @@ function collectHyperlinks(xlsx: XlsxModule, sheet: XLSX.WorkSheet): Record<numb
   return hyper;
 }
 
+/**
+ * Sheets hidden inside the file are almost always leftovers from an old campaign
+ * the team copied the file from, so they are never imported.
+ *
+ * Falls back to every sheet when they are ALL hidden — otherwise such a file
+ * would import as empty with no explanation.
+ */
+function visibleSheetNames(wb: XLSX.WorkBook): string[] {
+  const meta = wb.Workbook?.Sheets ?? [];
+  const hidden = new Set(
+    meta
+      .filter((sheet) => sheet?.Hidden)
+      .map((sheet) => sheet.name)
+      .filter((name): name is string => Boolean(name)),
+  );
+  const visible = wb.SheetNames.filter((name) => !hidden.has(name));
+  return visible.length ? visible : wb.SheetNames;
+}
+
 export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbook {
   const kols: BulkKol[] = [];
   const debug: string[] = [];
   const skipped: string[] = [];
-  const multiSheet = wb.SheetNames.length > 1;
+  const sheetNames = visibleSheetNames(wb);
+  const multiSheet = sheetNames.length > 1;
 
-  for (const sheetName of wb.SheetNames) {
+  for (const sheetName of sheetNames) {
     const sheet = wb.Sheets[sheetName];
     if (!sheet) continue;
 
@@ -220,8 +243,26 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
       const workUrls = urls.filter((u) => !isProfileUrl(u));
 
       // Username, in descending order of reliability.
-      let username = cUser >= 0 ? text(row[cUser]).replace(/^@/, '') : '';
-      if (/https?:|\//.test(username)) username = handleFromUrl(username);
+      let colName = cUser >= 0 ? text(row[cUser]).replace(/^@/, '') : '';
+      if (/https?:|\//.test(colName)) colName = handleFromUrl(colName);
+
+      // Handle-like column text IS the username; free text is display-only.
+      let username = /^[\w.]{2,}$/.test(colName) ? colName : '';
+
+      // A row that names its account but whose links yield no handle (e.g. a
+      // Facebook share short link) is kept under the written name rather than
+      // silently dropped. Bounded so a sentence of free text can't become a
+      // username.
+      if (
+        !username &&
+        colName &&
+        colName.length <= 40 &&
+        colName.split(/\s+/).length <= 5 &&
+        !HEADER_WORDS.has(colName.toLowerCase())
+      ) {
+        username = colName;
+      }
+
       if (!username) {
         const at = filled.map(text).find((v) => /^@[\w.]+$/.test(v));
         if (at) username = at.slice(1);

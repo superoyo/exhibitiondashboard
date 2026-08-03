@@ -1,7 +1,6 @@
 import { Router } from 'express';
 
 import * as campaigns from '../../controllers/campaigns.controller.js';
-import * as health from '../../controllers/health.controller.js';
 import { bulkReplace, rosterController, sheetLink } from '../../controllers/roster.controller.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 
@@ -12,7 +11,7 @@ import { asyncHandler } from '../../utils/asyncHandler.js';
  * `pythonProxy`). Endpoints move over one group at a time, reads before writes,
  * so a regression is limited to one group and easy to attribute.
  *
- * Ported: version · campaigns (list, summary, detail, patch, archive,
+ * Ported: campaigns (list, summary, detail, patch, archive,
  * view-token, rename) · roster (tracker + report CRUD, bulk replace, sheet link).
  *
  * Still proxied: POST /campaigns — it stores a 64px JPEG thumbnail of the
@@ -22,7 +21,15 @@ import { asyncHandler } from '../../utils/asyncHandler.js';
  */
 export const v1Router = Router();
 
-v1Router.get('/version', health.version);
+/**
+ * `/version` is deliberately NOT implemented here.
+ *
+ * It reports which commit Railway is actually running, and Python serves the
+ * deploy during the migration — so its marker is the authoritative one. A copy
+ * here would be a hardcoded duplicate of a value that changes every deploy, and
+ * it already drifted once (v96 vs v100). Proxying keeps it correct for free.
+ * Implement it natively at cutover, sourced from the build, not a literal.
+ */
 
 // ---- campaigns ------------------------------------------------------------
 v1Router.get('/campaigns', asyncHandler(campaigns.list));

@@ -3,6 +3,7 @@ import type { ReportKolRow, TrackerKolRow } from '../../repositories/roster.repo
 import { getSetting, setSetting } from '../settings/appSettings.service.js';
 import { AppError } from '../../utils/AppError.js';
 import { kolLinks } from '../links/linkUtils.js';
+import { pyJsonDumps } from '../../utils/pythonJson.js';
 
 export type RosterKind = 'tracker' | 'report';
 
@@ -139,7 +140,7 @@ export async function patchRosterKol(kind: RosterKind, id: number, input: Roster
         url: (l.url ?? '').trim(),
         handle: l.handle ?? '',
       }));
-    patch.linksJson = links.length ? JSON.stringify(links) : null;
+    patch.linksJson = links.length ? pyJsonDumps(links) : null;
     // `url` stays the primary link so pre-multiplatform readers still work.
     patch.url = links.length ? (links[0]?.url ?? null) : null;
   } else if (input.url !== undefined) {
@@ -173,30 +174,49 @@ export interface BulkKolInput {
 /**
  * Replace a campaign's entire roster from a parsed sheet.
  *
- * Duplicates within the upload are collapsed by username with LAST-one-wins,
- * matching Python's dict assignment. `report_posts` are intentionally left
- * alone — the next Refresh re-matches them.
+ * Rows sharing a username are MERGED (see below) — this replaced an earlier
+ * last-wins rule in 24628c9, because last-wins silently dropped the links of
+ * every row but the last. `report_posts` are intentionally left alone; the next
+ * Refresh re-matches them.
  */
 export async function bulkReplaceRoster(
   campaign: string,
   kolsIn: BulkKolInput[],
   sheetUrl: string | null | undefined,
 ): Promise<{ status: 'replaced'; count: number }> {
+  // Same account on several rows (a page that posted more than once) is MERGED,
+  // not last-wins: the first row keeps name/group/order and the links are
+  // concatenated, so a second row can no longer silently discard the first row's
+  // links. Followers are backfilled only when the first row had none.
   const seen = new Map<string, BulkKolInput>();
   for (const k of kolsIn) {
     const username = normaliseUsername(k.username);
-    if (username) seen.set(username, k);
+    if (!username) continue;
+
+    const prev = seen.get(username);
+    if (prev) {
+      prev.links = [...(prev.links ?? []), ...(k.links ?? [])];
+      if (!prev.followers && k.followers) prev.followers = k.followers;
+    } else {
+      // Copy, so merging never mutates the caller's array.
+      seen.set(username, { ...k, links: [...(k.links ?? [])] });
+    }
   }
   if (!seen.size) throw AppError.badRequest('ไม่พบรายชื่อ KOL ที่ใช้ได้ในไฟล์/ชีต');
 
   const rows = [...seen.entries()].map(([username, k], index) => {
-    const links = (k.links ?? [])
-      .filter((l) => l.url && l.url.trim())
-      .map((l) => ({
-        platform: l.platform ?? '',
-        url: l.url.trim(),
-        handle: l.handle ?? '',
-      }));
+    // Merging rows can bring the same post in twice, so dedupe by
+    // (platform, url-without-query) — the same key the sheet importer uses.
+    const links: Array<{ platform: string; url: string; handle: string }> = [];
+    const dedup = new Set<string>();
+    for (const l of k.links ?? []) {
+      if (!l.url || !l.url.trim()) continue;
+      const url = l.url.trim();
+      const key = `${l.platform ?? ''} ${(url.split('?')[0] ?? '').replace(/\/+$/, '').toLowerCase()}`;
+      if (dedup.has(key)) continue;
+      dedup.add(key);
+      links.push({ platform: l.platform ?? '', url, handle: l.handle ?? '' });
+    }
     const primary = (k.url ? k.url.trim() : '') || links[0]?.url || '';
 
     return {
@@ -207,7 +227,7 @@ export async function bulkReplaceRoster(
       contentGroup: (k.group || 'KOL').trim() || 'KOL',
       subgroup: (k.subgroup ? k.subgroup.trim() : null) || null,
       url: primary || null,
-      linksJson: links.length ? JSON.stringify(links) : null,
+      linksJson: links.length ? pyJsonDumps(links) : null,
       followers: Math.trunc(Number(k.followers ?? 0)) || 0,
     };
   });
