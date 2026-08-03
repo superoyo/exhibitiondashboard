@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* shadcn/ui tokens. The slate scale below is not a default we happened to
+       accept — it is the legacy palette expressed in HSL:
+         --foreground        #0f172a
+         --muted-foreground  #64748b
+         --border            #e5e7eb                                        */
+    --background: 0 0% 100%;
+    --foreground: 222.2 47.4% 11.2%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 47.4% 11.2%;
+
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    --destructive: 0 72.2% 50.6%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    /* Focus ring is brand gold, matching the legacy login input. */
+    --ring: 45 91% 59%;
+
+    --radius: 0.875rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    background: #fff;
+  }
+
+  body {
+    @apply bg-page-gold text-foreground font-sans antialiased;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    background-color: #fff;
+    min-height: 100vh;
+  }
+
+  a {
+    @apply text-blue-600;
+  }
+}
+
+@layer components {
+  /* Direct ports of the legacy .card / .chip / .navtab / .inp / .btn classes.
+     shadcn primitives cover most call sites; these remain for the places that
+     are still one-to-one with the old markup. */
+  .chip {
+    @apply inline-block rounded-full px-2 py-0.5 text-[0.7rem] font-semibold leading-tight text-white;
+  }
+
+  .navtab {
+    @apply rounded-full border border-border bg-white px-3.5 py-1.5 text-[0.85rem] font-semibold text-slate-600 no-underline transition-colors hover:bg-slate-100;
+  }
+
+  .navtab-active {
+    @apply border-primary bg-primary text-primary-foreground hover:bg-primary;
+  }
+}
+
+@layer utilities {
+  /* The two-line Far East Fame Line wordmark with its gold dot. */
+  .logo-dot::after {
+    content: '';
+    @apply absolute right-[-0.5em] top-[0.08em] h-[0.32em] w-[0.32em] rounded-full bg-brand-dot;
+  }
+}

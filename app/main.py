@@ -1,10 +1,12 @@
 """FastAPI app: serves the REST API and the single-file dashboard."""
 from __future__ import annotations
 
+import json
 import logging
 import pathlib
 import re
 from html import escape as _hesc
+from typing import Optional
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
@@ -93,32 +95,30 @@ def version():
     return {"build": "campaign-hub-v96"}
 
 
-FRONTEND_DIR = pathlib.Path(__file__).resolve().parent.parent / "frontend"
-INDEX = FRONTEND_DIR / "index.html"
-REPORT = FRONTEND_DIR / "report.html"
-KOLS_PAGE = FRONTEND_DIR / "kols.html"
-TOKEN_PAGE = FRONTEND_DIR / "token.html"
-HOME_PAGE = FRONTEND_DIR / "home.html"
-LOGIN_PAGE = FRONTEND_DIR / "login.html"
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+WEB_DIST = ROOT / "apps" / "web" / "dist"       # built React SPA (Vite output)
+LEGACY_DIR = ROOT / "frontend"                  # pre-migration static pages
 
-# HTML pages must always revalidate — otherwise browsers serve a stale shell
-# after a deploy (e.g. the old report before the dynamic rewrite).
+# HTML must always revalidate — otherwise browsers serve a stale shell after a
+# deploy. Hashed assets are the opposite: their name changes when they do, so
+# they can be cached forever.
 _NO_CACHE = {"Cache-Control": "no-cache, must-revalidate", "Pragma": "no-cache"}
+_IMMUTABLE = {"Cache-Control": "public, max-age=31536000, immutable"}
+
+_DEFAULT_TITLE = "Influencer Real Time Report"
+_DEFAULT_DESC = "รายงานผล KOL/Influencer แบบเรียลไทม์"
 
 
-def _page(path: pathlib.Path):
-    if path.exists():
-        return FileResponse(path, headers=_NO_CACHE)
-    return JSONResponse({"error": f"{path.name} not found"}, status_code=404)
+def _shell_html() -> Optional[str]:
+    """The built SPA shell, or None when the frontend has not been built."""
+    index = WEB_DIST / "index.html"
+    if not index.exists():
+        return None
+    return index.read_text(encoding="utf-8")
 
 
-def _report_with_og(campaign_key: str, inject_campaign: bool = False):
-    """Serve report.html with the correct per-campaign <title> + Open Graph tags
-    baked in, so link previews (LINE/Messenger/etc., which don't run JS) show the
-    right campaign name/description instead of the static default."""
-    if not REPORT.exists():
-        return JSONResponse({"error": "report.html not found"}, status_code=404)
-    html = REPORT.read_text(encoding="utf-8")
+def _campaign_meta(campaign_key: str) -> tuple[str, str, str]:
+    """(name, emoji, subtitle) for a campaign — falls back to the key itself."""
     name, emoji, subtitle = campaign_key, "📊", ""
     try:
         from app.db import session_scope
@@ -127,37 +127,63 @@ def _report_with_og(campaign_key: str, inject_campaign: bool = False):
             c = s.get(Campaign, campaign_key)
             if c:
                 name, emoji, subtitle = c.name, (c.emoji or "📊"), (c.subtitle or "")
-    except Exception as exc:  # noqa: BLE001 — preview must never break the page
+    except Exception as exc:  # noqa: BLE001 — a preview must never break the page
         log.warning("OG lookup failed for %s: %s", campaign_key, exc)
-    title = f"{emoji} {name} — Campaign Report"
-    desc = subtitle or "รายงานผล KOL/Influencer แบบเรียลไทม์"
-    og = (f'<meta property="og:title" content="{_hesc(title)}">'
-          f'<meta property="og:description" content="{_hesc(desc)}">'
-          f'<meta property="og:type" content="website">'
-          f'<meta name="description" content="{_hesc(desc)}">'
-          f'<meta name="twitter:card" content="summary">')
-    html = re.sub(r"<title>.*?</title>", f"<title>{_hesc(title)}</title>", html, count=1, flags=re.S)
-    if inject_campaign:  # /v/<token> pages: tell the JS which campaign this is
-        import json as _json
-        og += f"<script>window.__CAMPAIGN__={_json.dumps(campaign_key)}</script>"
-    html = html.replace("</head>", og + "</head>", 1)
+    return name, emoji, subtitle
+
+
+def _serve_shell(campaign_key: Optional[str] = None, inject_campaign: bool = False):
+    """Serve the SPA shell.
+
+    When a campaign is given, its <title> + Open Graph tags are baked in
+    server-side. This is NOT cosmetic: LINE, Messenger and Facebook crawlers do
+    not execute JavaScript, so without this every shared report link would
+    preview as the generic app title. React overwrites the title on mount, so
+    real users see the same thing either way.
+
+    `inject_campaign` additionally exposes `window.__CAMPAIGN__` — the only way a
+    /v/<token> page can learn which campaign it is, since the token in the URL is
+    deliberately random rather than the campaign key.
+    """
+    html = _shell_html()
+    if html is None:
+        # The frontend build is missing. Fall back to the legacy pages if they are
+        # still present so the site stays up, and make the cause loud in the logs.
+        log.error(
+            "apps/web/dist/index.html not found — the frontend was not built. "
+            "Run `pnpm install && pnpm --filter @kol/web build` (see railway.json)."
+        )
+        legacy = LEGACY_DIR / ("report.html" if campaign_key else "home.html")
+        if legacy.exists():
+            return FileResponse(legacy, headers=_NO_CACHE)
+        return JSONResponse({"error": "frontend not built"}, status_code=503)
+
+    title, desc = _DEFAULT_TITLE, _DEFAULT_DESC
+    if campaign_key:
+        name, emoji, subtitle = _campaign_meta(campaign_key)
+        title = f"{emoji} {name} — Campaign Report"
+        desc = subtitle or _DEFAULT_DESC
+
+    head = (
+        f'<meta property="og:title" content="{_hesc(title)}">'
+        f'<meta property="og:description" content="{_hesc(desc)}">'
+        f'<meta property="og:type" content="website">'
+        f'<meta name="description" content="{_hesc(desc)}">'
+        f'<meta name="twitter:card" content="summary">'
+    )
+    if inject_campaign and campaign_key:
+        head += f"<script>window.__CAMPAIGN__={json.dumps(campaign_key)}</script>"
+
+    html = re.sub(r"<title>.*?</title>", f"<title>{_hesc(title)}</title>",
+                  html, count=1, flags=re.S)
+    # Drop the shell's placeholder description so we don't emit two of them.
+    html = re.sub(r'<meta\s+name="description"[^>]*>', "", html, count=1)
+    html = html.replace("</head>", head + "</head>", 1)
     return HTMLResponse(html, headers=_NO_CACHE)
 
 
-@app.get("/")
-def index():
-    """Influencer Real Time Report — home page listing all campaigns."""
-    return _page(HOME_PAGE)
-
-
-@app.get("/c/{campaign_key}")
-def campaign_report(campaign_key: str):
-    """Dynamic per-campaign report. All new campaigns use this URL pattern."""
-    return _report_with_og(campaign_key)
-
-
 def _serve_view(view_token: str):
-    """Resolve a client view token -> campaign and serve the view-only report."""
+    """Resolve a client view token -> campaign, then serve the view-only report."""
     from sqlalchemy import select as _select
 
     from app.db import session_scope
@@ -176,7 +202,24 @@ def _serve_view(view_token: str):
             "<div style='font-family:sans-serif;text-align:center;margin-top:20vh'>"
             "<h2>ไม่พบลิงก์รายงานนี้</h2><p>ลิงก์อาจถูกเปลี่ยน — "
             "กรุณาขอลิงก์ใหม่จากทีมงาน</p></div>", status_code=404)
-    return _report_with_og(key, inject_campaign=True)
+    return _serve_shell(key, inject_campaign=True)
+
+
+# ---------------------------------------------------------------------------
+# Page routes. Each one returns the same SPA shell; React Router decides what to
+# render. They are declared explicitly (rather than left to the catch-all) so the
+# per-campaign Open Graph tags above can be applied where they matter.
+# ---------------------------------------------------------------------------
+
+@app.get("/")
+def index():
+    return _serve_shell()
+
+
+@app.get("/c/{campaign_key}")
+def campaign_report(campaign_key: str):
+    """Dynamic per-campaign report. All new campaigns use this URL pattern."""
+    return _serve_shell(campaign_key)
 
 
 @app.get("/v/{view_token}")
@@ -194,48 +237,74 @@ def campaign_report_view_named(slug: str, view_token: str):
 
 
 # ---- legacy paths kept alive so old bookmarks + shared links still work ----
+# React redirects these to /c/<key> on mount; the server still applies the right
+# campaign's OG tags so link previews keep working for crawlers.
 @app.get("/report")
 def report():
     """Legacy: PAO Super Perfume campaign report (campaign=pao)."""
-    return _report_with_og("pao")
+    return _serve_shell("pao")
 
 
 @app.get("/sahagroup2027")
 def sahagroup2027():
     """Legacy: Sahagroup Fair 2027 report."""
-    return _report_with_og("sahagroup2027")
+    return _serve_shell("sahagroup2027")
 
 
 @app.get("/sahagroup")
 def sahagroup2026():
     """Alias for the Sahagroup 2026 report (the old '/' before Campaign Hub)."""
-    return _report_with_og("sahagroup")
+    return _serve_shell("sahagroup")
 
 
 @app.get("/tracker")
 def legacy_tracker():
-    """Old live KOL tracker dashboard (kept reachable)."""
-    return _page(INDEX)
+    """Live KOL tracker dashboard."""
+    return _serve_shell()
 
 
 @app.get("/kols")
 def kols_page():
-    """KOL roster editor (Tracker + Report) — open, no auth."""
-    return _page(KOLS_PAGE)
+    """KOL roster editor."""
+    return _serve_shell()
 
 
 @app.get("/token")
 def token_page():
-    """Apify token viewer/editor (page guarded client-side; API guarded server-side)."""
-    return _page(TOKEN_PAGE)
+    """Apify token viewer/editor."""
+    return _serve_shell()
 
 
 @app.get("/login")
 def login_page():
     """Sign-in page (Wazzup / Fareast Fameline identity)."""
-    return _page(LOGIN_PAGE)
+    return _serve_shell()
 
 
-# Serve any other static assets placed in frontend/ (kept minimal; SPA is one file).
-if FRONTEND_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
+# Legacy asset path: the pre-migration pages loaded /static/logo.png and
+# /static/auth.js. Kept mounted so any external reference still resolves.
+if LEGACY_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(LEGACY_DIR)), name="static")
+
+
+@app.get("/{full_path:path}")
+def spa_fallback(full_path: str):
+    """Serve built assets, and the SPA shell for any other client-side route.
+
+    Declared last so it only sees paths nothing above matched.
+    """
+    # Never answer an unmatched /api/ path with HTML — an API client expects
+    # JSON, and returning a page would turn a typo into a confusing parse error.
+    if full_path.startswith("api/"):
+        return JSONResponse({"detail": "not found"}, status_code=404)
+
+    if WEB_DIST.exists() and full_path:
+        candidate = (WEB_DIST / full_path).resolve()
+        # Path-traversal guard: the resolved path must stay inside the build dir.
+        if candidate.is_file() and candidate.is_relative_to(WEB_DIST.resolve()):
+            # Vite content-hashes everything under /assets, so those are
+            # immutable; anything else (logo.png, favicons) may be replaced.
+            headers = _IMMUTABLE if full_path.startswith("assets/") else _NO_CACHE
+            return FileResponse(candidate, headers=headers)
+
+    return _serve_shell()

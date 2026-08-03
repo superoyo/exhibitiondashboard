@@ -14,6 +14,14 @@ venv/
 # Local dev DB (pgserver data dir)
 .pgdata/
 
+# Node / pnpm workspace
+node_modules/
+dist/
+build/
+.vite/
+*.tsbuildinfo
+.eslintcache
+
 # OS / editor / local tooling
 .DS_Store
 .idea/

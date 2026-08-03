@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="/logo.png" />
+
+    <!-- Placeholder title/meta. For /c/:key and /v/:token the Express layer
+         rewrites these server-side before sending the shell, because LINE and
+         Messenger crawlers do not run JS. See MIGRATION_PLAN.md §6.6. -->
+    <title>Influencer Real Time Report</title>
+    <meta name="description" content="รายงานผล KOL/Influencer แบบเรียลไทม์" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

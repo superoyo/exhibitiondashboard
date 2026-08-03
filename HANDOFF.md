@@ -39,13 +39,15 @@
 ## 3. ตั้งค่าบนเครื่องใหม่
 
 ```bash
-# ต้องมี: git, Python 3.11, Claude Code (ล็อกอิน Claude account ไหนก็ได้)
+# ต้องมี: git, Python 3.11, Node 20+ (pnpm ผ่าน corepack), Claude Code
 
 git clone https://github.com/superoyo/exhibitiondashboard.git
 cd exhibitiondashboard
 
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+
+corepack enable pnpm && pnpm install
 
 # สร้าง .env (ดูค่าจาก Railway → Variables)
 cat > .env <<'EOF'
@@ -57,8 +59,15 @@ EOF
 # รัน local (embedded Postgres — ไม่ต้องลง Postgres เอง)
 python scripts/dev_db.py        # สตาร์ท DB + เขียน DATABASE_URL ลง .env
 alembic upgrade head            # สร้างตาราง + seed รายชื่อ KOL
-uvicorn app.main:app --reload   # เปิด http://localhost:8000
+uvicorn app.main:app --reload   # API ที่ http://localhost:8000
+
+# frontend (คนละ terminal) — ใช้ตัวนี้ตอนพัฒนา
+pnpm dev                        # http://localhost:5173
 ```
+
+> **frontend เป็น React SPA ที่ต้อง build** — FastAPI เสิร์ฟจาก `apps/web/dist`
+> ถ้าเปิด `:8000` แล้วขึ้น 503 คือยังไม่ได้ build → `pnpm --filter @kol/web build`
+> บน Railway มี `buildCommand` ใน `railway.json` รันให้อัตโนมัติแล้ว
 
 - **GitHub push:** เครื่องใหม่ต้องล็อกอิน GitHub ด้วย **Personal Access Token** (Settings → Developer settings → Tokens, scope `repo`) ใส่เป็น password ตอน `git push`
 - **Deploy:** `git push origin main` → Railway auto-deploy ~1–2 นาที · เช็คเวอร์ชันที่ `…/api/version`
@@ -98,14 +107,36 @@ uvicorn app.main:app --reload   # เปิด http://localhost:8000
 
 ```
 app/
-  main.py            routes หน้าเว็บ + startup seed
+  main.py            เสิร์ฟ SPA (apps/web/dist) + inject OG/__CAMPAIGN__ + startup seed
   api/routes.py      REST API (roster, report data, refresh, profiles, token)
-  models.py          ตาราง DB (SQLAlchemy)
+  models.py          ตาราง DB (SQLAlchemy) — เป็นเจ้าของ schema
   report_refresh.py  scrape logic (posts / facebook / profiles) + cost
   apify_client.py    เรียก Apify actor
-  seed.py            seed รายชื่อจาก config/
-  settings.py        token (DB→env) + ยอด cost สะสม
+  pptx_report.py     สร้าง PowerPoint (python-pptx) — คงไว้เป็น Python
+  tiein.py           AI tie-in shot (ffmpeg + Claude) — คงไว้เป็น Python
+apps/web/src/
+  features/          auth · campaigns · report · roster · tracker · settings
+  components/ui/     shadcn/ui primitives
+  lib/               axios (แนบ token) · format · colors · echarts · platforms
+  app/router.tsx     route ทั้งหมด — /v/... ต้องอยู่นอก RequireAuth
+apps/api/src/
+  routes/ controllers/ services/ repositories/ middleware/ config/ models/
+  middleware/openPaths.ts   allowlist ว่า endpoint ไหนไม่ต้อง login (ห้ามแก้เผิน ๆ)
+  middleware/pythonProxy.ts endpoint ที่ยังไม่ย้าย → ส่งต่อไป Python
+packages/shared/     types + zod schemas ใช้ร่วมกันสองฝั่ง
 config/              รายชื่อ KOL ตั้งต้นแต่ละแคมเปญ (.json)
-frontend/            report.html (รายงาน) · kols.html (แก้ไข) · token.html · index.html (tracker)
+frontend/            หน้าเดิม (fallback เท่านั้น — ลบได้เมื่อ deploy ใหม่ผ่านแล้ว)
 migrations/          alembic
 ```
+
+**⚠️ จุดที่ห้ามแก้เผิน ๆ** (มีเหตุผลอยู่ ดู `MIGRATION_PLAN.md` §6)
+
+- `_serve_shell()` ใน `app/main.py` ฝัง `<title>`/OG **ที่ server** เพราะ crawler ของ
+  LINE/Messenger ไม่รัน JS — ถ้าเอาออก ลิงก์ที่แชร์จะไม่มี preview
+- `/v/<token>` ต้องได้ `window.__CAMPAIGN__` จาก server และเปิดได้**โดยไม่ต้อง login**
+- สูตร ER: มี views → eng/views · ไม่มี views แต่มี followers → eng/followers ใส่ `*` ·
+  ไม่มีทั้งสอง → `—` (ห้ามโชว์ 0.00%)
+- `apps/api/middleware/openPaths.ts` = allowlist auth — ผิดทางไหนก็แย่ทั้งคู่
+  (เข้มเกิน = ลิงก์ลูกค้าพัง · หลวมเกิน = API หลุด). เช็คด้วย `pnpm --filter @kol/api verify:auth`
+- **Alembic เป็นเจ้าของ schema** — Drizzle ใช้ query เท่านั้น ห้ามรัน `drizzle-kit push`
+  เช็คว่าตรงกันด้วย `pnpm --filter @kol/api verify:schema`

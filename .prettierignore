@@ -1,0 +1,21 @@
+node_modules
+dist
+build
+coverage
+pnpm-lock.yaml
+
+# Legacy frontend — deleted page-by-page as each React version lands.
+# Do not reformat it; it makes the migration diffs unreadable.
+frontend/
+
+# Existing project docs — hand-maintained Thai tables. Prettier's column
+# padding assumes Latin glyph widths and misaligns them.
+README.md
+HANDOFF.md
+
+# Python side (owned by ruff/black, not prettier)
+app/
+migrations/
+scripts/
+_report_test/
+config/

@@ -10,7 +10,10 @@
 เว็บ dashboard ที่ **ดึงข้อมูล TikTok ของ KOL อัตโนมัติทุกเช้า 05:00 น. (เวลาไทย)** ผ่าน Apify
 เก็บลง Postgres แล้วแสดง KPI / กราฟ / ตาราง พร้อมแนวโน้มย้อนหลัง (trend) และ delta เทียบเมื่อวาน
 
-- **Stack:** Python 3.11 · FastAPI · SQLAlchemy + Alembic · PostgreSQL · httpx · ECharts + Tailwind (single-file SPA)
+- **Stack (backend):** Python 3.11 · FastAPI · SQLAlchemy + Alembic · PostgreSQL · httpx
+  · กำลังย้ายมา Express/TS (`apps/api`) — ดู `MIGRATION_PLAN.md`
+- **Stack (frontend):** Vite · React 18 · TypeScript · Tailwind + shadcn/ui · TanStack Query
+  · Redux Toolkit · Zustand · ECharts (เดิมเป็น HTML ไฟล์เดียวต่อหน้า)
 - **Data source:** Apify actor [`clockworks/tiktok-scraper`](https://apify.com/clockworks/tiktok-scraper)
 - **Deploy:** Railway (web service + cron service + Postgres plugin)
 
@@ -19,12 +22,18 @@
 ## โครงสร้าง
 
 ```
-app/            FastAPI app, scraper job, models, aggregation, API
-config/kols.json  ลิสต์ KOL (แก้ที่นี่ ไม่ต้องแตะโค้ด)
-migrations/     Alembic
-frontend/index.html  dashboard (เสิร์ฟจาก FastAPI ที่ /)
-scripts/        seed + dev helpers
+app/                 FastAPI: API + เสิร์ฟไฟล์ที่ build แล้ว (apps/web/dist) + scraper job
+apps/web/            React SPA (Vite + TS + Tailwind) — ทุกหน้าอยู่ที่นี่
+apps/api/            Express/TS (กำลังย้ายทีละกลุ่ม endpoint · ที่ยังไม่ย้าย = proxy ไป Python)
+packages/shared/     types + zod schemas ใช้ร่วมกันสองฝั่ง
+config/kols.json     ลิสต์ KOL (แก้ที่นี่ ไม่ต้องแตะโค้ด)
+migrations/          Alembic — เป็นเจ้าของ schema (อย่าใช้ drizzle push)
+frontend/            หน้าเดิม (fallback ถ้า build ไม่สำเร็จ — ลบได้เมื่อ deploy ผ่านแล้ว)
+scripts/             seed + dev helpers
 ```
+
+> ⚠️ **frontend ต้อง build ก่อน** ถึงจะมีหน้าเว็บ — FastAPI เสิร์ฟจาก `apps/web/dist`
+> (Railway รันให้อัตโนมัติผ่าน `buildCommand` ใน `railway.json`)
 
 ---
 
@@ -40,17 +49,42 @@ scripts/        seed + dev helpers
 
 ต้องมี PostgreSQL. ถ้าไม่มี ใช้ embedded Postgres (`pgserver`, ไม่ต้องลง system):
 
+**1) backend**
+
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt          # รวม pgserver สำหรับ dev
 
-cp .env.example .env                          # ใส่ APIFY_TOKEN, ADMIN_KEY, DATABASE_URL
+cp .env.example .env                          # ใส่ APIFY_TOKEN, ADMIN_KEY
+python scripts/dev_db.py                      # (ถ้าไม่มี Postgres) สตาร์ท embedded DB
 alembic upgrade head                          # สร้างตาราง
 python scripts/seed_kols.py                   # seed KOL 41 ราย
-
-python -m app.scrape                          # ดึงข้อมูลจริง 1 ครั้ง (~$1)
-uvicorn app.main:app --reload                 # เปิด http://localhost:8000
+uvicorn app.main:app --reload                 # API ที่ http://localhost:8000
 ```
+
+**2) frontend** — ต้องมี Node 20+ (`corepack enable pnpm`)
+
+```bash
+pnpm install
+pnpm dev                                      # http://localhost:5173 (proxy /api ไป :8000)
+```
+
+ตอนพัฒนาใช้ `:5173` (hot reload). ถ้าจะทดสอบแบบ deploy จริง:
+
+```bash
+pnpm --filter @kol/web build                  # → apps/web/dist
+uvicorn app.main:app --reload                 # แล้วเปิด http://localhost:8000
+```
+
+**3) Express API (ระหว่างย้าย, ไม่บังคับ)**
+
+```bash
+pnpm dev:api                                  # http://localhost:8080 · proxy ที่ยังไม่ย้ายไป :8000
+pnpm --filter @kol/api verify:schema          # เช็ค Drizzle schema ตรงกับ DB จริง
+pnpm --filter @kol/api verify:auth            # เช็ค auth allowlist ตรงกับ Python
+```
+
+> `python -m app.scrape` ดึงข้อมูลจริง 1 ครั้ง (**~$1 ค่า Apify**) — ไม่จำเป็นสำหรับพัฒนา UI
 
 > ถ้าใช้ `pgserver` ดูสคริปต์ `scripts/dev_db.py` (สร้าง/รัน embedded Postgres + พิมพ์ DATABASE_URL).
 
