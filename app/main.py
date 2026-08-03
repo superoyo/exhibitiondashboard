@@ -158,6 +158,17 @@ def _serve_shell(campaign_key: Optional[str] = None, inject_campaign: bool = Fal
             return FileResponse(legacy, headers=_NO_CACHE)
         return JSONResponse({"error": "frontend not built"}, status_code=503)
 
+    return HTMLResponse(_inject_meta(html, campaign_key, inject_campaign),
+                        headers=_NO_CACHE)
+
+
+def _inject_meta(html: str, campaign_key: Optional[str] = None,
+                 inject_campaign: bool = False) -> str:
+    """Bake the per-campaign <title> + Open Graph tags into an HTML page.
+
+    Shared by the SPA shell and the legacy pages that have not been ported yet,
+    so a shared link previews the same either way.
+    """
     title, desc = _DEFAULT_TITLE, _DEFAULT_DESC
     if campaign_key:
         name, emoji, subtitle = _campaign_meta(campaign_key)
@@ -176,33 +187,70 @@ def _serve_shell(campaign_key: Optional[str] = None, inject_campaign: bool = Fal
 
     html = re.sub(r"<title>.*?</title>", f"<title>{_hesc(title)}</title>",
                   html, count=1, flags=re.S)
-    # Drop the shell's placeholder description so we don't emit two of them.
+    # Drop the page's placeholder description so we don't emit two of them.
     html = re.sub(r'<meta\s+name="description"[^>]*>', "", html, count=1)
-    html = html.replace("</head>", head + "</head>", 1)
-    return HTMLResponse(html, headers=_NO_CACHE)
+    return html.replace("</head>", head + "</head>", 1)
 
 
-def _serve_view(view_token: str):
-    """Resolve a client view token -> campaign, then serve the view-only report."""
+def _serve_legacy(name: str, campaign_key: Optional[str] = None,
+                  inject_campaign: bool = False):
+    """Serve a pre-migration page from frontend/.
+
+    Only for views the React app does not implement yet (see the /vi/ and
+    /kol-list routes). Everything else goes through _serve_shell.
+    """
+    page = LEGACY_DIR / name
+    if not page.exists():
+        return JSONResponse({"error": f"{name} not found"}, status_code=404)
+    return HTMLResponse(
+        _inject_meta(page.read_text(encoding="utf-8"), campaign_key, inject_campaign),
+        headers=_NO_CACHE,
+    )
+
+
+def _campaign_for_view_token(view_token: str) -> Optional[str]:
+    """Client/influencer links carry a random token, not the campaign key."""
     from sqlalchemy import select as _select
 
     from app.db import session_scope
     from app.models import Campaign
-    key = None
     try:
         with session_scope() as s:
             c = s.execute(_select(Campaign).where(
                 Campaign.view_token == view_token)).scalar_one_or_none()
-            if c:
-                key = c.key
+            return c.key if c else None
     except Exception as exc:  # noqa: BLE001
         log.warning("view-token lookup failed: %s", exc)
+        return None
+
+
+def _view_not_found():
+    return HTMLResponse(
+        "<div style='font-family:sans-serif;text-align:center;margin-top:20vh'>"
+        "<h2>ไม่พบลิงก์รายงานนี้</h2><p>ลิงก์อาจถูกเปลี่ยน — "
+        "กรุณาขอลิงก์ใหม่จากทีมงาน</p></div>", status_code=404)
+
+
+def _serve_view(view_token: str):
+    """Resolve a client view token -> campaign, then serve the view-only report."""
+    key = _campaign_for_view_token(view_token)
     if not key:
-        return HTMLResponse(
-            "<div style='font-family:sans-serif;text-align:center;margin-top:20vh'>"
-            "<h2>ไม่พบลิงก์รายงานนี้</h2><p>ลิงก์อาจถูกเปลี่ยน — "
-            "กรุณาขอลิงก์ใหม่จากทีมงาน</p></div>", status_code=404)
+        return _view_not_found()
     return _serve_shell(key, inject_campaign=True)
+
+
+def _serve_influencer_view(view_token: str):
+    """Influencer link (/vi/) — still the legacy report page.
+
+    The React app has neither a /vi route nor the influencer-only layout
+    (report.html switches on body.influencer-view), so serving the SPA shell
+    here would render the not-found page and lose the feature. Point this at
+    _serve_view once the influencer view is ported.
+    """
+    key = _campaign_for_view_token(view_token)
+    if not key:
+        return _view_not_found()
+    return _serve_legacy("report.html", key, inject_campaign=True)
 
 
 # ---------------------------------------------------------------------------
@@ -241,14 +289,14 @@ def campaign_report_view_influencer(view_token: str):
     """Public, view-only report for INFLUENCERS. Same content as /v/ but a
     distinct entry point (URL namespace) so influencer links stay separate
     from client links and can be evolved independently later."""
-    return _serve_view(view_token)
+    return _serve_influencer_view(view_token)
 
 
 @app.get("/vi/{slug}/{view_token}")
 def campaign_report_view_influencer_named(slug: str, view_token: str):
     """Same as /vi/<token> but with a readable campaign-name slug in front
     (cosmetic only — resolution is by the token; the slug is ignored)."""
-    return _serve_view(view_token)
+    return _serve_influencer_view(view_token)
 
 
 # ---- legacy paths kept alive so old bookmarks + shared links still work ----
@@ -286,8 +334,13 @@ def kols_page():
 
 @app.get("/kol-list")
 def kol_list_page():
-    """KOL directory across all campaigns (page guarded client-side)."""
-    return _page(FRONTEND_DIR / "kol-list.html")
+    """KOL directory across all campaigns (page guarded client-side).
+
+    Still the legacy page — the React app does not implement this view yet.
+    (FRONTEND_DIR became LEGACY_DIR in the migration; the merge left this
+    reference dangling, which crashed the route.)
+    """
+    return _serve_legacy("kol-list.html")
 
 
 @app.get("/token")
