@@ -6,25 +6,36 @@
 #   - Python  runs the app (uvicorn) and the migrations (alembic)
 #   - Node    builds the React SPA that Python then serves from apps/web/dist
 #
-# Nixpacks auto-detects a provider from the files it finds. With `package.json`
-# and `requirements.txt` both present it picked Node only and skipped Python, so
-# `uvicorn` did not exist at start-up and the deploy answered 502 with
-# "Application failed to respond". Declaring the providers explicitly is what
-# prevents that — do not remove this file, and do not rely on auto-detection.
+# Nixpacks auto-detects ONE provider from the files it finds. With package.json
+# and requirements.txt both present it picked Node, skipped Python, and `uvicorn`
+# did not exist at start-up — the deploy answered 502 "Application failed to
+# respond". Verified with `nixpacks plan` on that exact commit: setup installed
+# nodejs_24 + pnpm and nothing else.
 #
-# `python` is listed first so its start command / venv remain the primary ones;
-# Node only contributes the build.
-providers = ["python", "node"]
+# `providers` does NOT merge several providers — nixpacks 1.41 honours only the
+# FIRST entry. `providers = ["python", "node"]` yields a Python-only setup with
+# no pnpm at all, so a pnpm build command would fail. That is why Node is added
+# to the setup phase by hand below instead.
+providers = ["python"]
 
-# The install phases of both providers still run as normal (pip install for
-# Python, pnpm install for Node) — only the build phase is overridden, because
-# the root `build` script would also compile apps/api, which is not deployed yet.
+# "..." keeps the Python provider's own packages (python311, postgresql_16.dev,
+# gcc) and appends Node. Dropping the "..." would remove Python and reintroduce
+# the 502. pnpm-9_x matches "packageManager": "pnpm@9.15.4" in package.json.
+[phases.setup]
+nixPkgs = ["...", "nodejs_22", "pnpm-9_x"]
+
+# The Python provider owns the install phase (pip install -r requirements.txt),
+# so the Node dependency install has to live here, after it.
+# Only apps/web is built: the root `build` script would also compile apps/api,
+# which is not deployed yet.
 [phases.build]
+dependsOn = ["install"]
 cmds = [
+  "pnpm install --frozen-lockfile",
   "pnpm --filter @kol/web build",
   # Fail the BUILD if the SPA is missing, rather than deploying a server with
   # nothing to serve. app/main.py falls back to frontend/ and logs loudly, but a
-  # silent fallback is worse than a red build.
+  # silent fallback hides the real problem.
   "test -f apps/web/dist/index.html || (echo 'BUILD FAILED: apps/web/dist/index.html missing' && exit 1)",
 ]
 
