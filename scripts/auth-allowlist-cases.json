@@ -1,0 +1,44 @@
+{
+  "_comment": [
+    "Expected auth decisions for the API allowlist (MIGRATION_PLAN.md §6.4).",
+    "ONE table, read by BOTH implementations' checkers, so Python and Express are",
+    "held to the same expectations instead of merely to each other:",
+    "  scripts/verify-auth-allowlist.py        -> app.main._needs_auth",
+    "  apps/api/scripts/check-needs-auth.ts    -> needsAuth()",
+    "Comparing the two services only ever proved they AGREED. /api/campaigns/summary",
+    "was open in both, and the parity check passed while the whole client roster was",
+    "public. These expectations are absolute, so a shared mistake now fails.",
+    "needsAuth true = login required. false = deliberately public.",
+    "Before setting any entry to false, read the two failure modes in openPaths.ts."
+  ],
+  "cases": [
+    { "method": "GET", "path": "/api/version", "needsAuth": false, "why": "exact-match open" },
+    { "method": "GET", "path": "/api/health", "needsAuth": false, "why": "exact-match open" },
+    { "method": "POST", "path": "/api/scrape/run", "needsAuth": false, "why": "has its own X-ADMIN-KEY gate" },
+
+    { "method": "GET", "path": "/api/auth/profile", "needsAuth": false, "why": "login/profile proxy" },
+    { "method": "GET", "path": "/api/img", "needsAuth": false, "why": "image cache for view-only pages" },
+    { "method": "GET", "path": "/api/report/data", "needsAuth": false, "why": "view-only pages render this" },
+    { "method": "GET", "path": "/api/report/tiein/status", "needsAuth": false, "why": "read-only job progress" },
+    { "method": "GET", "path": "/api/summary", "needsAuth": false, "why": "legacy tracker read" },
+    { "method": "GET", "path": "/api/trend", "needsAuth": false, "why": "legacy tracker read" },
+    { "method": "GET", "path": "/api/posts", "needsAuth": false, "why": "legacy tracker read" },
+    { "method": "GET", "path": "/api/kols/somebody", "needsAuth": false, "why": "legacy tracker read" },
+
+    { "method": "GET", "path": "/api/campaigns/pao", "needsAuth": false, "why": "one campaign's title, for view-only pages" },
+    { "method": "GET", "path": "/api/campaigns/00003", "needsAuth": false, "why": "numeric key, same exception" },
+    { "method": "PATCH", "path": "/api/campaigns/pao", "needsAuth": true, "why": "GET-only exception must not cover writes" },
+    { "method": "DELETE", "path": "/api/campaigns/pao", "needsAuth": true, "why": "GET-only exception must not cover writes" },
+
+    { "method": "GET", "path": "/api/campaigns/summary", "needsAuth": true, "why": "REGRESSION: spans every campaign. Leaked the client roster and every campaign key while it matched the single-campaign GET exception" },
+
+    { "method": "GET", "path": "/api/campaigns", "needsAuth": true, "why": "full campaign list" },
+    { "method": "GET", "path": "/api/token", "needsAuth": true, "why": "protected read" },
+    { "method": "GET", "path": "/api/settings/ai/key", "needsAuth": true, "why": "secret" },
+    { "method": "POST", "path": "/api/report/refresh", "needsAuth": true, "why": "costly mutation" },
+    { "method": "POST", "path": "/api/campaigns", "needsAuth": true, "why": "mutation" },
+
+    { "method": "GET", "path": "/login", "needsAuth": false, "why": "not an /api path — the SPA handles page guarding" },
+    { "method": "GET", "path": "/v/sometoken", "needsAuth": false, "why": "not an /api path" }
+  ]
+}

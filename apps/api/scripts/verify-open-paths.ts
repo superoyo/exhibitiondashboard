@@ -9,6 +9,11 @@
  *   - too strict → public client links (/v/<token>) break for people with no account
  *   - too loose  → the API is exposed to the internet
  *
+ * ⚠️ This proves the two agree — NOT that either is right. It passed for weeks
+ * while /api/campaigns/summary was open in BOTH, serving every client's campaign
+ * roster unauthenticated. For expectations that a shared mistake cannot satisfy,
+ * see scripts/auth-allowlist-cases.json and the two checkers that read it.
+ *
  * Run with both services up:
  *   PY=http://127.0.0.1:8000 EX=http://127.0.0.1:8080 tsx scripts/verify-open-paths.ts
  */

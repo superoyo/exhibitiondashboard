@@ -30,12 +30,23 @@ export const OPEN_API_EXACT = new Set(['/api/version', '/api/health', '/api/scra
  * Single-campaign metadata is read by view-only pages to render the title.
  * GET only — the PATCH/DELETE on the same path must stay protected.
  */
-const CAMPAIGN_META_GET = /^\/api\/campaigns\/[^/]+$/;
+const CAMPAIGN_META_GET = /^\/api\/campaigns\/([^/]+)$/;
+
+/**
+ * Sub-paths under /api/campaigns/ that are NOT a campaign key, so they must not
+ * inherit the single-campaign GET exception above.
+ *
+ * `summary` spans every campaign. While it inherited the exception it served the
+ * whole client roster — brand names, internal project codes, KOL and view counts
+ * — plus every campaign key, unauthenticated.
+ */
+const CAMPAIGN_NON_KEYS = new Set(['summary']);
 
 export function needsAuth(method: string, path: string): boolean {
   if (!path.startsWith('/api/')) return false;
   if (OPEN_API_EXACT.has(path)) return false;
   if (OPEN_API_PREFIXES.some((prefix) => path.startsWith(prefix))) return false;
-  if (method.toUpperCase() === 'GET' && CAMPAIGN_META_GET.test(path)) return false;
+  const meta = CAMPAIGN_META_GET.exec(path);
+  if (method.toUpperCase() === 'GET' && meta && !CAMPAIGN_NON_KEYS.has(meta[1]!)) return false;
   return true;
 }

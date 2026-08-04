@@ -38,6 +38,15 @@ _OPEN_API_PREFIXES = (
 )
 _OPEN_API_EXACT = {"/api/version", "/api/health", "/api/scrape/run"}  # scrape/run has X-ADMIN-KEY
 
+# Sub-paths under /api/campaigns/ that are NOT a campaign key. The GET exception
+# below exists so a view-only page can read ONE campaign's title; these endpoints
+# span every campaign, so they must not inherit it.
+#
+# `summary` did inherit it, and that exposed the whole client roster — brand
+# names, internal project codes, KOL and view counts — to anyone, plus every
+# campaign key, which is all you need to then read /api/report/data.
+_CAMPAIGN_NON_KEYS = frozenset({"summary"})
+
 
 def _needs_auth(method: str, path: str) -> bool:
     if not path.startswith("/api/"):
@@ -45,7 +54,8 @@ def _needs_auth(method: str, path: str) -> bool:
     if path in _OPEN_API_EXACT or path.startswith(_OPEN_API_PREFIXES):
         return False
     # single-campaign metadata is read by view-only pages for the title
-    if method == "GET" and re.fullmatch(r"/api/campaigns/[^/]+", path):
+    m = re.fullmatch(r"/api/campaigns/([^/]+)", path)
+    if method == "GET" and m and m.group(1) not in _CAMPAIGN_NON_KEYS:
         return False
     return True
 
