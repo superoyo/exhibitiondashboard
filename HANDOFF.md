@@ -103,6 +103,50 @@ pnpm dev                        # http://localhost:5173
 
 ---
 
+## 5.1 Deploy — ตอนนี้มีกี่ service
+
+Railway มี service เดียว (`exhibitiondashboard`) รัน **Python** ซึ่งเสิร์ฟทั้ง API และหน้าเว็บ
+`railway.json` + `nixpacks.toml` ที่ root เป็นของ service นี้
+
+**Express (`@kol/api`) ยังไม่ได้ deploy** โค้ดพร้อมแล้วแต่ยังไม่มีใครเรียกใช้จริง
+
+### ทำไม Express ยังเอามาแทน Python ตรง ๆ ไม่ได้
+
+`apps/api/src/app.ts` mount ไว้แค่ `/api` เท่านั้น — **ไม่มี** static asset, ไม่มี SPA
+fallback, ไม่มี `/v/<token>`, ไม่มี inject OG/`window.__CAMPAIGN__`
+(`env.webDistPath` คำนวณไว้แต่ยังไม่มีใครใช้) ถ้าชี้โดเมนมาที่ Express ตอนนี้
+`/` `/login` `/report` `/v/...` `/assets/*` จะ 404 ทั้งหมด เหลือแค่ `/api`
+
+และถึงย้ายได้ ตอนนี้ก็ยังไม่ได้อะไร เพราะ Express พอร์ต native แค่ campaigns + roster
+ที่เหลือ proxy กลับไป Python อยู่ดี — ได้ hop เพิ่มมาหนึ่งชั้นโดยที่ Python ก็ยังต้องอยู่
+
+### ถ้าจะ deploy Express เป็น service ที่สอง
+
+ใช้ `railway.api.json` (มีในรีโปแล้ว) — ตั้งใน Railway → service ใหม่ → Settings:
+
+| ตั้งค่า | ค่า |
+|---|---|
+| Config-as-code path | `railway.api.json` |
+| Root Directory | ปล่อยว่าง (build จาก repo root — pnpm workspace ต้องเห็น lockfile) |
+
+Variables ที่ต้องใส่:
+
+| ตัวแปร | ค่า |
+|---|---|
+| `DATABASE_URL` | ตัวเดียวกับ service Python |
+| `PYTHON_SERVICE_URL` | URL ของ service Python (endpoint ที่ยังไม่พอร์ตจะ proxy ไปที่นี่) |
+| `NODE_ENV` | `production` |
+| `TZ` | `Asia/Bangkok` — load-bearing ดู `apps/api/src/utils/dates.ts` |
+| `ADMIN_KEY` / `APIFY_TOKEN` | ตามค่าเดิม |
+
+⚠️ **กับดัก:** `Procfile` ที่ root เขียนว่า `alembic upgrade head && uvicorn app.main:app …`
+Nixpacks อ่านไฟล์นี้เป็น start command ถ้า `railway.api.json` ไม่ override
+`startCommand` service ใหม่จะไป**รัน migration แล้วสตาร์ต Python** แทน Express
+`railway.api.json` override ไว้ให้แล้ว — และ **service นี้ต้องไม่รัน alembic**
+เจ้าของ schema คือฝั่ง Python ที่เดียว
+
+---
+
 ## 6. โครงไฟล์ย่อ
 
 ```
