@@ -88,21 +88,21 @@ export function ReportActions({
     reader.readAsDataURL(file);
   }
 
-  async function handleShare() {
+  /** Open a public view page (client /v or influencer /vi) in a NEW TAB. The
+   * tab must open synchronously on the click so popup blockers allow it; the
+   * token is fetched after and the tab is then pointed at the link. */
+  async function openViewTab(prefix: '/v' | '/vi', doneMessage: string) {
+    const win = window.open('', '_blank');
     try {
       const { token } = await getViewToken(campaign);
       if (!token) throw new Error('ขอลิงก์ไม่สำเร็จ');
       const slug = slugify(campaignName) || campaign;
-      const link = `${window.location.origin}/v/${slug}/${token}`;
-      try {
-        await navigator.clipboard.writeText(link);
-        onStatus(`✅ คัดลอกลิงก์สำหรับลูกค้าแล้ว — ${link}`);
-      } catch {
-        // Clipboard blocked (insecure context / permission) — show it instead so
-        // the link is never simply lost.
-        window.prompt('คัดลอกลิงก์นี้ส่งให้ลูกค้า (ดูได้อย่างเดียว):', link);
-      }
+      const link = `${window.location.origin}${prefix}/${slug}/${token}`;
+      if (win) win.location.href = link;
+      else window.open(link, '_blank');
+      onStatus(doneMessage);
     } catch (error) {
+      if (win) win.close();
       onStatus(`⚠️ ${apiErrorMessage(error)}`);
     }
   }
@@ -149,10 +149,17 @@ export function ReportActions({
       </Button>
 
       <Button
-        onClick={() => void handleShare()}
+        onClick={() => void openViewTab('/v', '✅ เปิดหน้าสำหรับลูกค้าในแท็บใหม่แล้ว')}
         className="rounded-[10px] bg-blue-600 font-bold hover:bg-blue-700"
       >
         🔗 View Only for Client
+      </Button>
+
+      <Button
+        onClick={() => void openViewTab('/vi', '✅ เปิดหน้า Influencer ในแท็บใหม่แล้ว')}
+        className="rounded-[10px] bg-cyan-600 font-bold hover:bg-cyan-700"
+      >
+        👥 Influencer Status
       </Button>
 
       <Button onClick={handleRefresh} disabled={busy} className="rounded-[10px] font-bold">
