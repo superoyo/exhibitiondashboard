@@ -20,9 +20,19 @@ providers = ["python"]
 
 # "..." keeps the Python provider's own packages (python311, postgresql_16.dev,
 # gcc) and appends Node. Dropping the "..." would remove Python and reintroduce
-# the 502. pnpm-9_x matches "packageManager": "pnpm@9.15.4" in package.json.
+# the 502.
+#
+# These names must exist in the nixpkgs archive THIS provider pins
+# (bc8f8d1be…), which is NOT the archive the Node provider pins. Writing
+# `pnpm-9_x` here — the name nixpacks' own Node provider uses — failed the build
+# with `error: undefined variable 'pnpm-9_x'`, because that name exists only in
+# the Node provider's archive. Here the attribute is `pnpm_9`, and `nodejs_24`
+# does not exist at all (this archive goes up to nodejs_22).
+#
+# `nixpacks plan` does NOT catch this — it emits package names without resolving
+# them. Run scripts/verify-nixpacks-pkgs.py after editing this list.
 [phases.setup]
-nixPkgs = ["...", "nodejs_22", "pnpm-9_x"]
+nixPkgs = ["...", "nodejs_22", "pnpm_9"]
 
 # The Python provider owns the install phase (pip install -r requirements.txt),
 # so the Node dependency install has to live here, after it.
