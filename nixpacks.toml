@@ -1,0 +1,34 @@
+# Build plan for Railway (Nixpacks).
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# This repo needs BOTH toolchains:
+#   - Python  runs the app (uvicorn) and the migrations (alembic)
+#   - Node    builds the React SPA that Python then serves from apps/web/dist
+#
+# Nixpacks auto-detects a provider from the files it finds. With `package.json`
+# and `requirements.txt` both present it picked Node only and skipped Python, so
+# `uvicorn` did not exist at start-up and the deploy answered 502 with
+# "Application failed to respond". Declaring the providers explicitly is what
+# prevents that — do not remove this file, and do not rely on auto-detection.
+#
+# `python` is listed first so its start command / venv remain the primary ones;
+# Node only contributes the build.
+providers = ["python", "node"]
+
+# The install phases of both providers still run as normal (pip install for
+# Python, pnpm install for Node) — only the build phase is overridden, because
+# the root `build` script would also compile apps/api, which is not deployed yet.
+[phases.build]
+cmds = [
+  "pnpm --filter @kol/web build",
+  # Fail the BUILD if the SPA is missing, rather than deploying a server with
+  # nothing to serve. app/main.py falls back to frontend/ and logs loudly, but a
+  # silent fallback is worse than a red build.
+  "test -f apps/web/dist/index.html || (echo 'BUILD FAILED: apps/web/dist/index.html missing' && exit 1)",
+]
+
+# NOTE: the start command is NOT defined here. railway.json owns it (and would
+# override anything set here anyway), so it lives in exactly one place:
+#   alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+# Migrations run at DEPLOY time — during build there is no database yet.
