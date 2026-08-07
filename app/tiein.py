@@ -53,10 +53,15 @@ log = logging.getLogger("tiein")
 # sampled cannot be picked by any model. Set TIEIN_MODEL=claude-sonnet-5 (~3x)
 # or claude-opus-5 (~7x per clip) when a campaign needs a sharper pick.
 MODEL = os.getenv("TIEIN_MODEL", "claude-haiku-4-5")
-# What the model SEES — the decoded frame stays bigger (see module docstring).
-# NOTE this caps the LONG edge, whereas the old ffmpeg `scale=480:-2` capped the
-# WIDTH: on 9:16 clips that was 480x853, so a 640 cap here would have SHRUNK
-# what the model sees. 896 -> 504x896, a little sharper than before.
+# What gets STORED and ends up on the PPTX slide, capped by WIDTH (720 -> 720x1280
+# on a 9:16 clip). A slide preview is a couple of inches wide, so more than this
+# only inflated the deck and the ImageCache rows.
+DECODE_MAX_WIDTH = 720
+# What the model SEES — smaller than what is stored, and capped by the LONG edge
+# rather than the width. Sending frames at DECODE_MAX_WIDTH would roughly double
+# the image tokens. NOTE the old ffmpeg `scale=480:-2` capped the WIDTH, so on
+# 9:16 clips it sent 480x853 — a 640 cap here would have SHRUNK what the model
+# sees, not grown it. 896 -> 504x896, a little sharper than before.
 PICK_MAX_SIDE = 896
 # Haiku 4.5 does not think, so this budget is nearly free here — it exists for
 # the TIEIN_MODEL override: on Sonnet 5 / Opus 5 thinking is ON BY DEFAULT and
@@ -269,23 +274,27 @@ def _extract_frames(video_path: str) -> list:
       - every 2s, not every 3s: a product that is only on screen for a beat
         can fall between samples entirely, and no model can pick a frame that
         was never decoded.
-      - source resolution (capped at 1080 wide) instead of 480: the winning
-        frame is what the PPTX slide shows, so it is decoded big and only
-        shrunk on the way to the model. Costs no extra tokens. Only the frames
-        that survive thinning are read into memory, so a 3-minute clip costs
-        a few MB rather than 90 full-size frames at once.
+      - DECODE_MAX_WIDTH instead of 480: the winning frame is what the PPTX
+        slide shows, so it is decoded at slide quality and only shrunk on the
+        way to the model. Costs no extra tokens. Only the frames that survive
+        thinning are read into memory, so a 3-minute clip costs a couple of MB
+        rather than 90 frames at once.
     """
     import imageio_ffmpeg
     exe = imageio_ffmpeg.get_ffmpeg_exe()
     outdir = tempfile.mkdtemp(prefix="tiein_")
     pattern = os.path.join(outdir, "f_%03d.jpg")
     subprocess.run(
-        # min(1080,iw) never upscales — a 720p clip stays 720p instead of
-        # paying ~2x the image tokens for interpolated pixels. The escaped
-        # comma is required: a bare one would read as a filter separator.
+        # min(w,iw) never upscales — an already-small clip keeps its own size
+        # instead of being blown up into interpolated pixels. The escaped comma
+        # is required: a bare one would read as a filter separator.
         [exe, "-y", "-i", video_path,
-         "-vf", r"fps=1/2,scale=min(1080\,iw):-2",
-         "-frames:v", "90", "-q:v", "3", pattern],
+         "-vf", rf"fps=1/2,scale=min({DECODE_MAX_WIDTH}\,iw):-2",
+         # q4 is the project's long-standing value and stays: measured against
+         # both a noisy and a flat test source, q3 buys ~10% more bytes for
+         # nothing a slide preview can show. Frame BYTES track picture content
+         # far more than this flag (13KB flat vs 51KB noisy at the same q).
+         "-frames:v", "90", "-q:v", "4", pattern],
         capture_output=True, timeout=300,
     )
     paths = sorted(glob.glob(os.path.join(outdir, "f_*.jpg")))
