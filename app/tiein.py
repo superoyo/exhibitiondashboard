@@ -5,12 +5,25 @@ Two capabilities:
    a few cover images and summarises WHAT the campaign's product is. Stored in
    app_settings (product:<campaign>) and reused.
 2. run_tiein(campaign)   — background job: re-scrape the campaign's TikTok
-   posts WITH video download (Apify), sample ~8 frames per video (bundled
-   ffmpeg), let Claude pick the frame that best shows the product being
-   held/used, and cache that frame; the PPTX then uses it as the post preview.
+   posts WITH video download (Apify), sample a frame every 2s (bundled ffmpeg),
+   let Claude pick the frame that best shows the product being held/used, and
+   cache that frame; the PPTX then uses it as the post preview.
 
-Requires ANTHROPIC_API_KEY (Railway env). Model via TIEIN_MODEL
-(default claude-haiku-4-5 — cheap vision).
+Cost shape of the pick, since it is the whole design: one call per clip, every
+frame in it, each frame shrunk to PICK_MAX_SIDE. Image tokens dominate the bill
+and scale with frame COUNT x AREA, so FRAMES_PER_VIDEO and PICK_MAX_SIDE move
+the number far more than the model tier does — which is why the coverage went up
+and the model stayed cheap. A two-stage variant (cheap model shortlists,
+expensive one decides between the survivors at full size) was measured at
+roughly 7x the per-clip cost and deliberately not kept; TIEIN_MODEL covers the
+case where one campaign is worth paying for.
+
+Frames are DECODED at source resolution but SENT shrunk: the winning frame goes
+into ImageCache for the PPTX slide, so decoding small would soften every slide
+to save tokens that shrinking already saves.
+
+Requires ANTHROPIC_API_KEY (Railway env). Model via TIEIN_MODEL — overridable
+from Railway Variables with no deploy.
 """
 from __future__ import annotations
 
@@ -35,12 +48,27 @@ from app.report_refresh import _redact, state_for
 
 log = logging.getLogger("tiein")
 
-MODEL = os.getenv("TIEIN_MODEL", "claude-haiku-4-5-20251001")
+# Cheap vision. The accuracy lever here is frame COVERAGE, not model tier: at
+# $1/M input, doubling the frames costs cents, while a frame that was never
+# sampled cannot be picked by any model. Set TIEIN_MODEL=claude-sonnet-5 (~3x)
+# or claude-opus-5 (~7x per clip) when a campaign needs a sharper pick.
+MODEL = os.getenv("TIEIN_MODEL", "claude-haiku-4-5")
+# What the model SEES — the decoded frame stays bigger (see module docstring).
+# NOTE this caps the LONG edge, whereas the old ffmpeg `scale=480:-2` capped the
+# WIDTH: on 9:16 clips that was 480x853, so a 640 cap here would have SHRUNK
+# what the model sees. 896 -> 504x896, a little sharper than before.
+PICK_MAX_SIDE = 896
+# Haiku 4.5 does not think, so this budget is nearly free here — it exists for
+# the TIEIN_MODEL override: on Sonnet 5 / Opus 5 thinking is ON BY DEFAULT and
+# max_tokens caps thinking PLUS the reply, so the old value of 10 would spend
+# the budget on thinking and return an empty string, which this code reads as
+# "no product in this clip" — for every single clip.
+PICK_MAX_TOKENS = 2048
 MAX_VIDEOS_PER_RUN = 40
-FRAMES_PER_VIDEO = 12
+FRAMES_PER_VIDEO = 24
 # bump when the sampling/selection algorithm improves — posts whose stored
 # shot came from an older version are automatically redone on the next run
-TIEIN_VERSION = "tiein4"
+TIEIN_VERSION = "tiein5"
 # the actor only ever finishes downloading the FIRST video of a run — so each
 # clip gets its own single-url run, several in flight at once
 VIDEO_WORKERS = 5
@@ -77,14 +105,16 @@ def _api_error_thai(r) -> str:
     return f"Claude API HTTP {r.status_code}: {txt[:150]}"
 
 
-def _claude(content: list, max_tokens: int = 300) -> Optional[str]:
+def _claude(content: list, max_tokens: int = 1500) -> Optional[str]:
     from app.settings import get_anthropic_key
     key = get_anthropic_key()
     if not key:
         raise RuntimeError("ยังไม่ได้ตั้งค่า Claude API key — ใส่ได้ที่เมนู Apify Token (หน้า Home)")
     r = httpx.post(
         "https://api.anthropic.com/v1/messages",
-        timeout=90,
+        # two dozen frames per call, and a TIEIN_MODEL override puts a thinking
+        # model behind it — the old 90s was tuned for 12 frames on Haiku
+        timeout=240,
         headers={"x-api-key": key, "anthropic-version": "2023-06-01",
                  "content-type": "application/json"},
         json={"model": MODEL, "max_tokens": max_tokens,
@@ -93,6 +123,7 @@ def _claude(content: list, max_tokens: int = 300) -> Optional[str]:
     if r.status_code != 200:
         raise RuntimeError(_api_error_thai(r))
     data = r.json()
+    # thinking blocks are type "thinking", so they never reach the parsed text
     parts = [b.get("text", "") for b in data.get("content", []) if b.get("type") == "text"]
     return "".join(parts).strip()
 
@@ -118,6 +149,10 @@ def ai_status(force: bool = False) -> dict:
                 "https://api.anthropic.com/v1/messages", timeout=20,
                 headers={"x-api-key": key, "anthropic-version": "2023-06-01",
                          "content-type": "application/json"},
+                # No `thinking` key on purpose: omitting it is the only form
+                # valid on every model TIEIN_MODEL may name. Haiku 4.5 predates
+                # the adaptive/disabled config and can reject it outright, and
+                # breaking this ping would break the whole credit-check page.
                 json={"model": MODEL, "max_tokens": 1,
                       "messages": [{"role": "user", "content": "hi"}]},
             )
@@ -198,7 +233,9 @@ def infer_product(campaign_key: str, force: bool = False,
                         "text": "ภาพ pack shot สินค้าอย่างเป็นทางการของแคมเปญ (เชื่อภาพนี้เป็นหลัก):"})
         content.append(_img_block(_shrink(ref_img)))
     content += [_img_block(c) for c in covers]
-    desc = _claude(content, max_tokens=300) or name
+    # 300 was enough when nothing was thinking; on Opus 5 the budget covers
+    # thinking too, and a truncated reply here poisons every later frame pick
+    desc = _claude(content, max_tokens=1500) or name
     set_setting(f"product:{campaign_key}", desc)
     return desc
 
@@ -207,83 +244,141 @@ def infer_product(campaign_key: str, force: bool = False,
 # 2) frame extraction + selection
 # ---------------------------------------------------------------------------
 
+def _not_black(path: str) -> bool:
+    """Drop black/near-black frames (intros, fades, decode glitches) so they
+    can never end up as the slide preview."""
+    try:
+        from PIL import Image
+        with Image.open(path) as im:
+            small = im.convert("L")
+            small.thumbnail((32, 32))
+            pix = list(small.getdata())
+        return (sum(pix) / max(len(pix), 1)) > 10
+    except Exception:  # noqa: BLE001
+        return True
+
+
 def _extract_frames(video_path: str) -> list:
-    """Frames covering the WHOLE clip: decode one frame every 3s (up to 60 =
-    3 minutes), then thin evenly down to FRAMES_PER_VIDEO. No duration parsing
-    — earlier versions that guessed the length could silently fall back to
-    sampling only the first seconds and miss mid/late tie-in scenes."""
+    """Frames covering the WHOLE clip: decode one frame every 2s (up to 90 =
+    3 minutes), drop the black ones, then thin evenly down to FRAMES_PER_VIDEO.
+    No duration parsing — earlier versions that guessed the length could
+    silently fall back to sampling only the first seconds and miss mid/late
+    tie-in scenes.
+
+    Two things the frame rate and size are doing:
+      - every 2s, not every 3s: a product that is only on screen for a beat
+        can fall between samples entirely, and no model can pick a frame that
+        was never decoded.
+      - source resolution (capped at 1080 wide) instead of 480: the winning
+        frame is what the PPTX slide shows, so it is decoded big and only
+        shrunk on the way to the model. Costs no extra tokens. Only the frames
+        that survive thinning are read into memory, so a 3-minute clip costs
+        a few MB rather than 90 full-size frames at once.
+    """
     import imageio_ffmpeg
     exe = imageio_ffmpeg.get_ffmpeg_exe()
     outdir = tempfile.mkdtemp(prefix="tiein_")
     pattern = os.path.join(outdir, "f_%03d.jpg")
     subprocess.run(
-        [exe, "-y", "-i", video_path, "-vf", "fps=1/3,scale=480:-2",
-         "-frames:v", "60", "-q:v", "4", pattern],
+        # min(1080,iw) never upscales — a 720p clip stays 720p instead of
+        # paying ~2x the image tokens for interpolated pixels. The escaped
+        # comma is required: a bare one would read as a filter separator.
+        [exe, "-y", "-i", video_path,
+         "-vf", r"fps=1/2,scale=min(1080\,iw):-2",
+         "-frames:v", "90", "-q:v", "3", pattern],
         capture_output=True, timeout=300,
     )
+    paths = sorted(glob.glob(os.path.join(outdir, "f_*.jpg")))
+    kept = [p for p in paths if _not_black(p)] or paths[:1]
+    if len(kept) > FRAMES_PER_VIDEO:  # keep first + last, spread the rest
+        step = (len(kept) - 1) / (FRAMES_PER_VIDEO - 1)
+        kept = [kept[round(i * step)] for i in range(FRAMES_PER_VIDEO)]
     frames = []
-    for f in sorted(glob.glob(os.path.join(outdir, "f_*.jpg"))):
+    for p in kept:
         try:
-            with open(f, "rb") as fh:
+            with open(p, "rb") as fh:
                 frames.append(fh.read())
-            os.unlink(f)
+        except OSError:
+            pass
+    for p in paths:  # every decoded frame, kept or thinned away
+        try:
+            os.unlink(p)
         except OSError:
             pass
     try:
         os.rmdir(outdir)
     except OSError:
         pass
-    def _not_black(b: bytes) -> bool:
-        """Drop black/near-black frames (intros, fades, decode glitches) so
-        they can never end up as the slide preview."""
-        try:
-            import io
-
-            from PIL import Image
-            im = Image.open(io.BytesIO(b)).convert("L")
-            im.thumbnail((32, 32))
-            pix = list(im.getdata())
-            return (sum(pix) / max(len(pix), 1)) > 10
-        except Exception:  # noqa: BLE001
-            return True
-    frames = [f for f in frames if _not_black(f)] or frames[:1]
-    if len(frames) > FRAMES_PER_VIDEO:  # keep first + last, spread the rest
-        step = (len(frames) - 1) / (FRAMES_PER_VIDEO - 1)
-        frames = [frames[round(i * step)] for i in range(FRAMES_PER_VIDEO)]
     return frames
+
+
+_CRITERIA = (
+    "เกณฑ์ของ tie-in shot ที่ดี เรียงตามลำดับความสำคัญ:\n"
+    "1) เห็น 'ตัวแพ็คเกจสินค้า' (ขวด/ถุง/กล่อง พร้อมฉลาก) ชัดเจน และมีคนถือ/หยิบจับ\n"
+    "2) เห็นตัวแพ็คเกจสินค้าชัดเจนในเฟรม (แม้ไม่มีคนถือ)\n"
+    "3) เห็นแพ็คเกจสินค้าเพียงบางส่วน\n"
+    "ข้อควรระวัง: ฉากที่กำลัง 'ใช้งาน' โดยไม่เห็นแพ็คเกจ (เช่น ถูพื้น เทของ "
+    "โดยไม่เห็นขวด/ถุงสินค้า) ถือว่าด้อยกว่าเฟรมที่เห็นแพ็คเกจเสมอ"
+)
+
+
+def _frame_numbers(text: str, hi: int) -> list:
+    """1-based frame numbers in a model reply, de-duped, in the order given.
+    0 ("no product anywhere") and anything out of range fall out here."""
+    import re as _re
+    out = []
+    for tok in _re.findall(r"\d+", text or ""):
+        n = int(tok)
+        if 1 <= n <= hi and n not in out:
+            out.append(n)
+    return out
+
+
+def _frame_blocks(frames: list, numbers: list, shrink_to: Optional[int]) -> list:
+    """Label every image so the number the model answers with is unambiguous."""
+    content: list = []
+    for n, f in zip(numbers, frames):
+        content.append({"type": "text", "text": f"เฟรมที่ {n}:"})
+        content.append(_img_block(_shrink(f, shrink_to) if shrink_to else f))
+    return content
+
+
+def _ref_blocks(ref_img: bytes) -> list:
+    return [{"type": "text",
+             "text": "ภาพอ้างอิง: pack shot จริงของสินค้า — เลือกเฟรมที่เห็นสินค้าตรงกับภาพนี้:"},
+            _img_block(_shrink(ref_img))]
 
 
 def _pick_frame(product_desc: str, frames: list,
                 ref_img: Optional[bytes] = None) -> Optional[int]:
-    """Ask Claude which frame best shows the product (1-based; None if none)."""
+    """Which frame is the tie-in shot (0-based index into `frames`; None when
+    the clip never shows the package, or the reply can't be trusted).
+
+    One call, every frame, each shrunk to PICK_MAX_SIDE. Frame numbers in the
+    prompt are 1-based so the reply maps back cleanly."""
     if not frames:
         return None
+    numbers = list(range(1, len(frames) + 1))
     content: list = [{"type": "text", "text":
         f"สินค้าของแคมเปญ: {product_desc}\n\n"
         f"ต่อไปนี้คือเฟรมจากวิดีโอรีวิว {len(frames)} เฟรม สุ่มกระจายตลอดทั้งคลิป "
-        "(แต่ละภาพมีเลขเฟรมกำกับไว้ก่อนหน้า) "
-        "เลือกเฟรมเดียวที่เป็น tie-in shot ที่ดีที่สุด ตามลำดับความสำคัญ:\n"
-        "1) เห็น 'ตัวแพ็คเกจสินค้า' (ขวด/ถุง/กล่อง พร้อมฉลาก) ชัดเจน และมีคนถือ/หยิบจับ\n"
-        "2) เห็นตัวแพ็คเกจสินค้าชัดเจนในเฟรม (แม้ไม่มีคนถือ)\n"
-        "3) เห็นแพ็คเกจสินค้าเพียงบางส่วน\n"
-        "ข้อควรระวัง: ฉากที่กำลัง 'ใช้งาน' โดยไม่เห็นแพ็คเกจ (เช่น ถูพื้น เทของ "
-        "โดยไม่เห็นขวด/ถุงสินค้า) ถือว่าด้อยกว่าเฟรมที่เห็นแพ็คเกจเสมอ\n"
-        "ตอบเป็นตัวเลขเฟรมเท่านั้น (เช่น 3) — ตอบ 0 เฉพาะกรณีไม่มีเฟรมไหนเห็นแพ็คเกจสินค้าเลย"}]
+        "(แต่ละภาพมีเลขเฟรมกำกับไว้ก่อนหน้า)\n"
+        f"{_CRITERIA}\n\n"
+        "เลือกเฟรมเดียวที่เป็น tie-in shot ที่ดีที่สุด ดูให้ละเอียดว่าเฟรมไหนเห็น "
+        "ฉลาก/แพ็คเกจชัดกว่ากันจริง\n"
+        "ตอบเป็นเลขเฟรมเดียวเท่านั้น (เช่น 13) — "
+        "ตอบ 0 เฉพาะกรณีไม่มีเฟรมไหนเห็นแพ็คเกจสินค้าเลย"}]
     if ref_img:
-        content.append({"type": "text",
-                        "text": "ภาพอ้างอิง: pack shot จริงของสินค้า — เลือกเฟรมที่เห็นสินค้าตรงกับภาพนี้:"})
-        content.append(_img_block(_shrink(ref_img)))
-    for k, f in enumerate(frames, 1):  # label every image so the index is exact
-        content.append({"type": "text", "text": f"เฟรมที่ {k}:"})
-        content.append(_img_block(f))
-    ans = _claude(content, max_tokens=10) or "0"
-    try:
-        n = int("".join(ch for ch in ans if ch.isdigit()) or "0")
-    except ValueError:
-        n = 0
-    if 1 <= n <= len(frames):
-        return n - 1
-    return None
+        content += _ref_blocks(ref_img)
+    content += _frame_blocks(frames, numbers, shrink_to=PICK_MAX_SIDE)
+
+    ans = _claude(content, max_tokens=PICK_MAX_TOKENS)
+    # a number outside the range is a hallucination, not a pick — _frame_numbers
+    # drops those along with the "0" that means "no product anywhere"
+    got = _frame_numbers(ans or "", len(frames))
+    if not got:
+        return None
+    return got[0] - 1
 
 
 def _kv_video_urls(kv_store_id: str, token: str):
