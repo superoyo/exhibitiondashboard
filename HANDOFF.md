@@ -7,6 +7,10 @@
 >
 > **การเข้าถึง:** ทุกหน้าทำงานต้อง login ที่ `/login` ด้วยบัญชีพนักงาน Wazzup
 > (identity backend ตั้งได้ผ่าน env `WAZZUP_BASE_URL`, default `https://api.fareastfamelineddb.com`)
+> · **token ที่ออกโดย IAMService ก็ใช้ได้** — คนที่เข้ามาทาง SSO จาก Agency Intelligence ถือ token
+> ของ IAM ซึ่ง Wazzup ไม่รับ ระบบจึงตรวจกับ IAM ก่อนแล้วค่อยถอยไป Wazzup
+> (ตั้ง base ของ IAM ผ่าน env `IAM_BASE_URL`, default `https://iam.fareastfamelineddb.com`)
+> · หน้า `/login` ยังแลกรหัสผ่านกับ Wazzup เหมือนเดิม ไม่ได้เปลี่ยน
 > · ลิงก์ลูกค้า `/v/<รหัส>` เปิดดูได้โดยไม่ต้อง login · API ฝั่งเขียน/สั่งงานตรวจ bearer token ที่เซิร์ฟเวอร์
 
 ---
