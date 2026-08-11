@@ -45,6 +45,56 @@ const FOOTER_NOTE =
   'ใช้ engagement/followers แทน (มี * กำกับ) · — = คำนวณไม่ได้ (ไม่มีทั้ง views และ followers) · ' +
   'ข้อมูลดึงจากลิงก์โพสต์แคมเปญผ่าน Apify (เฉพาะ KOL ที่ active) · กด Refresh Data เพื่ออัปเดต';
 
+/** Thai labels for the job kinds the server records spend under. */
+const COST_LABELS: Record<string, string> = {
+  refresh: 'อัปเดตสถิติ',
+  comments: 'วิเคราะห์คอมเมนต์',
+  tiein: 'หา tie-in shot',
+  profiles: 'ดึงรูปโปรไฟล์',
+};
+
+/**
+ * Which button spent what. The server used to add every charge into one number,
+ * so a campaign's total could not be attributed to any action.
+ *
+ * Runs recorded before the split are shown as their own line rather than
+ * divided up by guesswork — a made-up attribution is worse than an honest
+ * "cannot tell".
+ */
+function CostBreakdown({
+  total,
+  byKind,
+}: {
+  total: number;
+  byKind: Record<string, { total: number; count: number }>;
+}) {
+  const rows = Object.entries(byKind)
+    .filter(([kind]) => COST_LABELS[kind])
+    .sort((a, b) => b[1].total - a[1].total);
+  if (rows.length === 0) return null;
+
+  const split = rows.reduce((sum, [, v]) => sum + v.total, 0);
+  const legacy = Math.max(0, total - split);
+
+  return (
+    <div className="mt-1 space-y-0.5 border-l-2 border-brand-400 pl-2">
+      {rows.map(([kind, v]) => (
+        <div key={kind} className="flex gap-2 text-[11px] text-muted-foreground">
+          <span className="w-32 shrink-0">{COST_LABELS[kind]}</span>
+          <span className="w-16 text-right tabular-nums">${v.total.toFixed(3)}</span>
+          <span className="tabular-nums">{v.count} ครั้ง</span>
+        </div>
+      ))}
+      {legacy > 0.0005 ? (
+        <div className="flex gap-2 text-[11px] text-muted-foreground/70">
+          <span className="w-32 shrink-0">ก่อนหน้านี้ (แยกไม่ได้)</span>
+          <span className="w-16 text-right tabular-nums">${legacy.toFixed(3)}</span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function ReportView({
   campaign,
   viewOnly,
@@ -230,6 +280,10 @@ export function ReportView({
               >
                 รีเซ็ต
               </button>
+              <CostBreakdown
+                total={report.data?.cost_total ?? 0}
+                byKind={report.data?.cost_by_kind ?? {}}
+              />
             </div>
           </div>
         )}

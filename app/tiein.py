@@ -626,7 +626,7 @@ def run_tiein(campaign: str) -> dict:
 
         try:
             from app.settings import add_cost
-            add_cost(campaign, cost)
+            add_cost(campaign, cost, kind="tiein")
         except Exception:  # noqa: BLE001
             pass
         summary = (f"ได้ tie-in shot {done}/{len(targets)} คลิป "

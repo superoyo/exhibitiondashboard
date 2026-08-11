@@ -43,6 +43,10 @@ export interface ReportDataResponse {
   /** Accumulated Apify spend for this campaign, in USD. */
   cost_total: number;
   cost_count: number;
+  /** Spend split by which button caused it. Runs recorded before the split
+   *  existed are absent here, so `cost_total` minus the sum of these is the
+   *  older, unattributable spend. */
+  cost_by_kind: Record<string, { total: number; count: number }>;
 }
 
 /**

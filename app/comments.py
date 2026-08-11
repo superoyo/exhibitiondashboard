@@ -431,7 +431,7 @@ def run_comment_refresh(campaign: str) -> dict:
 
         try:
             from app.settings import add_cost
-            add_cost(campaign, cost)
+            add_cost(campaign, cost, kind="comments")
         except Exception:  # noqa: BLE001
             pass
 

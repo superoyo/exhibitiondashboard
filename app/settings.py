@@ -76,27 +76,62 @@ def _cost_key(campaign: str) -> str:
     return f"refresh_cost:{campaign}"
 
 
+# Which button a charge came from. Kept here rather than in each job so the
+# strings the UI groups by cannot drift from the strings the jobs write.
+COST_KINDS = {
+    "refresh": "อัปเดตสถิติ",
+    "comments": "วิเคราะห์คอมเมนต์",
+    "tiein": "หา tie-in shot",
+    "profiles": "ดึงรูปโปรไฟล์",
+}
+
+
 def get_cost(campaign: str) -> dict:
+    """Accumulated Apify spend for a campaign, split by which job spent it.
+
+    `by_kind` is absent from records written before the split existed. Those
+    amounts stay in `total`, so `total` minus the sum of `by_kind` is the older,
+    unattributable spend — reported as its own line rather than dropped or
+    silently folded into one of the buttons."""
+    empty = {"total": 0.0, "count": 0, "last": None, "by_kind": {}}
     raw = get_setting(_cost_key(campaign))
     if raw:
         try:
             d = json.loads(raw)
-            return {"total": float(d.get("total", 0)), "count": int(d.get("count", 0)),
-                    "last": d.get("last")}
+            by_kind = d.get("by_kind") or {}
+            return {
+                "total": float(d.get("total", 0)),
+                "count": int(d.get("count", 0)),
+                "last": d.get("last"),
+                "by_kind": {
+                    k: {"total": round(float(v.get("total", 0)), 4),
+                        "count": int(v.get("count", 0))}
+                    for k, v in by_kind.items() if k in COST_KINDS
+                },
+            }
         except Exception:  # noqa: BLE001
             pass
-    return {"total": 0.0, "count": 0, "last": None}
+    return empty
 
 
-def add_cost(campaign: str, cost: float | None) -> dict:
-    """Accumulate one refresh run's Apify cost. cost may be None (counted as 0)."""
+def add_cost(campaign: str, cost: float | None, kind: str | None = None) -> dict:
+    """Record one run's Apify cost. cost may be None (counted as 0).
+
+    `kind` names the job that spent it — one of COST_KINDS. A run counted
+    without a kind still lands in the total, which keeps the number honest even
+    if a future job forgets to pass one."""
     c = get_cost(campaign)
     c["total"] = round(c["total"] + (cost or 0.0), 4)
     c["count"] += 1
     c["last"] = cost
+    if kind in COST_KINDS:
+        slot = c["by_kind"].setdefault(kind, {"total": 0.0, "count": 0})
+        slot["total"] = round(slot["total"] + (cost or 0.0), 4)
+        slot["count"] += 1
     set_setting(_cost_key(campaign), json.dumps(c))
     return c
 
 
 def reset_cost(campaign: str) -> None:
-    set_setting(_cost_key(campaign), json.dumps({"total": 0.0, "count": 0, "last": None}))
+    set_setting(_cost_key(campaign),
+                json.dumps({"total": 0.0, "count": 0, "last": None, "by_kind": {}}))

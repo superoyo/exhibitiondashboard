@@ -597,6 +597,9 @@ def report_data(campaign: str = "pao", session: Session = Depends(db_dependency)
         "kol_count": len(roster),
         "cost_total": cost["total"],
         "cost_count": cost["count"],
+        # per-button split; anything spent before the split existed shows up as
+        # total minus the sum of these
+        "cost_by_kind": cost["by_kind"],
     }
 
 

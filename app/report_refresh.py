@@ -720,7 +720,7 @@ def fetch_profiles(campaign: str = "sahagroup") -> dict:
         cost = res["cost"]
         try:
             from app.settings import add_cost
-            add_cost(campaign, cost)
+            add_cost(campaign, cost, kind="profiles")
         except Exception:  # noqa: BLE001
             pass
         st.update(status="success", message=f"ดึงรูปโปรไฟล์แล้ว {done}/{len(usernames)} ราย",
@@ -1186,7 +1186,7 @@ def refresh_report(campaign: str = "pao") -> dict:
             msg += " · " + " · ".join(scrape_errors)
         try:
             from app.settings import add_cost
-            add_cost(campaign, cost)
+            add_cost(campaign, cost, kind="refresh")
         except Exception as exc:  # noqa: BLE001 — cost tracking must not break refresh
             log.warning("add_cost failed: %s", exc)
         st.update(status="success", message=msg,
