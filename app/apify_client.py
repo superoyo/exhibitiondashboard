@@ -122,6 +122,53 @@ def run_scrape_fb(
                     tolerate_failure=tolerate_failure)
 
 
+def run_scrape_comments_tiktok(
+    post_urls: List[str],
+    *,
+    per_post: int = 0,
+    poll_interval: float = 10.0,
+    timeout_s: float = 600.0,
+    tolerate_failure: bool = True,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Comment TEXT under specific TikTok posts.
+
+    tolerate_failure defaults True: comment scraping runs over a whole roster,
+    and one deleted or private post must not discard every other post's
+    comments."""
+    payload = {
+        "postURLs": post_urls,
+        "commentsPerPost": per_post or config.COMMENTS_PER_POST,
+        # replies are mostly creator/fan back-and-forth and dilute the
+        # product signal, so only top-level comments are collected
+        "maxRepliesPerComment": 0,
+    }
+    return _execute(payload, actor_id=config.TIKTOK_COMMENTS_ACTOR_ID,
+                    poll_interval=poll_interval, timeout_s=timeout_s,
+                    tolerate_failure=tolerate_failure)
+
+
+def run_scrape_comments_fb(
+    post_urls: List[str],
+    *,
+    per_post: int = 0,
+    poll_interval: float = 8.0,
+    timeout_s: float = 600.0,
+    tolerate_failure: bool = True,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Comment TEXT under specific Facebook posts.
+
+    NOTE `resultsLimit` here is per START URL, not per run — same shape as
+    run_scrape_fb above. Nested replies are off for the same reason as TikTok."""
+    payload = {
+        "startUrls": [{"url": u} for u in post_urls],
+        "resultsLimit": per_post or config.COMMENTS_PER_POST,
+        "includeNestedComments": False,
+    }
+    return _execute(payload, actor_id=config.FB_COMMENTS_ACTOR_ID,
+                    poll_interval=poll_interval, timeout_s=timeout_s,
+                    tolerate_failure=tolerate_failure)
+
+
 def run_scrape_posts_with_video(
     post_urls: List[str],
     *,

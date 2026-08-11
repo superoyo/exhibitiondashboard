@@ -47,6 +47,19 @@ X_ACTOR_ID: str = os.getenv("X_ACTOR_ID", "apidojo~tweet-scraper")
 # (FB pages + IG accounts), so ER-by-followers works for photo posts.
 IG_PROFILE_ACTOR_ID: str = os.getenv("IG_PROFILE_ACTOR_ID", "apify~instagram-profile-scraper")
 FB_PAGES_ACTOR_ID: str = os.getenv("FB_PAGES_ACTOR_ID", "apify~facebook-pages-scraper")
+# Comment scrapers — these read the TEXT under a post, which the post scrapers
+# above never return (they only carry a comment COUNT). Both are pay-per-result,
+# so a cap is a ceiling and not a bill: a post with 12 comments costs 12.
+#   TikTok   $0.50 / 1,000 comments
+#   Facebook $1.40 / 1,000 comments
+TIKTOK_COMMENTS_ACTOR_ID: str = os.getenv(
+    "TIKTOK_COMMENTS_ACTOR_ID", "clockworks~tiktok-comments-scraper")
+FB_COMMENTS_ACTOR_ID: str = os.getenv(
+    "FB_COMMENTS_ACTOR_ID", "apify~facebook-comments-scraper")
+# Ceiling per post. Comment counts are long-tailed — a handful of posts carry
+# most of the volume — so this caps the bill without changing the picture for
+# the many small posts. Raise it for a campaign where a viral post matters.
+COMMENTS_PER_POST: int = int(os.getenv("COMMENTS_PER_POST", "200"))
 RESULTS_PER_PAGE: int = 20
 LOOKBACK_DAYS: int = 7  # oldestPostDateUnified = today - LOOKBACK_DAYS
 

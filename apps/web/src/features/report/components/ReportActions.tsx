@@ -27,6 +27,10 @@ interface ReportActionsProps {
   campaignName: string;
   /** True while a refresh job is running (drives the button's spinner). */
   refreshing: boolean;
+  /** True while a COMMENT scrape is running — a separate job, separate button.
+   *  Apify bills per comment, so it must never ride along with Refresh Data. */
+  commentsBusy: boolean;
+  onRefreshComments: () => void;
   onStatus: (message: string) => void;
 }
 
@@ -34,6 +38,8 @@ export function ReportActions({
   campaign,
   campaignName,
   refreshing,
+  commentsBusy,
+  onRefreshComments,
   onStatus,
 }: ReportActionsProps) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -164,6 +170,16 @@ export function ReportActions({
 
       <Button onClick={handleRefresh} disabled={busy} className="rounded-[10px] font-bold">
         {busy ? '⏳ กำลังดึง…' : '🔄 Refresh Data'}
+      </Button>
+
+      {/* Its own button, visually distinct from the stat actions: this is the
+          only one billed per comment rather than per post. */}
+      <Button
+        onClick={onRefreshComments}
+        disabled={commentsBusy}
+        className="rounded-[10px] bg-fuchsia-600 font-bold hover:bg-fuchsia-700"
+      >
+        {commentsBusy ? '⏳ กำลังดึงคอมเมนต์…' : '💬 ดึงคอมเมนต์'}
       </Button>
     </div>
   );

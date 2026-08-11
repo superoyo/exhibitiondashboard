@@ -618,6 +618,38 @@ def report_tiein_status(campaign: str = "pao"):
     return state_for("ti:" + campaign)
 
 
+@router.get("/report/comments")
+def report_comments(campaign: str = "pao"):
+    """Comment breakdown for the campaign panel: category split, product
+    sentiment, top themes, and a preview of the product-related comments with
+    the KOL and platform each came from. Reads stored rows only — never
+    scrapes, so opening the report costs nothing."""
+    from app.comments import summary
+    return summary(campaign)
+
+
+@router.post("/report/comments/refresh")
+def report_comments_trigger(background: BackgroundTasks, campaign: str = "pao"):
+    """Scrape + classify this campaign's comments.
+
+    Deliberately its own endpoint (and its own button) rather than part of
+    Refresh Data: comments are billed per comment by Apify, so this is the most
+    expensive action in the product and must never fire as a side effect of
+    someone updating stats."""
+    from app.comments import run_comment_refresh
+    st = state_for("cm:" + campaign)
+    if st.get("status") == "running":
+        raise HTTPException(status_code=409, detail="กำลังดึงคอมเมนต์อยู่แล้ว")
+    st.update(status="running", message="เริ่มงาน…", posts=0)
+    background.add_task(run_comment_refresh, campaign)
+    return {"status": "started", "campaign": campaign}
+
+
+@router.get("/report/comments/status")
+def report_comments_status(campaign: str = "pao"):
+    return state_for("cm:" + campaign)
+
+
 @router.get("/ai/status")
 def ai_status_route(force: bool = False):
     """Is the Claude AI key set + funded? Shown on the settings page so the

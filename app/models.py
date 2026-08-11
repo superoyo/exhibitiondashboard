@@ -103,6 +103,49 @@ class ReportPost(Base):
     )
 
 
+class ReportComment(Base):
+    """One comment under a campaign post, plus its classification.
+
+    Kept separate from ReportPost.comments (which is only a COUNT) because the
+    text is what the analysis needs. `comment_id` is the platform's own id and
+    is unique, so re-scraping a post updates rows instead of duplicating them —
+    the same idempotence rule the post tables follow.
+
+    The three classification columns are nullable on purpose: scraping and
+    classifying are separate steps, and a comment that failed to classify must
+    stay visible as unclassified rather than silently vanish from the totals.
+    """
+    __tablename__ = "report_comments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    campaign: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    platform: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    # which post it sits under, and whose post that is — the preview cards need
+    # both to say "from @kol's TikTok post"
+    post_video_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    kol_username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    comment_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    author: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    likes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    posted_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_reply: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # FAN / PRODUCT / INTENT / ECHO / NEG / QUESTION / SPAM
+    category: Mapped[Optional[str]] = mapped_column(String(16), nullable=True, index=True)
+    # pos / neu / neg — only meaningful on comments that touch the product
+    sentiment: Mapped[Optional[str]] = mapped_column(String(8), nullable=True, index=True)
+    # free-text, one word, set from what the comments actually say (รสชาติ,
+    # ราคา, หาซื้อยาก, ...). Deliberately NOT an enum: it carries the
+    # product-specific angle without a schema change per campaign.
+    theme: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    classified_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    scraped_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+        default=lambda: dt.datetime.now(dt.timezone.utc))
+
+
 class Campaign(Base):
     """Metadata for a report campaign — makes campaigns dynamic (created from
     the /kols/home UI, not by editing code). The `campaign` string column in

@@ -1,4 +1,10 @@
-import type { JobState, PackshotSaveResult, PackshotState, ReportDataResponse } from '@kol/shared';
+import type {
+  CommentSummary,
+  JobState,
+  PackshotSaveResult,
+  PackshotState,
+  ReportDataResponse,
+} from '@kol/shared';
 
 import { api } from '@/lib/axios';
 
@@ -27,6 +33,28 @@ export async function startTiein(campaign: string): Promise<void> {
 
 export async function getTieinStatus(campaign: string): Promise<JobState> {
   const { data } = await api.get<JobState>('/report/tiein/status', { params: { campaign } });
+  return data;
+}
+
+// ---- Comment breakdown ----------------------------------------------------
+
+/** Reads stored comments only — opening the report never scrapes. */
+export async function getComments(campaign: string): Promise<CommentSummary> {
+  const { data } = await api.get<CommentSummary>('/report/comments', { params: { campaign } });
+  return data;
+}
+
+/**
+ * Starts a comment scrape + classify. Its own action on purpose: Apify bills
+ * per comment, so this is the priciest thing in the product and must never
+ * ride along with a stat refresh.
+ */
+export async function startCommentRefresh(campaign: string): Promise<void> {
+  await api.post('/report/comments/refresh', null, { params: { campaign } });
+}
+
+export async function getCommentStatus(campaign: string): Promise<JobState> {
+  const { data } = await api.get<JobState>('/report/comments/status', { params: { campaign } });
   return data;
 }
 

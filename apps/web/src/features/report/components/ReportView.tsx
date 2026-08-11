@@ -19,17 +19,24 @@ import {
   distinctPlatforms,
   sumBy,
 } from '@/features/report/lib/metrics';
-import { useReportData, useRefreshStatus, useResetCost } from '@/features/report/hooks/useReport';
+import { startCommentRefresh } from '@/features/report/api/reportApi';
+import {
+  useCommentStatus,
+  useComments,
+  useReportData,
+  useRefreshStatus,
+  useResetCost,
+} from '@/features/report/hooks/useReport';
 import { useReportFilters } from '@/features/report/store/reportFiltersStore';
 import { EngagementBreakdown, KpiRow } from './KpiRow';
 import { Podium } from './Podium';
 import { PostsTable } from './PostsTable';
+import { CommentPanel } from './CommentPanel';
 import { ReportActions } from './ReportActions';
 import {
   CategoryDonut,
   CategoryErBar,
   EngagementStack,
-  FollowersViewsScatter,
   TopPostsBar,
 } from './ReportCharts';
 
@@ -65,6 +72,8 @@ export function ReportView({
   const report = useReportData(campaign);
   const refreshStatus = useRefreshStatus(campaign, !viewOnly);
   const resetCost = useResetCost(campaign);
+  const comments = useComments(campaign, !viewOnly);
+  const commentStatus = useCommentStatus(campaign, !viewOnly);
 
   const filters = useReportFilters();
 
@@ -130,6 +139,45 @@ export function ReportView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshDone]);
 
+  const commentsBusy = commentStatus.data?.status === 'running';
+
+  // Reload the breakdown once a comment run finishes, and surface its progress
+  // in the same status line everything else writes to.
+  const commentsDone = commentStatus.data?.status === 'success';
+  useEffect(() => {
+    if (commentsDone) void comments.refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commentsDone]);
+
+  useEffect(() => {
+    const state = commentStatus.data;
+    if (!state || state.status === 'idle') return;
+    if (state.status === 'running') setInfo(state.message || 'กำลังดึงคอมเมนต์…');
+    else if (state.status === 'success')
+      setInfo(`✅ ${state.message}${state.cost_usd ? ` · $${state.cost_usd}` : ''}`);
+    else if (state.status === 'failed') setInfo(`⚠️ ${state.message}`);
+  }, [commentStatus.data]);
+
+  async function handleRefreshComments() {
+    // Spelled out because this is the only action billed per COMMENT — the
+    // team should see the rate before spending, not after.
+    if (
+      !window.confirm(
+        'ดึงคอมเมนต์ของทุกโพสต์ในแคมเปญนี้?\n\n' +
+          'คิดเงินตามจำนวนคอมเมนต์จริง — TikTok $0.50 / Facebook $1.40 ต่อ 1,000 คอมเมนต์\n' +
+          'แยกจากปุ่ม Refresh Data และไม่ทำงานเองอัตโนมัติ',
+      )
+    )
+      return;
+    try {
+      await startCommentRefresh(campaign);
+      setInfo('เริ่มดึงคอมเมนต์แล้ว…');
+      void commentStatus.refetch();
+    } catch (err) {
+      setInfo(`⚠️ ${apiErrorMessage(err)}`);
+    }
+  }
+
   const campaignName = meta.data?.name ?? campaign;
   const emoji = meta.data?.emoji ?? '📊';
   const refreshing = refreshStatus.data?.status === 'running';
@@ -162,6 +210,8 @@ export function ReportView({
               campaign={campaign}
               campaignName={campaignName}
               refreshing={refreshing}
+              commentsBusy={commentsBusy}
+              onRefreshComments={() => void handleRefreshComments()}
               onStatus={setInfo}
             />
             <div className="mt-1 text-xs text-muted-foreground">
@@ -265,14 +315,17 @@ export function ReportView({
                   <TopPostsBar rows={rows} colors={colors} />
                 </CardContent>
               </Card>
-              <Card className="lg:col-span-2">
-                <CardContent className="p-4">
-                  <h3 className="mb-1 font-semibold">Followers vs Views</h3>
-                  <FollowersViewsScatter rows={rows} colors={colors} />
-                </CardContent>
-              </Card>
             </div>
           )}
+
+          {/* Comment breakdown. Hidden from the client-facing view along with
+              the other controls, and rendered from stored rows only — opening
+              the report never triggers a scrape. */}
+          {!influencerView && comments.data ? (
+            <div className="mb-5">
+              <CommentPanel data={comments.data} />
+            </div>
+          ) : null}
 
           {influencerView ? (
             // Split by whether a post link exists: "Active" has posted,

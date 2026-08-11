@@ -86,6 +86,63 @@ export interface JobState {
   cost_usd: number | null;
 }
 
+// ---- Comment breakdown -----------------------------------------------------
+
+/**
+ * Comment classification, mirroring app/comments.py. Three axes:
+ *  - `category` is a fixed set, so the donut can be compared across campaigns
+ *  - `sentiment` is only set on comments that touch the product — a comment
+ *    praising the creator is not praise for the product
+ *  - `theme` is free text taken from what the comments say (รสชาติ, ราคา,
+ *    หาซื้อยาก), which is where product-specific detail lives without needing
+ *    a different category set per campaign
+ */
+export type CommentCategory =
+  | 'FAN'
+  | 'PRODUCT'
+  | 'INTENT'
+  | 'ECHO'
+  | 'NEG'
+  | 'QUESTION'
+  | 'SPAM';
+
+export type CommentSentiment = 'pos' | 'neu' | 'neg';
+
+export interface CommentCategoryCount {
+  code: CommentCategory;
+  label: string;
+  count: number;
+  pct: number;
+}
+
+export interface CommentPreviewItem {
+  id: number;
+  text: string;
+  author: string | null;
+  platform: string;
+  /** Whose post it sits under — the card shows this, not just the commenter. */
+  kol: string;
+  category: CommentCategory | null;
+  label: string | null;
+  sentiment: CommentSentiment | null;
+  theme: string | null;
+  likes: number;
+  posted_at: string | null;
+}
+
+/** `GET /api/report/comments` */
+export interface CommentSummary {
+  total: number;
+  /** Scraped but not yet classified — shown rather than hidden, so the
+   *  percentages are never quietly computed over a subset. */
+  unclassified: number;
+  by_platform: Record<string, number>;
+  categories: CommentCategoryCount[];
+  product_sentiment: Partial<Record<CommentSentiment, number>>;
+  themes: { theme: string; count: number }[];
+  preview: CommentPreviewItem[];
+}
+
 /** `GET /api/report/packshot` */
 export interface PackshotState {
   is_set: boolean;
