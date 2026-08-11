@@ -86,6 +86,27 @@ export interface JobState {
   cost_usd: number | null;
 }
 
+// ---- Background jobs -------------------------------------------------------
+
+/** `GET /api/jobs/active` — one entry per running or just-finished job. */
+export interface ActiveJob {
+  key: string;
+  campaign: string;
+  campaign_name: string;
+  emoji: string;
+  kind: 'refresh' | 'profiles' | 'tiein' | 'comments';
+  kind_label: string;
+  status: JobStatus;
+  message: string;
+  started_at: string | null;
+  finished_at: string | null;
+  done: number;
+  /** 0 when the denominator is not known yet — the UI then shows a count with
+   *  no progress bar rather than inventing a percentage. */
+  total: number;
+  cost_usd: number | null;
+}
+
 // ---- Comment breakdown -----------------------------------------------------
 
 /**

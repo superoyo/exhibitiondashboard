@@ -1,4 +1,5 @@
 import type {
+  ActiveJob,
   CommentListResponse,
   CommentSummary,
   JobState,
@@ -34,6 +35,14 @@ export async function startTiein(campaign: string): Promise<void> {
 
 export async function getTieinStatus(campaign: string): Promise<JobState> {
   const { data } = await api.get<JobState>('/report/tiein/status', { params: { campaign } });
+  return data;
+}
+
+// ---- Background jobs ------------------------------------------------------
+
+/** Every job running now, plus ones that just ended. Cheap: in-memory state. */
+export async function getActiveJobs(): Promise<ActiveJob[]> {
+  const { data } = await api.get<ActiveJob[]>('/jobs/active');
   return data;
 }
 

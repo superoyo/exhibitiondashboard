@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
 
+import { JobStatusDock } from './JobStatusDock';
 import { NavBar, type NavTab } from './NavBar';
 
 /**
@@ -30,6 +31,10 @@ export function AppShell({
     >
       <NavBar tabs={tabs} />
       {children}
+      {/* In the frame, not on one page: a job outlives the page that started
+          it. The client-facing view returns before reaching AppShell, so this
+          never shows to a client. */}
+      <JobStatusDock />
     </div>
   );
 }

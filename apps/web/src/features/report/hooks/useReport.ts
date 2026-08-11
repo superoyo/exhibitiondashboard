@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { queryKeys } from '@/app/queryClient';
 import {
+  getActiveJobs,
   getCommentList,
   getCommentStatus,
   getComments,
@@ -116,5 +117,18 @@ export function useCommentList(
     queryFn: () => getCommentList(campaign, sentiment, offset, limit),
     enabled: enabled && Boolean(campaign),
     placeholderData: (prev) => prev,
+  });
+}
+
+/**
+ * Every background job, for the status dock. Polls faster while something is
+ * running and slower when idle — the endpoint only reads memory, but there is
+ * no reason to ask every few seconds when the answer is "nothing".
+ */
+export function useActiveJobs() {
+  return useQuery({
+    queryKey: queryKeys.jobs.active(),
+    queryFn: getActiveJobs,
+    refetchInterval: (query) => ((query.state.data?.length ?? 0) > 0 ? 3000 : 10000),
   });
 }

@@ -45,6 +45,9 @@ export const queryKeys = {
   kols: {
     directory: ['kols', 'directory'] as const,
   },
+  jobs: {
+    active: () => ['jobs', 'active'] as const,
+  },
   report: {
     data: (campaign: string) => ['report', 'data', campaign] as const,
     refreshStatus: (campaign: string) => ['report', 'refresh-status', campaign] as const,

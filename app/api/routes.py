@@ -618,6 +618,17 @@ def report_tiein_status(campaign: str = "pao"):
     return state_for("ti:" + campaign)
 
 
+@router.get("/jobs/active")
+def jobs_active():
+    """Every background job running now, plus ones that just ended.
+
+    Feeds the status dock, which sits in the page frame and so appears on every
+    internal page — a job's progress used to be visible only on the page that
+    started it."""
+    from app.jobs import active_jobs
+    return active_jobs()
+
+
 @router.get("/report/comments")
 def report_comments(campaign: str = "pao"):
     """Comment breakdown for the campaign panel: category split, product

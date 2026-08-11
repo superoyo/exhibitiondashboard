@@ -230,7 +230,8 @@ def classify_pending(campaign: str, product_desc: str, st: Optional[dict] = None
                     done += 1
         if st is not None:
             st.update(message=(f"จัดประเภทคอมเมนต์แล้ว {done}"
-                               + (f"/{total}" if total else "") + " อัน…"))
+                               + (f"/{total}" if total else "") + " อัน…"),
+                      posts=done, total=total)
         if len(payload) < BATCH:
             return done
 
@@ -361,7 +362,7 @@ def run_comment_refresh(campaign: str) -> dict:
     st = state_for("cm:" + campaign)
     st.update(status="running", message="กำลังรวบรวมโพสต์ของแคมเปญ…",
               started_at=dt.datetime.now(config.TZ).isoformat(), finished_at=None,
-              posts=0, cost_usd=None)
+              posts=0, total=0, cost_usd=None)
     try:
         tiktok, facebook, owner_of = [], [], {}
         with session_scope() as session:
@@ -399,10 +400,14 @@ def run_comment_refresh(campaign: str) -> dict:
                     continue
                 cost += meta.get("cost_usd") or 0.0
                 stored += store(campaign, items, owner_of)
-                st.update(message=f"ดึงคอมเมนต์ {label} · เก็บแล้ว {stored} อัน…", posts=stored)
+                # no denominator during the scrape — how many comments a post
+                # carries is unknown until Apify answers
+                st.update(message=f"ดึงคอมเมนต์ {label} · เก็บแล้ว {stored} อัน…",
+                          posts=stored, total=0)
 
         st.update(message="กำลังวิเคราะห์คอมเมนต์…")
         from app.tiein import infer_product
+        st.update(total=stored)   # classifying HAS a denominator: what was stored
         classified = classify_pending(campaign, infer_product(campaign), st, total=stored)
 
         try:
@@ -434,13 +439,14 @@ def reclassify(campaign: str) -> dict:
     st = state_for("cm:" + campaign)
     st.update(status="running", message="กำลังจัดประเภทคอมเมนต์ใหม่ทั้งหมด…",
               started_at=dt.datetime.now(config.TZ).isoformat(), finished_at=None,
-              posts=0, cost_usd=None)
+              posts=0, total=0, cost_usd=None)
     try:
         with session_scope() as session:
             total = session.query(ReportComment).filter(
                 ReportComment.campaign == campaign).update(
                 {"category": None, "sentiment": None, "theme": None,
                  "classified_at": None}, synchronize_session=False)
+        st.update(total=total)
         from app.tiein import infer_product
         done = classify_pending(campaign, infer_product(campaign), st, total=total)
         st.update(status="success",

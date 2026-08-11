@@ -588,7 +588,10 @@ def _parse_fb_items(items):
 # Single-worker in-memory progress for the UI to poll.
 def _new_state() -> Dict[str, Any]:
     return {"status": "idle", "message": "", "started_at": None,
-            "finished_at": None, "kol_count": 0, "posts": 0, "cost_usd": None}
+            "finished_at": None, "kol_count": 0, "posts": 0, "cost_usd": None,
+            # denominator for the progress bar. 0 = not known yet, which the UI
+            # shows as a count with no bar rather than a made-up percentage.
+            "total": 0}
 
 
 # Per-campaign in-memory progress (single worker). 'pao' kept as the default
