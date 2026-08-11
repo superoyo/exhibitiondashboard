@@ -32,19 +32,28 @@ const SENTIMENT_CLASSES: Record<string, string> = {
   neg: 'bg-red-100 text-red-800',
 };
 
-function CategoryDonut({ data }: { data: CommentSummary }) {
-  const option = useMemo<EChartsOption>(() => {
-    const slices = data.categories.filter((c) => c.count > 0);
-    return {
-      tooltip: { trigger: 'item', formatter: '{b}<br>{c} คอมเมนต์ ({d}%)' },
-      legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: 11 } },
+function CategoryBreakdown({ data }: { data: CommentSummary }) {
+  const slices = useMemo(() => data.categories.filter((c) => c.count > 0), [data.categories]);
+
+  const option = useMemo<EChartsOption>(
+    () => ({
+      // Count only. The percentage lives in the list beside the chart and is
+      // computed over ALL comments including unclassified ones, whereas
+      // ECharts' own {d} is computed over the plotted slices — showing both
+      // would put two different percentages for the same slice on screen.
+      tooltip: { trigger: 'item', formatter: '{b}<br>{c} คอมเมนต์' },
+      // ECharts' legend is off on purpose: with seven categories it falls back
+      // to a paginated "1/2" strip that hides half the data behind an arrow.
+      // The list beside the chart shows every category at once, with counts.
+      legend: { show: false },
       series: [
         {
           type: 'pie',
-          radius: ['45%', '70%'],
-          center: ['50%', '45%'],
+          radius: ['58%', '82%'],
+          center: ['50%', '50%'],
           avoidLabelOverlap: true,
           label: { show: false },
+          labelLine: { show: false },
           data: slices.map((c) => ({
             name: c.label,
             value: c.count,
@@ -52,10 +61,39 @@ function CategoryDonut({ data }: { data: CommentSummary }) {
           })),
         },
       ],
-    };
-  }, [data]);
+    }),
+    [slices],
+  );
 
-  return <EChart option={option} height={300} ariaLabel="สัดส่วนคอมเมนต์แยกตามประเภท" />;
+  return (
+    <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-center">
+      <div className="relative w-full max-w-[240px] shrink-0">
+        <EChart option={option} height={240} ariaLabel="สัดส่วนคอมเมนต์แยกตามประเภท" />
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+          <div className="text-3xl font-bold leading-none">{data.total.toLocaleString()}</div>
+          <div className="mt-1 text-xs text-muted-foreground">คอมเมนต์</div>
+        </div>
+      </div>
+
+      <ul className="w-full flex-1 space-y-1.5">
+        {slices.map((c) => (
+          <li key={c.code} className="flex items-center gap-2 text-sm">
+            <span
+              className="h-3 w-3 shrink-0 rounded-sm"
+              style={{ backgroundColor: CATEGORY_COLORS[c.code] }}
+            />
+            <span className="min-w-0 flex-1 truncate">{c.label}</span>
+            <span className="shrink-0 tabular-nums text-muted-foreground">
+              {c.count.toLocaleString()}
+            </span>
+            <span className="w-14 shrink-0 text-right font-semibold tabular-nums">
+              {c.pct.toFixed(1)}%
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 function PreviewCard({ item }: { item: CommentPreviewItem }) {
@@ -102,7 +140,7 @@ export function CommentPanel({ data }: { data: CommentSummary }) {
     return (
       <Card>
         <CardContent className="p-6 text-center text-sm text-muted-foreground">
-          ยังไม่มีคอมเมนต์ที่เก็บไว้ — กดปุ่ม <strong>ดึงคอมเมนต์</strong> ด้านบนเพื่อเริ่ม
+          ยังไม่มีคอมเมนต์ที่เก็บไว้ — กดปุ่ม <strong>💬 Comment Analysis</strong> ด้านบนเพื่อเริ่ม
           <div className="mt-1 text-xs">
             ปุ่มนี้แยกจาก Refresh Data เพราะคิดเงินตามจำนวนคอมเมนต์
           </div>
@@ -112,22 +150,21 @@ export function CommentPanel({ data }: { data: CommentSummary }) {
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <Card>
+    <div className="grid gap-4 lg:grid-cols-3">
+      <Card className="lg:col-span-2">
         <CardContent className="p-4">
           <h3 className="mb-1 font-semibold">สัดส่วนคอมเมนต์แยกตามประเภท</h3>
           <p className="mb-2 text-xs text-muted-foreground">
-            {data.total.toLocaleString()} คอมเมนต์
-            {Object.entries(data.by_platform).map(([p, n]) => (
-              <span key={p}> · {p === 'tiktok' ? 'TikTok' : 'Facebook'} {n.toLocaleString()}</span>
-            ))}
+            {Object.entries(data.by_platform)
+              .map(([p, n]) => `${p === 'tiktok' ? 'TikTok' : 'Facebook'} ${n.toLocaleString()}`)
+              .join(' · ')}
             {/* Never hide this: percentages computed over a subset without
                 saying so are the easiest number in a report to mislead with. */}
             {data.unclassified > 0 ? (
               <span className="text-amber-700"> · ยังไม่จัดประเภท {data.unclassified}</span>
             ) : null}
           </p>
-          <CategoryDonut data={data} />
+          <CategoryBreakdown data={data} />
         </CardContent>
       </Card>
 
@@ -164,7 +201,7 @@ export function CommentPanel({ data }: { data: CommentSummary }) {
         </CardContent>
       </Card>
 
-      <Card className="lg:col-span-2">
+      <Card className="lg:col-span-3">
         <CardContent className="p-4">
           <h3 className="mb-1 font-semibold">คอมเมนต์ที่เกี่ยวกับสินค้า</h3>
           <p className="mb-3 text-xs text-muted-foreground">

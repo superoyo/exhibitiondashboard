@@ -179,7 +179,7 @@ export function ReportActions({
         disabled={commentsBusy}
         className="rounded-[10px] bg-fuchsia-600 font-bold hover:bg-fuchsia-700"
       >
-        {commentsBusy ? '⏳ กำลังดึงคอมเมนต์…' : '💬 ดึงคอมเมนต์'}
+        {commentsBusy ? '⏳ Analyzing…' : '💬 Comment Analysis'}
       </Button>
     </div>
   );
