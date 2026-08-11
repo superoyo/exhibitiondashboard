@@ -70,24 +70,79 @@ POSTS_PER_RUN = 20
 # ---------------------------------------------------------------------------
 
 def _classify_prompt(product_desc: str, batch: list) -> str:
+    """The classifier. Ported by hand from references/comment-analysis.md — the
+    skill file is an agent-context artifact and nothing in the app reads it.
+
+    The example block is the load-bearing part. The examples that teach a
+    BOUNDARY (a joke is not a complaint; talking about the clip is not talking
+    about the product) are kept verbatim because those patterns hold for any
+    product. The ones that touch the product are worded without naming a
+    product category, because this prompt runs for perfume, food and household
+    campaigns alike and a body-wash example would pull the others off course.
+    """
     lines = "\n".join(f"{i}. {(c.text or '')[:400]}" for i, c in enumerate(batch, 1))
     return (
         f"สินค้าของแคมเปญ: {product_desc}\n\n"
         "จัดประเภทคอมเมนต์ใต้โพสต์รีวิวต่อไปนี้ ทีละอัน ตาม taxonomy:\n\n"
         "category (เลือก 1 ค่า):\n"
-        "FAN = พูดถึงตัวครีเอเตอร์/ทักทาย ไม่แตะสินค้า\n"
+        "FAN = พูดถึงตัวครีเอเตอร์/ทักทาย/มุกตลก ไม่แตะสินค้า\n"
         "PRODUCT = พูดถึงสินค้า แบรนด์ หรือการใช้งาน\n"
         "INTENT = ตั้งใจซื้อ หรือถามช่องทางซื้อ/ราคา\n"
         "ECHO = เอาสโลแกนหรือมุกของแคมเปญไปเล่นต่อ\n"
         "NEG = เชิงลบต่อสินค้า แบรนด์ ครีเอเตอร์ หรือบ่นว่าขายของ\n"
         "QUESTION = คำถามทั่วไปที่ไม่เกี่ยวกับการซื้อ\n"
         "SPAM = บอท โฆษณาแฝง ลิงก์พนัน ไม่เกี่ยวข้อง\n\n"
+
+        "กติกาเมื่อคอมเมนต์เข้าได้หลายหมวด — เลือกเจตนาเด่นสุด 'อันเดียว' "
+        "ห้ามตอบหลายหมวด:\n"
+        "· แตะสินค้า + บอกว่าจะซื้อ / ถามที่ซื้อ / ถามราคา → INTENT (ไม่ใช่ PRODUCT)\n"
+        "· แตะสินค้า + บ่น ตำหนิ บอกว่าไม่เวิร์ก → NEG (ไม่ใช่ PRODUCT)\n"
+        "· เล่นมุกหรือสโลแกนของแคมเปญ + แตะสินค้า → ECHO\n"
+        "· คอมเมนต์ยาวหลายเจตนา → เลือกเจตนาที่เด่นที่สุด\n\n"
+
+        "NEG ต้องมีการ 'ตำหนิ' จริง ไม่ใช่แค่ 'น้ำเสียงแรง':\n"
+        "· มุกตลก หยอกล้อ แกล้งบ่น อีโมจิเยอะ สะกดยืด = FAN "
+        "ถ้าไม่ได้ตำหนิสินค้า/แบรนด์/ครีเอเตอร์\n"
+        "· พูดถึงการตัดต่อ เสียง เพลง มุมกล้อง ความยาวคลิป = FAN "
+        "(พูดถึงคลิป ไม่ใช่สินค้า)\n"
+        "· ประชด: 'ดีย์มากค่า' ในบริบทกำลังบ่น = NEG · ในบริบทชม = PRODUCT "
+        "→ ยึดบริบททั้งประโยค ไม่ยึดคำเดี่ยว\n\n"
+
         "sentiment (ทิศทางต่อ 'สินค้า' เท่านั้น ไม่ใช่ต่อครีเอเตอร์):\n"
-        "pos / neu / neg — ถ้า category เป็น FAN, QUESTION หรือ SPAM ให้ตอบ -\n\n"
-        "theme: คำเดียวสั้น ๆ ว่าพูดถึงแง่ไหนของสินค้า (เช่น รสชาติ ราคา "
-        "หาซื้อยาก แพ็กเกจ เห็นผล กลิ่น) — ถ้าไม่แตะสินค้าให้ตอบ -\n\n"
-        "ข้อควรระวัง: คอมเมนต์ที่ชมครีเอเตอร์แต่ไม่พูดถึงสินค้า = FAN ไม่ใช่ PRODUCT · "
-        "ภาษาไทยมีการประชดเยอะ ให้ยึดบริบทไม่ใช่ถ้อยคำ\n\n"
+        "pos / neu / neg — ถ้า category เป็น FAN, QUESTION หรือ SPAM ให้ตอบ -\n"
+        "neg ต้องมีการตำหนิ/ไม่พอใจสินค้าจริง · การเล่าสถานะเฉย ๆ = neu\n\n"
+
+        "แยก 'ของที่ผู้คอมเมนต์ใช้อยู่หมด' ออกจาก 'สินค้าหมดในร้าน' "
+        "— คำว่า 'หมด' ไม่ได้แปลว่าเชิงลบ:\n"
+        "· 'ของที่ใช้อยู่หมดพอดี' / 'ขวดเก่าใช้หมดแล้ว' = ของตัวเองหมด "
+        "ไม่ใช่การตำหนิ → sentiment neu และ theme ต้องไม่ใช่ หาซื้อยาก "
+        "(มักเป็นสัญญาณว่ากำลังจะซื้อ)\n"
+        "· 'หาซื้อไม่ได้' / 'ร้านไม่มีของ' / 'ของหมดทุกสาขา' = "
+        "ปัญหาการกระจายสินค้าจริง → NEG|neg|หาซื้อยาก\n\n"
+
+        "theme: ต้องเป็น 'แง่มุมของสินค้า' ที่เจาะจง "
+        "ห้ามตอบคำกว้างอย่าง ทั่วไป / สินค้า / ดี / ชอบ\n"
+        "ใช้คำเดิมให้ตรงกันทั้งชุดเพื่อให้นับรวมได้ ถ้าเข้ากรณีนี้ให้ใช้คำนี้: "
+        "รสชาติ · กลิ่น · เนื้อสัมผัส · เห็นผล · ราคา · หาซื้อยาก · แพ็กเกจ · "
+        "ปริมาณ · ระคายเคือง · ขายของ\n"
+        "ถ้าไม่เข้าเลย ตั้งคำใหม่สั้น ๆ ได้ แต่ต้องเจาะจง · ไม่แตะสินค้าให้ตอบ -\n\n"
+
+        "คอมเมนต์ภาษาจีน พม่า อังกฤษ: จัดหมวดตามเนื้อหาปกติ ไม่ใช่ SPAM "
+        "(SPAM คือบอท ลิงก์พนัน โฆษณาแฝง ไม่ใช่ 'ภาษาที่อ่านไม่ออก')\n\n"
+
+        "ตัวอย่างที่จัดถูกแล้ว ใช้เทียบ:\n"
+        "\"ที่บ้านใช้ประจำเลย ใช้แล้วดีจริงค้าบ\"        → PRODUCT|pos|เห็นผล\n"
+        "\"ได้เวลาเปลี่ยนมาใช้ตัวนี้แล้ว\"              → INTENT|pos|-\n"
+        "\"ร้านไหนใกล้ฉันมีขายบ้าง~\"                  → INTENT|neu|หาซื้อยาก\n"
+        "\"มันต้องดีน่าา\"                            → ECHO|pos|-\n"
+        "\"ของที่ใช้อยู่หมดพอดี\"                      → PRODUCT|neu|-\n"
+        "\"หาซื้อไม่ได้เลย ร้านแถวบ้านไม่มี\"             → NEG|neg|หาซื้อยาก\n"
+        "\"เคยใช้แล้วไม่เห็นผล\"                       → NEG|neg|เห็นผล\n"
+        "\"โอนค่าตัวมาด้วย !!\"                       → NEG|neg|ขายของ\n"
+        "\"มู้ดเสียงคลิปคือ ขึ้นๆลงๆ\"                  → FAN|-|-\n"
+        "\"อยู่กับข้าเอ็งเหมือนไก่จี๊ดริดในก้านกล้วย\"     → FAN|-|-\n"
+        "\"ตกใจค้าบ มากอดเค้าเลยค้าบ\"                → FAN|-|-\n\n"
+
         "ตอบบรรทัดละ 1 คอมเมนต์ รูปแบบ: เลข|CATEGORY|sentiment|theme\n"
         "ห้ามมีข้อความอื่น ต้องตอบให้ครบทุกเลข\n\n"
         f"คอมเมนต์:\n{lines}"
@@ -364,6 +419,37 @@ def run_comment_refresh(campaign: str) -> dict:
     except Exception as exc:  # noqa: BLE001
         log.exception("comment refresh[%s] failed", campaign)
         st.update(status="failed", message=f"ดึงคอมเมนต์ไม่สำเร็จ: {_redact(exc)}",
+                  finished_at=dt.datetime.now(config.TZ).isoformat())
+        return {"status": "failed", "error": _redact(exc)}
+
+
+def reclassify(campaign: str) -> dict:
+    """Clear every classification for the campaign and label it again.
+
+    Exists because classify_pending() only ever looks at rows with no category,
+    so improving the prompt changes nothing for comments already labelled — the
+    panel would keep showing the old verdicts and the improvement would be
+    invisible. Costs no Apify credit: nothing is re-scraped, only re-labelled.
+    """
+    st = state_for("cm:" + campaign)
+    st.update(status="running", message="กำลังจัดประเภทคอมเมนต์ใหม่ทั้งหมด…",
+              started_at=dt.datetime.now(config.TZ).isoformat(), finished_at=None,
+              posts=0, cost_usd=None)
+    try:
+        with session_scope() as session:
+            total = session.query(ReportComment).filter(
+                ReportComment.campaign == campaign).update(
+                {"category": None, "sentiment": None, "theme": None,
+                 "classified_at": None}, synchronize_session=False)
+        from app.tiein import infer_product
+        done = classify_pending(campaign, infer_product(campaign), st, total=total)
+        st.update(status="success",
+                  message=f"จัดประเภทใหม่แล้ว {done}/{total} อัน (ไม่มีค่า Apify)",
+                  finished_at=dt.datetime.now(config.TZ).isoformat(), posts=done)
+        return {"status": "success", "classified": done, "total": total}
+    except Exception as exc:  # noqa: BLE001
+        log.exception("reclassify[%s] failed", campaign)
+        st.update(status="failed", message=f"จัดประเภทใหม่ไม่สำเร็จ: {_redact(exc)}",
                   finished_at=dt.datetime.now(config.TZ).isoformat())
         return {"status": "failed", "error": _redact(exc)}
 

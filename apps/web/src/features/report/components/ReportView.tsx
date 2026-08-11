@@ -19,7 +19,10 @@ import {
   distinctPlatforms,
   sumBy,
 } from '@/features/report/lib/metrics';
-import { startCommentRefresh } from '@/features/report/api/reportApi';
+import {
+  startCommentReclassify,
+  startCommentRefresh,
+} from '@/features/report/api/reportApi';
 import {
   useCommentStatus,
   useComments,
@@ -178,6 +181,23 @@ export function ReportView({
     }
   }
 
+  async function handleReclassifyComments() {
+    if (
+      !window.confirm(
+        'จัดประเภทคอมเมนต์ที่เก็บไว้แล้วใหม่ทั้งหมด ด้วยกฎล่าสุด?\n\n' +
+          'ไม่ดึงคอมเมนต์ใหม่ จึงไม่มีค่า Apify — มีแต่ค่า AI จัดประเภท (หลักสตางค์)',
+      )
+    )
+      return;
+    try {
+      await startCommentReclassify(campaign);
+      setInfo('เริ่มจัดประเภทใหม่แล้ว…');
+      void commentStatus.refetch();
+    } catch (err) {
+      setInfo(`⚠️ ${apiErrorMessage(err)}`);
+    }
+  }
+
   const campaignName = meta.data?.name ?? campaign;
   const emoji = meta.data?.emoji ?? '📊';
   const refreshing = refreshStatus.data?.status === 'running';
@@ -213,6 +233,7 @@ export function ReportView({
               commentsBusy={commentsBusy}
               commentCount={comments.data?.total ?? 0}
               onRefreshComments={() => void handleRefreshComments()}
+              onReclassifyComments={() => void handleReclassifyComments()}
               onStatus={setInfo}
             />
             <div className="mt-1 text-xs text-muted-foreground">

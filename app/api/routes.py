@@ -656,6 +656,22 @@ def report_comments_trigger(background: BackgroundTasks, campaign: str = "pao"):
     return {"status": "started", "campaign": campaign}
 
 
+@router.post("/report/comments/reclassify")
+def report_comments_reclassify(background: BackgroundTasks, campaign: str = "pao"):
+    """Re-label comments already stored, without re-scraping.
+
+    Separate from the refresh action because it costs no Apify credit: it exists
+    so a change to the classification rules is visible on data already
+    collected, instead of only on the next batch."""
+    from app.comments import reclassify
+    st = state_for("cm:" + campaign)
+    if st.get("status") == "running":
+        raise HTTPException(status_code=409, detail="มีงานคอมเมนต์กำลังทำอยู่แล้ว")
+    st.update(status="running", message="เริ่มจัดประเภทใหม่…", posts=0)
+    background.add_task(reclassify, campaign)
+    return {"status": "started", "campaign": campaign}
+
+
 @router.get("/report/comments/status")
 def report_comments_status(campaign: str = "pao"):
     return state_for("cm:" + campaign)

@@ -34,6 +34,9 @@ interface ReportActionsProps {
    *  at a glance rather than only in the status line right after a run. */
   commentCount: number;
   onRefreshComments: () => void;
+  /** Re-label what is already stored. Its own action because, unlike the one
+   *  above, it spends no Apify credit. */
+  onReclassifyComments: () => void;
   onStatus: (message: string) => void;
 }
 
@@ -44,6 +47,7 @@ export function ReportActions({
   commentsBusy,
   commentCount,
   onRefreshComments,
+  onReclassifyComments,
   onStatus,
 }: ReportActionsProps) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -187,6 +191,20 @@ export function ReportActions({
           ? '⏳ Analyzing…'
           : `💬 Comment Analysis${commentCount ? ` (${commentCount.toLocaleString()})` : ''}`}
       </Button>
+
+      {/* Only worth offering once something is stored to re-label. Deliberately
+          quieter than the button above — it is the cheap one. */}
+      {commentCount > 0 ? (
+        <Button
+          onClick={onReclassifyComments}
+          disabled={commentsBusy}
+          variant="outline"
+          className="rounded-[10px] font-bold"
+          title="จัดประเภทคอมเมนต์ที่เก็บไว้แล้วใหม่ ด้วยกฎล่าสุด — ไม่มีค่า Apify"
+        >
+          🔁 Re-classify
+        </Button>
+      ) : null}
     </div>
   );
 }
