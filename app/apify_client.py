@@ -138,9 +138,11 @@ def run_scrape_comments_tiktok(
     payload = {
         "postURLs": post_urls,
         "commentsPerPost": per_post or config.COMMENTS_PER_POST,
-        # replies are mostly creator/fan back-and-forth and dilute the
-        # product signal, so only top-level comments are collected
-        "maxRepliesPerComment": 0,
+        # Replies are collected too — they carry real product talk (answers to
+        # "ซื้อที่ไหน", follow-up complaints). They are drawn from the SAME
+        # commentsPerPost budget, so the per-comment cap keeps one long thread
+        # from crowding out other commenters.
+        "maxRepliesPerComment": config.REPLIES_PER_COMMENT,
     }
     return _execute(payload, actor_id=config.TIKTOK_COMMENTS_ACTOR_ID,
                     poll_interval=poll_interval, timeout_s=timeout_s,
@@ -158,11 +160,12 @@ def run_scrape_comments_fb(
     """Comment TEXT under specific Facebook posts.
 
     NOTE `resultsLimit` here is per START URL, not per run — same shape as
-    run_scrape_fb above. Nested replies are off for the same reason as TikTok."""
+    run_scrape_fb above, and nested replies come out of that same budget."""
     payload = {
         "startUrls": [{"url": u} for u in post_urls],
         "resultsLimit": per_post or config.COMMENTS_PER_POST,
-        "includeNestedComments": False,
+        # up to 3 levels of replies, drawn from the same resultsLimit budget
+        "includeNestedComments": True,
     }
     return _execute(payload, actor_id=config.FB_COMMENTS_ACTOR_ID,
                     poll_interval=poll_interval, timeout_s=timeout_s,

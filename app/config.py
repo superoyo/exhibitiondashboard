@@ -60,6 +60,16 @@ FB_COMMENTS_ACTOR_ID: str = os.getenv(
 # most of the volume — so this caps the bill without changing the picture for
 # the many small posts. Raise it for a campaign where a viral post matters.
 COMMENTS_PER_POST: int = int(os.getenv("COMMENTS_PER_POST", "200"))
+# Replies per top-level comment. They count against COMMENTS_PER_POST, so this
+# is a spread control, not an extra allowance: without a per-comment cap one
+# viral thread can eat a post's whole budget and crowd out every other comment.
+REPLIES_PER_COMMENT: int = int(os.getenv("REPLIES_PER_COMMENT", "5"))
+# Model that classifies comments. Its OWN variable, not TIEIN_MODEL: the tie-in
+# picker runs a couple of dozen images per clip, while this runs over every
+# comment in a campaign, so raising the tie-in model for a sharper frame must
+# not silently multiply the classification bill. Haiku is a good fit here — the
+# job is short-text labelling against a fixed taxonomy, not fine visual work.
+COMMENT_MODEL: str = os.getenv("COMMENT_MODEL", "claude-haiku-4-5")
 RESULTS_PER_PAGE: int = 20
 LOOKBACK_DAYS: int = 7  # oldestPostDateUnified = today - LOOKBACK_DAYS
 

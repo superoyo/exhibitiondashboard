@@ -51,6 +51,8 @@ export const queryKeys = {
     profilesStatus: (campaign: string) => ['report', 'profiles-status', campaign] as const,
     tieinStatus: (campaign: string) => ['report', 'tiein-status', campaign] as const,
     comments: (campaign: string) => ['report', 'comments', campaign] as const,
+    commentList: (campaign: string, sentiment: string, offset: number) =>
+      ['report', 'comment-list', campaign, sentiment, offset] as const,
     commentStatus: (campaign: string) => ['report', 'comment-status', campaign] as const,
   },
 } as const;

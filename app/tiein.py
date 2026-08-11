@@ -110,7 +110,8 @@ def _api_error_thai(r) -> str:
     return f"Claude API HTTP {r.status_code}: {txt[:150]}"
 
 
-def _claude(content: list, max_tokens: int = 1500) -> Optional[str]:
+def _claude(content: list, max_tokens: int = 1500,
+            model: Optional[str] = None) -> Optional[str]:
     from app.settings import get_anthropic_key
     key = get_anthropic_key()
     if not key:
@@ -122,7 +123,9 @@ def _claude(content: list, max_tokens: int = 1500) -> Optional[str]:
         timeout=240,
         headers={"x-api-key": key, "anthropic-version": "2023-06-01",
                  "content-type": "application/json"},
-        json={"model": MODEL, "max_tokens": max_tokens,
+        # callers with a different cost profile pass their own model — see
+        # config.COMMENT_MODEL
+        json={"model": model or MODEL, "max_tokens": max_tokens,
               "messages": [{"role": "user", "content": content}]},
     )
     if r.status_code != 200:

@@ -1,5 +1,8 @@
-import type { CommentPreviewItem, CommentSummary } from '@kol/shared';
-import { useMemo } from 'react';
+import type { CommentPreviewItem, CommentSentiment, CommentSummary } from '@kol/shared';
+import { useMemo, useState } from 'react';
+
+import { useCommentList } from '@/features/report/hooks/useReport';
+import { Button } from '@/components/ui/button';
 
 import { EChart } from '@/components/common/EChart';
 import { type EChartsOption } from '@/lib/echarts';
@@ -104,7 +107,19 @@ function PreviewCard({ item }: { item: CommentPreviewItem }) {
           <div className="truncate text-sm font-semibold">{item.author || 'ไม่ทราบชื่อ'}</div>
           {/* Whose post this sat under — a comment is meaningless without it */}
           <div className="truncate text-xs text-muted-foreground">
-            {item.platform === 'tiktok' ? 'TikTok' : 'Facebook'} · โพสต์ของ @{item.kol}
+            {item.platform === 'tiktok' ? 'TikTok' : 'Facebook'} · โพสต์ของ{' '}
+            {item.post_url ? (
+              <a
+                href={item.post_url}
+                target="_blank"
+                rel="noreferrer"
+                className="underline hover:text-foreground"
+              >
+                @{item.kol} ↗
+              </a>
+            ) : (
+              <>@{item.kol}</>
+            )}
           </div>
         </div>
         {item.sentiment ? (
@@ -132,7 +147,105 @@ function PreviewCard({ item }: { item: CommentPreviewItem }) {
   );
 }
 
-export function CommentPanel({ data }: { data: CommentSummary }) {
+const PAGE_SIZE = 20;
+
+/** Filter chips + one page of comments. Server-paged: see list_comments(). */
+function CommentList({ campaign, data }: { campaign: string; data: CommentSummary }) {
+  const [sentiment, setSentiment] = useState<'' | CommentSentiment>('');
+  const [offset, setOffset] = useState(0);
+  const list = useCommentList(campaign, sentiment, offset, PAGE_SIZE, true);
+
+  function pick(next: '' | CommentSentiment) {
+    setSentiment(next);
+    setOffset(0); // page 3 of "all" is not page 3 of "negative"
+  }
+
+  const s = data.product_sentiment;
+  const all = (s.pos ?? 0) + (s.neu ?? 0) + (s.neg ?? 0);
+  const chips: { key: '' | CommentSentiment; label: string; count: number }[] = [
+    { key: '', label: 'ทั้งหมด', count: all },
+    { key: 'pos', label: 'บวก', count: s.pos ?? 0 },
+    { key: 'neu', label: 'กลาง', count: s.neu ?? 0 },
+    { key: 'neg', label: 'ลบ', count: s.neg ?? 0 },
+  ];
+
+  const total = list.data?.total ?? 0;
+  const from = total === 0 ? 0 : offset + 1;
+  const to = Math.min(offset + PAGE_SIZE, total);
+
+  return (
+    <Card className="lg:col-span-3">
+      <CardContent className="p-4">
+        <h3 className="mb-1 font-semibold">ตัวอย่าง Comment</h3>
+        <p className="mb-3 text-xs text-muted-foreground">
+          เรียงตามยอดไลก์ — ยอดไลก์คือการโหวตของคนดูเองว่าคอมเมนต์ไหนสำคัญ
+        </p>
+
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {chips.map((c) => (
+            <button
+              key={c.key || 'all'}
+              type="button"
+              onClick={() => pick(c.key)}
+              // count of 0 stays clickable rather than disabled: an empty
+              // result is itself the answer ("no negative comments at all")
+              className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                sentiment === c.key
+                  ? 'border-transparent bg-slate-800 text-white'
+                  : 'hover:bg-muted'
+              }`}
+            >
+              {c.label} <span className="tabular-nums opacity-70">{c.count}</span>
+            </button>
+          ))}
+        </div>
+
+        {list.isError ? (
+          <div className="py-6 text-center text-sm text-destructive">โหลดคอมเมนต์ไม่สำเร็จ</div>
+        ) : total === 0 ? (
+          <div className="py-6 text-center text-sm text-muted-foreground">
+            ไม่มีคอมเมนต์ในกลุ่มนี้
+          </div>
+        ) : (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {(list.data?.items ?? []).map((item) => (
+                <PreviewCard key={item.id} item={item} />
+              ))}
+            </div>
+
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <span className="text-xs text-muted-foreground">
+                {from}–{to} จาก {total.toLocaleString()}
+                {list.isFetching ? ' · กำลังโหลด…' : ''}
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={offset === 0}
+                  onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+                >
+                  ← ก่อนหน้า
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={to >= total}
+                  onClick={() => setOffset(offset + PAGE_SIZE)}
+                >
+                  ถัดไป →
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+export function CommentPanel({ campaign, data }: { campaign: string; data: CommentSummary }) {
   const sentiment = data.product_sentiment;
   const productTotal = (sentiment.pos ?? 0) + (sentiment.neu ?? 0) + (sentiment.neg ?? 0);
 
@@ -158,6 +271,7 @@ export function CommentPanel({ data }: { data: CommentSummary }) {
             {Object.entries(data.by_platform)
               .map(([p, n]) => `${p === 'tiktok' ? 'TikTok' : 'Facebook'} ${n.toLocaleString()}`)
               .join(' · ')}
+            {data.replies > 0 ? <span> · reply {data.replies.toLocaleString()}</span> : null}
             {/* Never hide this: percentages computed over a subset without
                 saying so are the easiest number in a report to mislead with. */}
             {data.unclassified > 0 ? (
@@ -170,10 +284,20 @@ export function CommentPanel({ data }: { data: CommentSummary }) {
 
       <Card>
         <CardContent className="p-4">
-          <h3 className="mb-1 font-semibold">เสียงต่อสินค้า</h3>
+          <h3 className="mb-1 font-semibold">Comment ที่เกี่ยวกับสินค้า</h3>
           <p className="mb-3 text-xs text-muted-foreground">
             เฉพาะคอมเมนต์ที่พูดถึงสินค้าจริง ({productTotal.toLocaleString()} อัน) — ไม่รวมคอมเมนต์
             ที่ชมครีเอเตอร์เฉย ๆ
+            {/* Stated, not silently applied: excluding the creator's own words
+                changes the denominator, and a reader comparing this to `total`
+                deserves to know why the numbers differ. */}
+            {data.creator_replies > 0 ? (
+              <>
+                {' '}
+                และไม่รวม reply ที่ KOL ตอบใต้โพสต์ตัวเอง{' '}
+                {data.creator_replies.toLocaleString()} อัน
+              </>
+            ) : null}
           </p>
           <div className="mb-4 grid grid-cols-3 gap-2 text-center">
             {(['pos', 'neu', 'neg'] as const).map((s) => (
@@ -201,19 +325,7 @@ export function CommentPanel({ data }: { data: CommentSummary }) {
         </CardContent>
       </Card>
 
-      <Card className="lg:col-span-3">
-        <CardContent className="p-4">
-          <h3 className="mb-1 font-semibold">คอมเมนต์ที่เกี่ยวกับสินค้า</h3>
-          <p className="mb-3 text-xs text-muted-foreground">
-            เรียงตามยอดไลก์ — ยอดไลก์คือการโหวตของคนดูเองว่าคอมเมนต์ไหนสำคัญ
-          </p>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {data.preview.map((item) => (
-              <PreviewCard key={item.id} item={item} />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      <CommentList campaign={campaign} data={data} />
     </div>
   );
 }

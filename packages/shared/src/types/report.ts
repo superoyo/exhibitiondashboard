@@ -122,6 +122,10 @@ export interface CommentPreviewItem {
   platform: string;
   /** Whose post it sits under — the card shows this, not just the commenter. */
   kol: string;
+  /** Link to the post the comment was written under. Resolved at read time from
+   *  the posts table, so it works for comments stored before this existed.
+   *  Null when the post row is gone (roster edited after the scrape). */
+  post_url: string | null;
   category: CommentCategory | null;
   label: string | null;
   sentiment: CommentSentiment | null;
@@ -136,11 +140,24 @@ export interface CommentSummary {
   /** Scraped but not yet classified — shown rather than hidden, so the
    *  percentages are never quietly computed over a subset. */
   unclassified: number;
+  /** How many of the total are replies rather than top-level comments. */
+  replies: number;
+  /** Replies a KOL wrote under their own post. Counted in `total` but excluded
+   *  from product sentiment and the preview — a creator answering "อร่อยจริง ๆ"
+   *  is advertising, not audience voice. */
+  creator_replies: number;
   by_platform: Record<string, number>;
   categories: CommentCategoryCount[];
   product_sentiment: Partial<Record<CommentSentiment, number>>;
   themes: { theme: string; count: number }[];
-  preview: CommentPreviewItem[];
+}
+
+/** `GET /api/report/comments/list` */
+export interface CommentListResponse {
+  total: number;
+  offset: number;
+  limit: number;
+  items: CommentPreviewItem[];
 }
 
 /** `GET /api/report/packshot` */

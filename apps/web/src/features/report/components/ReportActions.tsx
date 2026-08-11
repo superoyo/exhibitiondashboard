@@ -30,6 +30,9 @@ interface ReportActionsProps {
   /** True while a COMMENT scrape is running — a separate job, separate button.
    *  Apify bills per comment, so it must never ride along with Refresh Data. */
   commentsBusy: boolean;
+  /** Comments already stored. Shown on the button so the count is answerable
+   *  at a glance rather than only in the status line right after a run. */
+  commentCount: number;
   onRefreshComments: () => void;
   onStatus: (message: string) => void;
 }
@@ -39,6 +42,7 @@ export function ReportActions({
   campaignName,
   refreshing,
   commentsBusy,
+  commentCount,
   onRefreshComments,
   onStatus,
 }: ReportActionsProps) {
@@ -179,7 +183,9 @@ export function ReportActions({
         disabled={commentsBusy}
         className="rounded-[10px] bg-fuchsia-600 font-bold hover:bg-fuchsia-700"
       >
-        {commentsBusy ? '⏳ Analyzing…' : '💬 Comment Analysis'}
+        {commentsBusy
+          ? '⏳ Analyzing…'
+          : `💬 Comment Analysis${commentCount ? ` (${commentCount.toLocaleString()})` : ''}`}
       </Button>
     </div>
   );

@@ -1,4 +1,5 @@
 import type {
+  CommentListResponse,
   CommentSummary,
   JobState,
   PackshotSaveResult,
@@ -41,6 +42,19 @@ export async function getTieinStatus(campaign: string): Promise<JobState> {
 /** Reads stored comments only — opening the report never scrapes. */
 export async function getComments(campaign: string): Promise<CommentSummary> {
   const { data } = await api.get<CommentSummary>('/report/comments', { params: { campaign } });
+  return data;
+}
+
+/** One page of product-related comments, filtered and paged on the server. */
+export async function getCommentList(
+  campaign: string,
+  sentiment: string,
+  offset: number,
+  limit: number,
+): Promise<CommentListResponse> {
+  const { data } = await api.get<CommentListResponse>('/report/comments/list', {
+    params: { campaign, sentiment, offset, limit },
+  });
   return data;
 }
 

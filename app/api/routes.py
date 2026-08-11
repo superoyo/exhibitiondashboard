@@ -628,6 +628,17 @@ def report_comments(campaign: str = "pao"):
     return summary(campaign)
 
 
+@router.get("/report/comments/list")
+def report_comments_list(campaign: str = "pao", sentiment: str = "",
+                         offset: int = 0, limit: int = 20):
+    """One page of product-related comments, optionally filtered by sentiment.
+
+    Paged and filtered on the server: a campaign's product comments run into the
+    thousands, and the panel only ever shows twenty at a time."""
+    from app.comments import list_comments
+    return list_comments(campaign, sentiment or None, max(0, offset), limit)
+
+
 @router.post("/report/comments/refresh")
 def report_comments_trigger(background: BackgroundTasks, campaign: str = "pao"):
     """Scrape + classify this campaign's comments.

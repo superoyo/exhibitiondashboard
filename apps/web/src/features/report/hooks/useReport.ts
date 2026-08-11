@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { queryKeys } from '@/app/queryClient';
 import {
+  getCommentList,
   getCommentStatus,
   getComments,
   getPackshot,
@@ -95,5 +96,25 @@ export function useCommentStatus(campaign: string, enabled: boolean) {
     queryFn: () => getCommentStatus(campaign),
     enabled: enabled && Boolean(campaign),
     refetchInterval: (query) => (query.state.data?.status === 'running' ? COMMENT_POLL_MS : false),
+  });
+}
+
+/**
+ * One page of product comments. Keyed on the filter and offset so switching
+ * back to a page already seen is instant, and `placeholderData` keeps the
+ * previous page on screen while the next one loads instead of flashing empty.
+ */
+export function useCommentList(
+  campaign: string,
+  sentiment: string,
+  offset: number,
+  limit: number,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: queryKeys.report.commentList(campaign, sentiment, offset),
+    queryFn: () => getCommentList(campaign, sentiment, offset, limit),
+    enabled: enabled && Boolean(campaign),
+    placeholderData: (prev) => prev,
   });
 }

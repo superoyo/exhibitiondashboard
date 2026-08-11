@@ -211,6 +211,7 @@ export function ReportView({
               campaignName={campaignName}
               refreshing={refreshing}
               commentsBusy={commentsBusy}
+              commentCount={comments.data?.total ?? 0}
               onRefreshComments={() => void handleRefreshComments()}
               onStatus={setInfo}
             />
@@ -323,7 +324,7 @@ export function ReportView({
               the report never triggers a scrape. */}
           {!influencerView && comments.data ? (
             <div className="mb-5">
-              <CommentPanel data={comments.data} />
+              <CommentPanel campaign={campaign} data={comments.data} />
             </div>
           ) : null}
 

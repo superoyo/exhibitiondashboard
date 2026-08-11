@@ -27,7 +27,7 @@ import logging
 import re
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from app import config
 from app.apify_client import run_scrape_comments_fb, run_scrape_comments_tiktok
@@ -94,6 +94,10 @@ def _classify_prompt(product_desc: str, batch: list) -> str:
     )
 
 
+# a theme must have at least one letter or digit — dashes, dots and stray
+# punctuation are the model's way of saying "no theme", in several spellings
+_THEME_WORD = re.compile(r"[^\W_]", re.UNICODE)
+
 _LINE = re.compile(r"^\s*(\d+)\s*\|\s*([A-Z]+)\s*\|\s*([a-z-]+)\s*\|\s*(.*?)\s*$")
 
 
@@ -115,13 +119,18 @@ def _parse_classification(reply: str, size: int) -> dict:
         else:
             sentiment = None
         theme = theme.strip()[:64]
-        if theme in {"-", "", "none", "None"}:
+        # A theme has to contain an actual word. The model answers the
+        # no-theme case with a dash, but not always exactly one: "---" slipped
+        # past a `theme in {"-"}` check and became the second most common
+        # "theme" on the panel, with 17 comments behind it.
+        if not _THEME_WORD.search(theme) or theme.lower() in {"none", "null", "ไม่มี", "ทั่วไป"}:
             theme = None
         out[n] = (cat, sentiment, theme)
     return out
 
 
-def classify_pending(campaign: str, product_desc: str, st: Optional[dict] = None) -> int:
+def classify_pending(campaign: str, product_desc: str, st: Optional[dict] = None,
+                     total: int = 0) -> int:
     """Classify every stored comment of the campaign that has no category yet.
     Returns how many were classified. Safe to re-run — it only ever looks at
     rows still missing a category, so an interrupted run resumes."""
@@ -143,7 +152,7 @@ def classify_pending(campaign: str, product_desc: str, st: Optional[dict] = None
         try:
             reply = _claude(
                 [{"type": "text", "text": _classify_prompt(product_desc, holder)}],
-                max_tokens=CLASSIFY_MAX_TOKENS)
+                max_tokens=CLASSIFY_MAX_TOKENS, model=config.COMMENT_MODEL)
         except RuntimeError as exc:
             log.warning("comment classify failed: %s", exc)
             return done  # transient — the next run picks the same rows up
@@ -165,7 +174,8 @@ def classify_pending(campaign: str, product_desc: str, st: Optional[dict] = None
                     row.classified_at = now
                     done += 1
         if st is not None:
-            st.update(message=f"จัดประเภทคอมเมนต์แล้ว {done} อัน…")
+            st.update(message=(f"จัดประเภทคอมเมนต์แล้ว {done}"
+                               + (f"/{total}" if total else "") + " อัน…"))
         if len(payload) < BATCH:
             return done
 
@@ -226,7 +236,7 @@ def _store_tiktok(campaign: str, items: list, owner_of: dict) -> int:
             "author": str(it.get("uniqueId") or "")[:255], "text": text[:5000],
             "likes": int(it.get("diggCount") or 0),
             "posted_at": _parse_dt(it.get("createTimeISO")),
-            "is_reply": bool(it.get("repliesToId")),
+            "is_reply": _is_reply_tiktok(it),
         })
     return _upsert(rows)
 
@@ -263,6 +273,18 @@ def _video_id(url: str) -> str:
     if m:
         return m.group(1)
     return url.split("?")[0].rstrip("/")[-64:]
+
+
+def _is_reply_tiktok(it: dict) -> bool:
+    """Whether a TikTok comment is a reply. The actor page documents the reply
+    COUNT (`replyCommentTotal`) but not the parent-id field name, so several
+    plausible spellings are checked rather than betting on one. is_reply is
+    metadata only — nothing aggregates on it — so a miss costs a label, not a
+    number."""
+    for key in ("repliesToId", "replyToId", "parentCommentId", "replyId", "aid"):
+        if it.get(key):
+            return True
+    return bool(it.get("replyToComment") or it.get("isReply"))
 
 
 def _parse_dt(value) -> Optional[dt.datetime]:
@@ -307,8 +329,14 @@ def run_comment_refresh(campaign: str) -> dict:
         for label, urls, runner, store in (
                 ("TikTok", tiktok, run_scrape_comments_tiktok, _store_tiktok),
                 ("Facebook", facebook, run_scrape_comments_fb, _store_fb)):
-            for i, chunk in enumerate(_chunks(urls, POSTS_PER_RUN), 1):
-                st.update(message=f"ดึงคอมเมนต์ {label} ชุดที่ {i} ({len(chunk)} โพสต์)…")
+            chunks = list(_chunks(urls, POSTS_PER_RUN))
+            total_chunks = len(chunks)
+            for i, chunk in enumerate(chunks, 1):
+                # the running total matters: this job takes minutes, and without
+                # it a slow chunk is indistinguishable from a stuck one
+                so_far = f" · เก็บแล้ว {stored} อัน" if stored else ""
+                st.update(message=(f"ดึงคอมเมนต์ {label} ชุดที่ {i}/{total_chunks} "
+                                   f"({len(chunk)} โพสต์){so_far}…"))
                 try:
                     items, meta = runner(chunk)
                 except Exception as exc:  # noqa: BLE001 — keep the other chunks alive
@@ -316,10 +344,11 @@ def run_comment_refresh(campaign: str) -> dict:
                     continue
                 cost += meta.get("cost_usd") or 0.0
                 stored += store(campaign, items, owner_of)
+                st.update(message=f"ดึงคอมเมนต์ {label} · เก็บแล้ว {stored} อัน…", posts=stored)
 
         st.update(message="กำลังวิเคราะห์คอมเมนต์…")
         from app.tiein import infer_product
-        classified = classify_pending(campaign, infer_product(campaign), st)
+        classified = classify_pending(campaign, infer_product(campaign), st, total=stored)
 
         try:
             from app.settings import add_cost
@@ -343,9 +372,87 @@ def run_comment_refresh(campaign: str) -> dict:
 # rollup for the dashboard
 # ---------------------------------------------------------------------------
 
-def summary(campaign: str, preview_limit: int = 24) -> dict:
-    """Category split, product sentiment, and a preview of the comments that
-    actually mention the product — each carrying whose post it came from."""
+def _not_creator():
+    """Excludes a KOL's replies under their own post.
+
+    Replies are collected, which means the creator's own answers land in the
+    table. Counting those as product sentiment lets the brand vote for itself:
+    a KOL replying "อร่อยจริง ๆ ค่ะ" would register as audience praise.
+    comment-analysis.md calls these out as advertising to be kept separate.
+
+    Matches on the author name, so it catches TikTok (where the commenter
+    handle equals the roster username) but not always Facebook, whose actor
+    returns a display name rather than a handle. Partial cover beats none.
+    """
+    return or_(ReportComment.author.is_(None),
+               func.lower(ReportComment.author) != func.lower(ReportComment.kol_username))
+
+
+def _post_urls(session, campaign: str) -> dict:
+    """post_video_id -> the post's real URL, so a comment card can link to where
+    it was written.
+
+    Built by re-deriving the key rather than joining, because the two tables use
+    different key spaces: ReportPost.video_id is a synthetic
+    `{campaign}_{platform}_{md5}` string, while a comment keys on _video_id() of
+    the post URL. A campaign has tens of posts, so this is one small query.
+    """
+    out = {}
+    for url in session.scalars(
+            select(ReportPost.url)
+            .where(ReportPost.campaign == campaign,
+                   ReportPost.url.isnot(None))).all():
+        out[_video_id(url)] = url
+    return out
+
+
+def _item(c: ReportComment, post_url: Optional[str]) -> dict:
+    return {"id": c.id, "text": c.text, "author": c.author,
+            "platform": c.platform, "kol": c.kol_username,
+            "post_url": post_url,
+            "category": c.category, "label": CATEGORY_LABELS.get(c.category or ""),
+            "sentiment": c.sentiment, "theme": c.theme, "likes": c.likes,
+            "posted_at": c.posted_at.isoformat() if c.posted_at else None}
+
+
+def list_comments(campaign: str, sentiment: Optional[str] = None,
+                  offset: int = 0, limit: int = 20) -> dict:
+    """One page of product-related comments, newest-liked first.
+
+    Paged on the server rather than in the browser: a campaign's product
+    comments run into the thousands, and shipping all of them so the client can
+    slice twenty is the kind of thing that works fine until the campaign that
+    matters most is the one that breaks it.
+    """
+    limit = max(1, min(limit, 100))
+    where = [ReportComment.campaign == campaign,
+             ReportComment.category.in_(PRODUCT_CATEGORIES),
+             _not_creator()]
+    if sentiment in SENTIMENTS:
+        where.append(ReportComment.sentiment == sentiment)
+
+    with session_scope() as session:
+        total = session.scalar(
+            select(func.count()).select_from(ReportComment).where(*where)) or 0
+        rows = session.scalars(
+            select(ReportComment).where(*where)
+            .order_by(ReportComment.likes.desc(), ReportComment.id.desc())
+            .offset(offset).limit(limit)).all()
+        urls = _post_urls(session, campaign)
+        return {
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "items": [_item(c, urls.get(c.post_video_id)) for c in rows],
+        }
+
+
+def summary(campaign: str) -> dict:
+    """Category split, product sentiment and top themes. The comments
+    themselves come from list_comments(), which pages them.
+
+    Product sentiment excludes the creators' own replies; the category split
+    does not, so `total` still matches what was collected."""
     with session_scope() as session:
         total = session.scalar(select(func.count()).select_from(ReportComment)
                                .where(ReportComment.campaign == campaign)) or 0
@@ -357,30 +464,40 @@ def summary(campaign: str, preview_limit: int = 24) -> dict:
         sent_rows = session.execute(
             select(ReportComment.sentiment, func.count())
             .where(ReportComment.campaign == campaign,
-                   ReportComment.category.in_(PRODUCT_CATEGORIES))
+                   ReportComment.category.in_(PRODUCT_CATEGORIES),
+                   _not_creator())
             .group_by(ReportComment.sentiment)).all()
-        themes = session.execute(
+        creator_replies = session.scalar(
+            select(func.count()).select_from(ReportComment)
+            .where(ReportComment.campaign == campaign,
+                   func.lower(ReportComment.author)
+                   == func.lower(ReportComment.kol_username))) or 0
+        # Over-fetch and filter in Python: rows classified before the parser
+        # learned to reject dash-only themes still hold values like "---", and
+        # they should not occupy a slot on the panel.
+        theme_rows = session.execute(
             select(ReportComment.theme, func.count())
             .where(ReportComment.campaign == campaign,
                    ReportComment.theme.isnot(None))
             .group_by(ReportComment.theme)
-            .order_by(func.count().desc()).limit(12)).all()
-        # preview shows product-touching comments, most-liked first — those are
-        # the ones a brand reads, and likes are the crowd's own ranking
-        preview = session.scalars(
-            select(ReportComment)
-            .where(ReportComment.campaign == campaign,
-                   ReportComment.category.in_(PRODUCT_CATEGORIES))
-            .order_by(ReportComment.likes.desc(), ReportComment.id.desc())
-            .limit(preview_limit)).all()
+            .order_by(func.count().desc()).limit(40)).all()
+        themes = [(t, n) for t, n in theme_rows
+                  if t and _THEME_WORD.search(t)
+                  and t.lower() not in {"none", "null", "ไม่มี", "ทั่วไป"}][:12]
         platforms = session.execute(
             select(ReportComment.platform, func.count())
             .where(ReportComment.campaign == campaign)
             .group_by(ReportComment.platform)).all()
+        replies = session.scalar(
+            select(func.count()).select_from(ReportComment)
+            .where(ReportComment.campaign == campaign,
+                   ReportComment.is_reply.is_(True))) or 0
 
         return {
             "total": total,
             "unclassified": by_cat.get(None, 0),
+            "replies": replies,
+            "creator_replies": creator_replies,
             "by_platform": {p: n for p, n in platforms},
             "categories": [
                 {"code": c, "label": CATEGORY_LABELS[c], "count": by_cat.get(c, 0),
@@ -391,14 +508,6 @@ def summary(campaign: str, preview_limit: int = 24) -> dict:
                 s: n for s, n in sent_rows if s in SENTIMENTS
             },
             "themes": [{"theme": t, "count": n} for t, n in themes],
-            "preview": [
-                {"id": c.id, "text": c.text, "author": c.author,
-                 "platform": c.platform, "kol": c.kol_username,
-                 "category": c.category, "label": CATEGORY_LABELS.get(c.category or ""),
-                 "sentiment": c.sentiment, "theme": c.theme, "likes": c.likes,
-                 "posted_at": c.posted_at.isoformat() if c.posted_at else None}
-                for c in preview
-            ],
         }
 
 
@@ -419,12 +528,14 @@ def by_kol(campaign: str, per_kol: int = 6) -> list:
         sent = session.execute(
             select(ReportComment.kol_username, ReportComment.sentiment, func.count())
             .where(ReportComment.campaign == campaign,
-                   ReportComment.category.in_(PRODUCT_CATEGORIES))
+                   ReportComment.category.in_(PRODUCT_CATEGORIES),
+                   _not_creator())
             .group_by(ReportComment.kol_username, ReportComment.sentiment)).all()
         rows = session.scalars(
             select(ReportComment)
             .where(ReportComment.campaign == campaign,
-                   ReportComment.category.in_(PRODUCT_CATEGORIES))
+                   ReportComment.category.in_(PRODUCT_CATEGORIES),
+                   _not_creator())
             .order_by(ReportComment.likes.desc(), ReportComment.id.desc())).all()
 
         picked: dict = {}
