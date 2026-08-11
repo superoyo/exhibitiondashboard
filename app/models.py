@@ -140,6 +140,11 @@ class ReportComment(Base):
     # product-specific angle without a schema change per campaign.
     theme: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     classified_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Which version of the classification rules produced the three fields above.
+    # A comment labelled by an older version is re-labelled on the next run —
+    # the same trick report_posts.tiein_hash uses to redo shots from an older
+    # algorithm, and the reason no separate "re-classify" action is needed.
+    rules_version: Mapped[Optional[str]] = mapped_column(String(16), nullable=True, index=True)
 
     scraped_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False,

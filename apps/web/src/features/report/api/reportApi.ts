@@ -76,11 +76,6 @@ export async function startCommentRefresh(campaign: string): Promise<void> {
   await api.post('/report/comments/refresh', null, { params: { campaign } });
 }
 
-/** Re-labels stored comments with the current rules. No Apify cost. */
-export async function startCommentReclassify(campaign: string): Promise<void> {
-  await api.post('/report/comments/reclassify', null, { params: { campaign } });
-}
-
 export async function getCommentStatus(campaign: string): Promise<JobState> {
   const { data } = await api.get<JobState>('/report/comments/status', { params: { campaign } });
   return data;

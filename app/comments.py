@@ -60,6 +60,12 @@ CATEGORY_LABELS = {
 # the numbering reliably; a bigger batch starts dropping lines.
 BATCH = 40
 CLASSIFY_MAX_TOKENS = 4000
+# Bump this whenever _classify_prompt changes in a way that would label comments
+# differently. Every comment stores the version that labelled it, so the next
+# ordinary run re-labels anything older — no separate action to remember, and
+# nothing is re-labelled when the rules have not moved. Same idea as
+# TIEIN_VERSION, which redoes shots produced by an older algorithm.
+CLASSIFY_VERSION = "rules2"
 # Posts per Apify run. One run per post would multiply run overhead; one run for
 # everything makes a single bad URL slower to isolate.
 POSTS_PER_RUN = 20
@@ -186,9 +192,16 @@ def _parse_classification(reply: str, size: int) -> dict:
 
 def classify_pending(campaign: str, product_desc: str, st: Optional[dict] = None,
                      total: int = 0) -> int:
-    """Classify every stored comment of the campaign that has no category yet.
-    Returns how many were classified. Safe to re-run — it only ever looks at
-    rows still missing a category, so an interrupted run resumes."""
+    """Label every comment of the campaign that needs it — never labelled, or
+    labelled by an older version of the rules.
+
+    Returns how many were labelled. Safe to re-run: a row drops out of the
+    queue only once it carries the current version, so an interrupted run
+    resumes where it stopped rather than starting over.
+
+    A stale row keeps its old labels until it is re-done, so the panel stays
+    readable during a long re-label instead of blanking out. The numbers are a
+    mix of old and new rules while that runs."""
     from app.tiein import _claude  # shared Claude caller (key handling, Thai errors)
 
     done = 0
@@ -197,7 +210,12 @@ def classify_pending(campaign: str, product_desc: str, st: Optional[dict] = None
             batch = session.scalars(
                 select(ReportComment)
                 .where(ReportComment.campaign == campaign,
-                       ReportComment.category.is_(None))
+                       # never labelled, or labelled by older rules. coalesce
+                       # covers rows stored before the column existed, whose
+                       # version is NULL and must count as "older".
+                       or_(ReportComment.category.is_(None),
+                           func.coalesce(ReportComment.rules_version, "")
+                           != CLASSIFY_VERSION))
                 .limit(BATCH)).all()
             if not batch:
                 return done
@@ -227,6 +245,7 @@ def classify_pending(campaign: str, product_desc: str, st: Optional[dict] = None
                 if row:
                     row.category, row.sentiment, row.theme = got
                     row.classified_at = now
+                    row.rules_version = CLASSIFY_VERSION
                     done += 1
         if st is not None:
             st.update(message=(f"จัดประเภทคอมเมนต์แล้ว {done}"
@@ -424,38 +443,6 @@ def run_comment_refresh(campaign: str) -> dict:
     except Exception as exc:  # noqa: BLE001
         log.exception("comment refresh[%s] failed", campaign)
         st.update(status="failed", message=f"ดึงคอมเมนต์ไม่สำเร็จ: {_redact(exc)}",
-                  finished_at=dt.datetime.now(config.TZ).isoformat())
-        return {"status": "failed", "error": _redact(exc)}
-
-
-def reclassify(campaign: str) -> dict:
-    """Clear every classification for the campaign and label it again.
-
-    Exists because classify_pending() only ever looks at rows with no category,
-    so improving the prompt changes nothing for comments already labelled — the
-    panel would keep showing the old verdicts and the improvement would be
-    invisible. Costs no Apify credit: nothing is re-scraped, only re-labelled.
-    """
-    st = state_for("cm:" + campaign)
-    st.update(status="running", message="กำลังจัดประเภทคอมเมนต์ใหม่ทั้งหมด…",
-              started_at=dt.datetime.now(config.TZ).isoformat(), finished_at=None,
-              posts=0, total=0, cost_usd=None)
-    try:
-        with session_scope() as session:
-            total = session.query(ReportComment).filter(
-                ReportComment.campaign == campaign).update(
-                {"category": None, "sentiment": None, "theme": None,
-                 "classified_at": None}, synchronize_session=False)
-        st.update(total=total)
-        from app.tiein import infer_product
-        done = classify_pending(campaign, infer_product(campaign), st, total=total)
-        st.update(status="success",
-                  message=f"จัดประเภทใหม่แล้ว {done}/{total} อัน (ไม่มีค่า Apify)",
-                  finished_at=dt.datetime.now(config.TZ).isoformat(), posts=done)
-        return {"status": "success", "classified": done, "total": total}
-    except Exception as exc:  # noqa: BLE001
-        log.exception("reclassify[%s] failed", campaign)
-        st.update(status="failed", message=f"จัดประเภทใหม่ไม่สำเร็จ: {_redact(exc)}",
                   finished_at=dt.datetime.now(config.TZ).isoformat())
         return {"status": "failed", "error": _redact(exc)}
 
