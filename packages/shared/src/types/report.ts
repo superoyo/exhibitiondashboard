@@ -114,30 +114,33 @@ export interface ActiveJob {
 // ---- Comment breakdown -----------------------------------------------------
 
 /**
- * Comment classification, mirroring app/comments.py. Three axes:
- *  - `category` is a fixed set, so the donut can be compared across campaigns
- *  - `sentiment` is only set on comments that touch the product — a comment
- *    praising the creator is not praise for the product
- *  - `theme` is free text taken from what the comments say (รสชาติ, ราคา,
- *    หาซื้อยาก), which is where product-specific detail lives without needing
- *    a different category set per campaign
+ * Comment classification, mirroring app/comments.py. Two axes:
+ *  - `category` is WHAT the comment is about, from a fixed set, so the donut can
+ *    be compared across campaigns
+ *  - `theme` is free text one step finer than the category (ติดทน, ผิวนุ่ม,
+ *    โปรโมชัน), which is where product-specific detail lives without needing a
+ *    different category set per campaign
+ *
+ * There is no sentiment axis. A pos/neu/neg field existed and was removed:
+ * Thai carries polarity through sarcasm and joke-complaints, and the labels were
+ * not dependable enough to show a client. Direction is read from the comment
+ * text, which the panel and the Excel export both show verbatim.
  */
 export type CommentCategory =
-  | 'FAN'
-  | 'PRODUCT'
-  | 'INTENT'
-  | 'ECHO'
-  | 'NEG'
-  | 'QUESTION'
-  | 'SPAM';
-
-export type CommentSentiment = 'pos' | 'neu' | 'neg';
+  'EFFECT' | 'SENSORY' | 'PRICE' | 'WHERE' | 'INTENT' | 'QUESTION' | 'ISSUE' | 'OFFTOPIC' | 'SPAM';
 
 export interface CommentCategoryCount {
   code: CommentCategory;
   label: string;
   count: number;
   pct: number;
+}
+
+/** One filter chip over the preview list: a topic and how many sit behind it. */
+export interface CommentTopicCount {
+  code: CommentCategory;
+  label: string;
+  count: number;
 }
 
 export interface CommentPreviewItem {
@@ -153,7 +156,6 @@ export interface CommentPreviewItem {
   post_url: string | null;
   category: CommentCategory | null;
   label: string | null;
-  sentiment: CommentSentiment | null;
   theme: string | null;
   likes: number;
   posted_at: string | null;
@@ -168,12 +170,17 @@ export interface CommentSummary {
   /** How many of the total are replies rather than top-level comments. */
   replies: number;
   /** Replies a KOL wrote under their own post. Counted in `total` but excluded
-   *  from product sentiment and the preview — a creator answering "อร่อยจริง ๆ"
+   *  from `product_total` and the preview — a creator answering "อร่อยจริง ๆ"
    *  is advertising, not audience voice. */
   creator_replies: number;
   by_platform: Record<string, number>;
   categories: CommentCategoryCount[];
-  product_sentiment: Partial<Record<CommentSentiment, number>>;
+  /** Comments that touch the product, excluding the creators' own replies —
+   *  the same set the preview list pages through. */
+  product_total: number;
+  /** Per-topic counts over that same set, so a chip's number always matches the
+   *  page it opens. */
+  by_topic: CommentTopicCount[];
   themes: { theme: string; count: number }[];
 }
 
@@ -183,6 +190,29 @@ export interface CommentListResponse {
   offset: number;
   limit: number;
   items: CommentPreviewItem[];
+}
+
+/** One row of the Excel export — every stored comment, nothing filtered out. */
+export interface CommentExportRow {
+  kol: string;
+  platform: string;
+  post_url: string | null;
+  author: string | null;
+  text: string;
+  is_reply: boolean;
+  category: CommentCategory | null;
+  label: string | null;
+  theme: string | null;
+  likes: number;
+  posted_at: string | null;
+}
+
+/** `GET /api/report/comments/export` */
+export interface CommentExportResponse {
+  total: number;
+  /** True when the campaign holds more comments than one export can carry. */
+  truncated: boolean;
+  rows: CommentExportRow[];
 }
 
 /** `GET /api/report/packshot` */

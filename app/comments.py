@@ -8,13 +8,21 @@ many people commented but never what they said. This module fills that gap:
    classified.
 2. summary(campaign) — the rollup the dashboard panel reads.
 
-TAXONOMY (three axes, from references/comment-analysis.md)
-  category   one of CATEGORIES — fixed, so campaigns stay comparable
-  sentiment  pos/neu/neg — only on comments that touch the product, because a
-             comment praising the creator is not praise for the product
-  theme      one free word taken from what the comments actually say (รสชาติ,
-             ราคา, หาซื้อยาก, ...) — this is where product-specific detail
-             lives, as DATA rather than as a schema that changes per campaign
+TAXONOMY (two axes)
+  category   one of CATEGORIES — WHAT the comment is about (ผลลัพธ์ / กลิ่น /
+             ราคา / หาซื้อ / ...). Fixed, so campaigns stay comparable.
+  theme      one free word, more specific than the category (ผิวนุ่ม, ติดทน,
+             โปรโมชัน) — product-specific detail as DATA rather than as a schema
+             that changes per campaign
+
+There is deliberately NO sentiment axis. It existed (pos/neu/neg on
+product-related comments) and was removed in 2026-08: Thai comments carry
+polarity through sarcasm, joke-complaints, particles and stretched spelling,
+and the team judged the labels too unreliable to show a client. The topic
+categories replace it — "what is this about" is a question the model answers
+consistently, and a brand can act on ISSUE or WHERE without being told a
+sentiment score. Direction still shows through the comment text itself, which
+the panel and the Excel export both display verbatim.
 
 Cost: TikTok $0.50 / 1,000 comments, Facebook $1.40 / 1,000, both
 pay-per-result — config.COMMENTS_PER_POST is a ceiling, not a bill.
@@ -37,23 +45,28 @@ from app.report_refresh import _redact, state_for
 
 log = logging.getLogger("comments")
 
-# Axis 1 — fixed across every campaign, so the donut can be compared
-CATEGORIES = ("FAN", "PRODUCT", "INTENT", "ECHO", "NEG", "QUESTION", "SPAM")
-# Axis 2 applies only to comments that actually touch the product. A FAN or
-# QUESTION comment has no product sentiment to report, and forcing one would
-# inflate whichever way it defaulted.
-PRODUCT_CATEGORIES = ("PRODUCT", "INTENT", "ECHO", "NEG")
-SENTIMENTS = ("pos", "neu", "neg")
+# The one axis — fixed across every campaign, so the donut can be compared.
+# Ordered as the panel lists them: product topics first, then the two buckets
+# that are not about the product.
+CATEGORIES = ("EFFECT", "SENSORY", "PRICE", "WHERE", "INTENT", "QUESTION",
+              "ISSUE", "OFFTOPIC", "SPAM")
+# What counts as "a comment about the product" — the preview list and the
+# product-comment count both use this. Everything except the two buckets that
+# by definition say nothing about it.
+PRODUCT_CATEGORIES = ("EFFECT", "SENSORY", "PRICE", "WHERE", "INTENT",
+                      "QUESTION", "ISSUE")
 
 # Thai labels for the UI, kept next to the codes so the two cannot drift
 CATEGORY_LABELS = {
-    "FAN": "แฟนคลับ (ไม่แตะสินค้า)",
-    "PRODUCT": "พูดถึงสินค้า",
-    "INTENT": "ตั้งใจซื้อ / ถามช่องทาง",
-    "ECHO": "เล่นสโลแกนต่อ",
-    "NEG": "เชิงลบ",
-    "QUESTION": "คำถามทั่วไป",
-    "SPAM": "สแปม / ไม่เกี่ยวข้อง",
+    "EFFECT": "สรรพคุณ / ผลลัพธ์",
+    "SENSORY": "กลิ่น / รสชาติ / เนื้อสัมผัส",
+    "PRICE": "ราคา / ความคุ้มค่า",
+    "WHERE": "หาซื้อที่ไหน / ของหมด",
+    "INTENT": "อยากซื้อ / จะไปซื้อ",
+    "QUESTION": "ถามข้อมูลสินค้า",
+    "ISSUE": "ติดปัญหา / ข้อกังวล",
+    "OFFTOPIC": "ไม่เกี่ยวกับสินค้า",
+    "SPAM": "สแปม",
 }
 
 # One Claude call per batch. 40 keeps the prompt small enough that Haiku holds
@@ -65,7 +78,7 @@ CLASSIFY_MAX_TOKENS = 4000
 # ordinary run re-labels anything older — no separate action to remember, and
 # nothing is re-labelled when the rules have not moved. Same idea as
 # TIEIN_VERSION, which redoes shots produced by an older algorithm.
-CLASSIFY_VERSION = "rules2"
+CLASSIFY_VERSION = "topic1"
 # Posts per Apify run. One run per post would multiply run overhead; one run for
 # everything makes a single bad URL slower to isolate.
 POSTS_PER_RUN = 20
@@ -76,80 +89,89 @@ POSTS_PER_RUN = 20
 # ---------------------------------------------------------------------------
 
 def _classify_prompt(product_desc: str, batch: list) -> str:
-    """The classifier. Ported by hand from references/comment-analysis.md — the
-    skill file is an agent-context artifact and nothing in the app reads it.
+    """The classifier. One question only: what is this comment ABOUT.
 
-    The example block is the load-bearing part. The examples that teach a
-    BOUNDARY (a joke is not a complaint; talking about the clip is not talking
-    about the product) are kept verbatim because those patterns hold for any
-    product. The ones that touch the product are worded without naming a
-    product category, because this prompt runs for perfume, food and household
-    campaigns alike and a body-wash example would pull the others off course.
+    Rewritten in 2026-08 away from intent+sentiment. The rules that survived are
+    the ones that teach a BOUNDARY — a joke is not a complaint, talking about the
+    clip is not talking about the product, "ของที่ใช้อยู่หมด" is not "ของหมดในร้าน"
+    — because those patterns hold for any product and each one was written after
+    seeing the model get it wrong. What went is every rule that asked the model
+    to judge direction (pos/neu/neg, "ประชด", "ต้องตำหนิจริง"): that call is the
+    one Thai makes unreliable, and the topic buckets do not need it. EFFECT holds
+    "ใช้ดีมาก" and "ไม่เห็นผล" alike; a reader sees which from the text.
+
+    Examples are worded without naming a product category, because this prompt
+    runs for perfume, food and household campaigns alike and a body-wash example
+    would pull the others off course.
     """
     lines = "\n".join(f"{i}. {(c.text or '')[:400]}" for i, c in enumerate(batch, 1))
     return (
         f"สินค้าของแคมเปญ: {product_desc}\n\n"
-        "จัดประเภทคอมเมนต์ใต้โพสต์รีวิวต่อไปนี้ ทีละอัน ตาม taxonomy:\n\n"
+        "อ่านคอมเมนต์ใต้โพสต์รีวิวต่อไปนี้ แล้วตอบว่าแต่ละอัน 'พูดถึงเรื่องอะไร' "
+        "ทีละอัน\n"
+        "ห้ามตัดสินว่าเป็นบวกหรือลบ — ดูแค่ว่าเนื้อหาอยู่เรื่องไหน\n\n"
+
         "category (เลือก 1 ค่า):\n"
-        "FAN = พูดถึงตัวครีเอเตอร์/ทักทาย/มุกตลก ไม่แตะสินค้า\n"
-        "PRODUCT = พูดถึงสินค้า แบรนด์ หรือการใช้งาน\n"
-        "INTENT = ตั้งใจซื้อ หรือถามช่องทางซื้อ/ราคา\n"
-        "ECHO = เอาสโลแกนหรือมุกของแคมเปญไปเล่นต่อ\n"
-        "NEG = เชิงลบต่อสินค้า แบรนด์ ครีเอเตอร์ หรือบ่นว่าขายของ\n"
-        "QUESTION = คำถามทั่วไปที่ไม่เกี่ยวกับการซื้อ\n"
-        "SPAM = บอท โฆษณาแฝง ลิงก์พนัน ไม่เกี่ยวข้อง\n\n"
+        "EFFECT = สรรพคุณ ผลลัพธ์ การใช้งาน ใช้ดี/ใช้ไม่เห็นผล ติดทน เห็นผลเร็ว\n"
+        "SENSORY = กลิ่น รสชาติ เนื้อสัมผัส สี ความรู้สึกตอนใช้\n"
+        "PRICE = ราคา ความคุ้มค่า โปรโมชัน ส่วนลด ขนาด/ปริมาณเทียบราคา\n"
+        "WHERE = หาซื้อที่ไหน ช่องทางขาย สาขา ของหมดในร้าน หาไม่เจอ\n"
+        "INTENT = บอกว่าจะซื้อ อยากลอง สั่งแล้ว หรือของที่ใช้อยู่กำลังจะหมด\n"
+        "QUESTION = ถามข้อมูลสินค้า (ไม่ใช่ถามที่ซื้อหรือถามราคา)\n"
+        "ISSUE = ปัญหาจากตัวสินค้า (แพ้ ระคายเคือง ของเสีย ใช้ไม่ได้) "
+        "หรือบ่นว่าคลิปนี้ขายของ\n"
+        "OFFTOPIC = ไม่แตะสินค้าเลย — เชียร์ครีเอเตอร์ ทักทาย มุกตลก "
+        "พูดถึงการตัดต่อ/เพลง/มุมกล้อง/ความยาวคลิป\n"
+        "SPAM = บอท ลิงก์พนัน โฆษณาแฝง\n\n"
 
-        "กติกาเมื่อคอมเมนต์เข้าได้หลายหมวด — เลือกเจตนาเด่นสุด 'อันเดียว' "
-        "ห้ามตอบหลายหมวด:\n"
-        "· แตะสินค้า + บอกว่าจะซื้อ / ถามที่ซื้อ / ถามราคา → INTENT (ไม่ใช่ PRODUCT)\n"
-        "· แตะสินค้า + บ่น ตำหนิ บอกว่าไม่เวิร์ก → NEG (ไม่ใช่ PRODUCT)\n"
-        "· เล่นมุกหรือสโลแกนของแคมเปญ + แตะสินค้า → ECHO\n"
-        "· คอมเมนต์ยาวหลายเจตนา → เลือกเจตนาที่เด่นที่สุด\n\n"
+        "คอมเมนต์เดียวเข้าได้หลายเรื่อง → เลือก 'อันเดียว' ตามลำดับนี้ "
+        "อันไหนอยู่บนกว่าให้ใช้อันนั้น:\n"
+        "SPAM > ISSUE > WHERE > INTENT > PRICE > SENSORY > EFFECT > QUESTION "
+        "> OFFTOPIC\n"
+        "เช่น 'อยากซื้อ ขายที่ไหนคะ' → WHERE · 'อยากลอง ราคาเท่าไหร่' → INTENT\n\n"
 
-        "NEG ต้องมีการ 'ตำหนิ' จริง ไม่ใช่แค่ 'น้ำเสียงแรง':\n"
-        "· มุกตลก หยอกล้อ แกล้งบ่น อีโมจิเยอะ สะกดยืด = FAN "
-        "ถ้าไม่ได้ตำหนิสินค้า/แบรนด์/ครีเอเตอร์\n"
-        "· พูดถึงการตัดต่อ เสียง เพลง มุมกล้อง ความยาวคลิป = FAN "
-        "(พูดถึงคลิป ไม่ใช่สินค้า)\n"
-        "· ประชด: 'ดีย์มากค่า' ในบริบทกำลังบ่น = NEG · ในบริบทชม = PRODUCT "
-        "→ ยึดบริบททั้งประโยค ไม่ยึดคำเดี่ยว\n\n"
-
-        "sentiment (ทิศทางต่อ 'สินค้า' เท่านั้น ไม่ใช่ต่อครีเอเตอร์):\n"
-        "pos / neu / neg — ถ้า category เป็น FAN, QUESTION หรือ SPAM ให้ตอบ -\n"
-        "neg ต้องมีการตำหนิ/ไม่พอใจสินค้าจริง · การเล่าสถานะเฉย ๆ = neu\n\n"
-
-        "แยก 'ของที่ผู้คอมเมนต์ใช้อยู่หมด' ออกจาก 'สินค้าหมดในร้าน' "
-        "— คำว่า 'หมด' ไม่ได้แปลว่าเชิงลบ:\n"
+        "แยก 'ของที่ผู้คอมเมนต์ใช้อยู่หมด' ออกจาก 'สินค้าหมดในร้าน':\n"
         "· 'ของที่ใช้อยู่หมดพอดี' / 'ขวดเก่าใช้หมดแล้ว' = ของตัวเองหมด "
-        "ไม่ใช่การตำหนิ → sentiment neu และ theme ต้องไม่ใช่ หาซื้อยาก "
-        "(มักเป็นสัญญาณว่ากำลังจะซื้อ)\n"
+        "มักเป็นสัญญาณว่ากำลังจะซื้อ → INTENT\n"
         "· 'หาซื้อไม่ได้' / 'ร้านไม่มีของ' / 'ของหมดทุกสาขา' = "
-        "ปัญหาการกระจายสินค้าจริง → NEG|neg|หาซื้อยาก\n\n"
+        "ปัญหาการกระจายสินค้า → WHERE\n\n"
 
-        "theme: ต้องเป็น 'แง่มุมของสินค้า' ที่เจาะจง "
-        "ห้ามตอบคำกว้างอย่าง ทั่วไป / สินค้า / ดี / ชอบ\n"
-        "ใช้คำเดิมให้ตรงกันทั้งชุดเพื่อให้นับรวมได้ ถ้าเข้ากรณีนี้ให้ใช้คำนี้: "
-        "รสชาติ · กลิ่น · เนื้อสัมผัส · เห็นผล · ราคา · หาซื้อยาก · แพ็กเกจ · "
-        "ปริมาณ · ระคายเคือง · ขายของ\n"
-        "ถ้าไม่เข้าเลย ตั้งคำใหม่สั้น ๆ ได้ แต่ต้องเจาะจง · ไม่แตะสินค้าให้ตอบ -\n\n"
+        "OFFTOPIC ไม่ได้แปลว่า 'คอมเมนต์ไม่ดี' — แปลว่าไม่ได้พูดถึงสินค้า:\n"
+        "· มุกตลก หยอกล้อ แกล้งบ่น อีโมจิเยอะ สะกดยืด ถ้าไม่แตะสินค้า = OFFTOPIC\n"
+        "· เอาสโลแกนของแคมเปญไปเล่นต่อ: ถ้าประโยคนั้นพูดถึงคุณสมบัติสินค้า "
+        "→ หมวดของคุณสมบัตินั้น (มักเป็น EFFECT) · ถ้าเป็นมุกเปล่า ๆ → OFFTOPIC\n"
+        "· ISSUE ใช้กับ 'ปัญหาที่เกิดจากสินค้า' เท่านั้น "
+        "ไม่ใช่ทุกคอมเมนต์ที่น้ำเสียงแรง\n\n"
 
         "คอมเมนต์ภาษาจีน พม่า อังกฤษ: จัดหมวดตามเนื้อหาปกติ ไม่ใช่ SPAM "
         "(SPAM คือบอท ลิงก์พนัน โฆษณาแฝง ไม่ใช่ 'ภาษาที่อ่านไม่ออก')\n\n"
 
-        "ตัวอย่างที่จัดถูกแล้ว ใช้เทียบ:\n"
-        "\"ที่บ้านใช้ประจำเลย ใช้แล้วดีจริงค้าบ\"        → PRODUCT|pos|เห็นผล\n"
-        "\"ได้เวลาเปลี่ยนมาใช้ตัวนี้แล้ว\"              → INTENT|pos|-\n"
-        "\"ร้านไหนใกล้ฉันมีขายบ้าง~\"                  → INTENT|neu|หาซื้อยาก\n"
-        "\"มันต้องดีน่าา\"                            → ECHO|pos|-\n"
-        "\"ของที่ใช้อยู่หมดพอดี\"                      → PRODUCT|neu|-\n"
-        "\"หาซื้อไม่ได้เลย ร้านแถวบ้านไม่มี\"             → NEG|neg|หาซื้อยาก\n"
-        "\"เคยใช้แล้วไม่เห็นผล\"                       → NEG|neg|เห็นผล\n"
-        "\"โอนค่าตัวมาด้วย !!\"                       → NEG|neg|ขายของ\n"
-        "\"มู้ดเสียงคลิปคือ ขึ้นๆลงๆ\"                  → FAN|-|-\n"
-        "\"อยู่กับข้าเอ็งเหมือนไก่จี๊ดริดในก้านกล้วย\"     → FAN|-|-\n"
-        "\"ตกใจค้าบ มากอดเค้าเลยค้าบ\"                → FAN|-|-\n\n"
+        "theme: ขยายให้ละเอียดกว่า category หนึ่งขั้น เป็นคำสั้น ๆ "
+        "ห้ามตอบคำกว้างอย่าง ทั่วไป / สินค้า / ดี / ชอบ "
+        "และห้ามตอบคำเดียวกับชื่อ category\n"
+        "ใช้คำเดิมให้ตรงกันทั้งชุดเพื่อให้นับรวมได้ เช่น "
+        "ติดทน · เห็นผลเร็ว · ผิวนุ่ม · กลิ่นหอม · รสชาติ · เนื้อสัมผัส · "
+        "คุ้มค่า · โปรโมชัน · สาขา · ของหมด · ระคายเคือง · ขายของ\n"
+        "ถ้าไม่มีรายละเอียดพอ ตอบ -\n\n"
 
-        "ตอบบรรทัดละ 1 คอมเมนต์ รูปแบบ: เลข|CATEGORY|sentiment|theme\n"
+        "ตัวอย่างที่จัดถูกแล้ว ใช้เทียบ:\n"
+        "\"ที่บ้านใช้ประจำเลย ใช้แล้วดีจริงค้าบ\"        → EFFECT|เห็นผล\n"
+        "\"เคยใช้แล้วไม่เห็นผล\"                       → EFFECT|เห็นผล\n"
+        "\"มันต้องดีน่าา\"                            → EFFECT|-\n"
+        "\"กลิ่นหอมมาก ติดทนทั้งวัน\"                   → SENSORY|กลิ่นหอม\n"
+        "\"ราคาเท่าไหร่คะ\"                           → PRICE|ราคา\n"
+        "\"ร้านไหนใกล้ฉันมีขายบ้าง~\"                  → WHERE|สาขา\n"
+        "\"หาซื้อไม่ได้เลย ร้านแถวบ้านไม่มี\"             → WHERE|ของหมด\n"
+        "\"ได้เวลาเปลี่ยนมาใช้ตัวนี้แล้ว\"              → INTENT|-\n"
+        "\"ของที่ใช้อยู่หมดพอดี\"                      → INTENT|-\n"
+        "\"ใช้กับผิวแพ้ง่ายได้ไหม\"                    → QUESTION|ผิวแพ้ง่าย\n"
+        "\"ใช้แล้วคันเลย ขึ้นผื่น\"                    → ISSUE|ระคายเคือง\n"
+        "\"โอนค่าตัวมาด้วย !!\"                       → ISSUE|ขายของ\n"
+        "\"มู้ดเสียงคลิปคือ ขึ้นๆลงๆ\"                  → OFFTOPIC|-\n"
+        "\"อยู่กับข้าเอ็งเหมือนไก่จี๊ดริดในก้านกล้วย\"     → OFFTOPIC|-\n"
+        "\"ตกใจค้าบ มากอดเค้าเลยค้าบ\"                → OFFTOPIC|-\n\n"
+
+        "ตอบบรรทัดละ 1 คอมเมนต์ รูปแบบ: เลข|CATEGORY|theme\n"
         "ห้ามมีข้อความอื่น ต้องตอบให้ครบทุกเลข\n\n"
         f"คอมเมนต์:\n{lines}"
     )
@@ -159,26 +181,25 @@ def _classify_prompt(product_desc: str, batch: list) -> str:
 # punctuation are the model's way of saying "no theme", in several spellings
 _THEME_WORD = re.compile(r"[^\W_]", re.UNICODE)
 
-_LINE = re.compile(r"^\s*(\d+)\s*\|\s*([A-Z]+)\s*\|\s*([a-z-]+)\s*\|\s*(.*?)\s*$")
+# `เลข|CATEGORY|theme`. The old four-field form (with a sentiment slot) is still
+# accepted so a reply that slips back into the previous shape is used rather than
+# thrown away — the third field is simply ignored.
+_LINE = re.compile(r"^\s*(\d+)\s*\|\s*([A-Z]+)\s*\|\s*(?:[a-z-]{1,4}\s*\|\s*)?(.*?)\s*$")
 
 
 def _parse_classification(reply: str, size: int) -> dict:
-    """1-based index -> (category, sentiment, theme). Unparseable or unknown
-    values are dropped rather than guessed: an unclassified comment stays
-    visible as 'ยังไม่จัดประเภท', a wrongly-classified one silently skews the
-    percentages the whole panel exists to report."""
+    """1-based index -> (category, theme). Unparseable or unknown values are
+    dropped rather than guessed: an unclassified comment stays visible as
+    'ยังไม่จัดประเภท', a wrongly-classified one silently skews the percentages
+    the whole panel exists to report."""
     out: dict = {}
     for raw in (reply or "").splitlines():
         m = _LINE.match(raw)
         if not m:
             continue
-        n, cat, sent, theme = int(m.group(1)), m.group(2), m.group(3), m.group(4)
+        n, cat, theme = int(m.group(1)), m.group(2), m.group(3)
         if not (1 <= n <= size) or cat not in CATEGORIES:
             continue
-        if cat in PRODUCT_CATEGORIES and sent in SENTIMENTS:
-            sentiment = sent
-        else:
-            sentiment = None
         theme = theme.strip()[:64]
         # A theme has to contain an actual word. The model answers the
         # no-theme case with a dash, but not always exactly one: "---" slipped
@@ -186,14 +207,31 @@ def _parse_classification(reply: str, size: int) -> dict:
         # "theme" on the panel, with 17 comments behind it.
         if not _THEME_WORD.search(theme) or theme.lower() in {"none", "null", "ไม่มี", "ทั่วไป"}:
             theme = None
-        out[n] = (cat, sentiment, theme)
+        out[n] = (cat, theme)
     return out
+
+
+def _needs_label():
+    """Rows the next classify run will (re)do: never labelled, labelled by older
+    rules, or carrying a code the current taxonomy no longer has.
+
+    Shared with summary() on purpose. The panel reports this same count as
+    "ยังไม่จัดประเภท", and if the two conditions drifted the panel would claim
+    everything was labelled while the classifier still had work — or, worse,
+    show a donut of zeroes with nothing explaining why. The taxonomy rewrite made
+    that concrete: every comment already stored carried a code (PRODUCT, FAN,
+    NEG) that no longer exists, so "has a category" stopped meaning "labelled".
+    """
+    return or_(ReportComment.category.is_(None),
+               ReportComment.category.notin_(CATEGORIES),
+               # coalesce covers rows stored before the column existed, whose
+               # version is NULL and must count as "older".
+               func.coalesce(ReportComment.rules_version, "") != CLASSIFY_VERSION)
 
 
 def classify_pending(campaign: str, product_desc: str, st: Optional[dict] = None,
                      total: int = 0) -> int:
-    """Label every comment of the campaign that needs it — never labelled, or
-    labelled by an older version of the rules.
+    """Label every comment of the campaign that needs it — see _needs_label().
 
     Returns how many were labelled. Safe to re-run: a row drops out of the
     queue only once it carries the current version, so an interrupted run
@@ -209,13 +247,7 @@ def classify_pending(campaign: str, product_desc: str, st: Optional[dict] = None
         with session_scope() as session:
             batch = session.scalars(
                 select(ReportComment)
-                .where(ReportComment.campaign == campaign,
-                       # never labelled, or labelled by older rules. coalesce
-                       # covers rows stored before the column existed, whose
-                       # version is NULL and must count as "older".
-                       or_(ReportComment.category.is_(None),
-                           func.coalesce(ReportComment.rules_version, "")
-                           != CLASSIFY_VERSION))
+                .where(ReportComment.campaign == campaign, _needs_label())
                 .limit(BATCH)).all()
             if not batch:
                 return done
@@ -243,7 +275,7 @@ def classify_pending(campaign: str, product_desc: str, st: Optional[dict] = None
                     continue
                 row = session.get(ReportComment, cid)
                 if row:
-                    row.category, row.sentiment, row.theme = got
+                    row.category, row.theme = got
                     row.classified_at = now
                     row.rules_version = CLASSIFY_VERSION
                     done += 1
@@ -455,8 +487,8 @@ def _not_creator():
     """Excludes a KOL's replies under their own post.
 
     Replies are collected, which means the creator's own answers land in the
-    table. Counting those as product sentiment lets the brand vote for itself:
-    a KOL replying "อร่อยจริง ๆ ค่ะ" would register as audience praise.
+    table. Counting those as audience voice lets the brand vote for itself: a KOL
+    replying "อร่อยจริง ๆ ค่ะ" would show up as someone praising the product.
     comment-analysis.md calls these out as advertising to be kept separate.
 
     Matches on the author name, so it catches TikTok (where the commenter
@@ -490,13 +522,14 @@ def _item(c: ReportComment, post_url: Optional[str]) -> dict:
             "platform": c.platform, "kol": c.kol_username,
             "post_url": post_url,
             "category": c.category, "label": CATEGORY_LABELS.get(c.category or ""),
-            "sentiment": c.sentiment, "theme": c.theme, "likes": c.likes,
+            "theme": c.theme, "likes": c.likes,
             "posted_at": c.posted_at.isoformat() if c.posted_at else None}
 
 
-def list_comments(campaign: str, sentiment: Optional[str] = None,
+def list_comments(campaign: str, category: Optional[str] = None,
                   offset: int = 0, limit: int = 20) -> dict:
-    """One page of product-related comments, newest-liked first.
+    """One page of product-related comments, most-liked first, optionally
+    narrowed to a single topic.
 
     Paged on the server rather than in the browser: a campaign's product
     comments run into the thousands, and shipping all of them so the client can
@@ -507,8 +540,10 @@ def list_comments(campaign: str, sentiment: Optional[str] = None,
     where = [ReportComment.campaign == campaign,
              ReportComment.category.in_(PRODUCT_CATEGORIES),
              _not_creator()]
-    if sentiment in SENTIMENTS:
-        where.append(ReportComment.sentiment == sentiment)
+    # An unknown code is ignored rather than returning nothing: a stale bookmark
+    # from the previous taxonomy should show all comments, not an empty page.
+    if category in PRODUCT_CATEGORIES:
+        where.append(ReportComment.category == category)
 
     with session_scope() as session:
         total = session.scalar(
@@ -527,11 +562,12 @@ def list_comments(campaign: str, sentiment: Optional[str] = None,
 
 
 def summary(campaign: str) -> dict:
-    """Category split, product sentiment and top themes. The comments
+    """Topic split, the product-comment count and top themes. The comments
     themselves come from list_comments(), which pages them.
 
-    Product sentiment excludes the creators' own replies; the category split
-    does not, so `total` still matches what was collected."""
+    `product_total` and `by_topic` exclude the creators' own replies, because
+    those are what the preview list shows; the `categories` split does not, so
+    `total` still matches what was collected."""
     with session_scope() as session:
         total = session.scalar(select(func.count()).select_from(ReportComment)
                                .where(ReportComment.campaign == campaign)) or 0
@@ -540,12 +576,23 @@ def summary(campaign: str) -> dict:
             .where(ReportComment.campaign == campaign)
             .group_by(ReportComment.category)).all()
         by_cat = {c: n for c, n in rows}
-        sent_rows = session.execute(
-            select(ReportComment.sentiment, func.count())
+        # NOT `by_cat[None]`: after a taxonomy change every stored row still has
+        # a category, just one that no longer exists, and counting only NULLs
+        # would report "all classified" over a panel of zeroes.
+        stale = session.scalar(
+            select(func.count()).select_from(ReportComment)
+            .where(ReportComment.campaign == campaign, _needs_label())) or 0
+        # Counts behind the preview's filter chips. Same WHERE as
+        # list_comments(), so a chip's number always matches the page it opens —
+        # the previous panel counted sentiment over a different set and the two
+        # could disagree.
+        topic_rows = session.execute(
+            select(ReportComment.category, func.count())
             .where(ReportComment.campaign == campaign,
                    ReportComment.category.in_(PRODUCT_CATEGORIES),
                    _not_creator())
-            .group_by(ReportComment.sentiment)).all()
+            .group_by(ReportComment.category)).all()
+        by_topic = {c: n for c, n in topic_rows if c}
         creator_replies = session.scalar(
             select(func.count()).select_from(ReportComment)
             .where(ReportComment.campaign == campaign,
@@ -574,7 +621,7 @@ def summary(campaign: str) -> dict:
 
         return {
             "total": total,
-            "unclassified": by_cat.get(None, 0),
+            "unclassified": stale,
             "replies": replies,
             "creator_replies": creator_replies,
             "by_platform": {p: n for p, n in platforms},
@@ -583,16 +630,66 @@ def summary(campaign: str) -> dict:
                  "pct": round(100 * by_cat.get(c, 0) / total, 1) if total else 0.0}
                 for c in CATEGORIES
             ],
-            "product_sentiment": {
-                s: n for s, n in sent_rows if s in SENTIMENTS
-            },
+            "product_total": sum(by_topic.values()),
+            "by_topic": [
+                {"code": c, "label": CATEGORY_LABELS[c], "count": by_topic.get(c, 0)}
+                for c in PRODUCT_CATEGORIES
+            ],
             "themes": [{"theme": t, "count": n} for t, n in themes],
         }
 
 
+# ---------------------------------------------------------------------------
+# Excel export
+# ---------------------------------------------------------------------------
+
+# A ceiling, not an expectation: a browser has to hold the whole thing in memory
+# to build the workbook, and a campaign this size is a signal to page the export
+# rather than a size to silently truncate. The API reports when it bites.
+EXPORT_MAX = 50_000
+
+
+def export_rows(campaign: str) -> dict:
+    """EVERY stored comment of the campaign, flat, for the Excel export.
+
+    Deliberately unfiltered — not product-only, not excluding the creators'
+    replies, not excluding the unclassified. The panel filters because a reader
+    can only take twenty at a time; a spreadsheet is where someone goes to see
+    the whole thing and sort it themselves. The columns that drive the panel's
+    filtering are included so they can redo it in Excel.
+    """
+    with session_scope() as session:
+        total = session.scalar(select(func.count()).select_from(ReportComment)
+                               .where(ReportComment.campaign == campaign)) or 0
+        rows = session.scalars(
+            select(ReportComment)
+            .where(ReportComment.campaign == campaign)
+            .order_by(ReportComment.kol_username, ReportComment.likes.desc(),
+                      ReportComment.id)
+            .limit(EXPORT_MAX)).all()
+        urls = _post_urls(session, campaign)
+        return {
+            "total": total,
+            "truncated": total > len(rows),
+            "rows": [{
+                "kol": c.kol_username,
+                "platform": c.platform,
+                "post_url": urls.get(c.post_video_id),
+                "author": c.author,
+                "text": c.text,
+                "is_reply": bool(c.is_reply),
+                "category": c.category,
+                "label": CATEGORY_LABELS.get(c.category or ""),
+                "theme": c.theme,
+                "likes": c.likes,
+                "posted_at": c.posted_at.isoformat() if c.posted_at else None,
+            } for c in rows],
+        }
+
+
 def by_kol(campaign: str, per_kol: int = 6) -> list:
-    """Per-KOL breakdown: totals, product sentiment split, and that KOL's
-    best product comments.
+    """Per-KOL breakdown: totals, the topic split, and that KOL's best product
+    comments.
 
     NOT read by the dashboard panel — this exists for the planned PPTX slide
     that follows each KOL's stats slide. Keeping it here means the deck side
@@ -604,12 +701,12 @@ def by_kol(campaign: str, per_kol: int = 6) -> list:
             select(ReportComment.kol_username, func.count())
             .where(ReportComment.campaign == campaign)
             .group_by(ReportComment.kol_username)).all())
-        sent = session.execute(
-            select(ReportComment.kol_username, ReportComment.sentiment, func.count())
+        topics = session.execute(
+            select(ReportComment.kol_username, ReportComment.category, func.count())
             .where(ReportComment.campaign == campaign,
                    ReportComment.category.in_(PRODUCT_CATEGORIES),
                    _not_creator())
-            .group_by(ReportComment.kol_username, ReportComment.sentiment)).all()
+            .group_by(ReportComment.kol_username, ReportComment.category)).all()
         rows = session.scalars(
             select(ReportComment)
             .where(ReportComment.campaign == campaign,
@@ -623,17 +720,16 @@ def by_kol(campaign: str, per_kol: int = 6) -> list:
             if len(bucket) < per_kol:
                 bucket.append({
                     "text": c.text, "author": c.author, "platform": c.platform,
-                    "category": c.category, "sentiment": c.sentiment,
-                    "theme": c.theme, "likes": c.likes,
+                    "category": c.category, "theme": c.theme, "likes": c.likes,
                 })
 
         out = []
         for kol, total in sorted(totals.items(), key=lambda kv: -kv[1]):
-            s = {v: n for k, v, n in sent if k == kol and v in SENTIMENTS}
+            split = {v: n for k, v, n in topics if k == kol and v}
             out.append({
                 "kol": kol, "total": total,
-                "product_total": sum(s.values()),
-                "sentiment": s,
+                "product_total": sum(split.values()),
+                "topics": split,
                 "comments": picked.get(kol, []),
             })
         return out

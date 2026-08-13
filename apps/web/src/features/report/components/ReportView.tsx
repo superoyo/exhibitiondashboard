@@ -33,12 +33,7 @@ import { Podium } from './Podium';
 import { PostsTable } from './PostsTable';
 import { CommentPanel } from './CommentPanel';
 import { ReportActions } from './ReportActions';
-import {
-  CategoryDonut,
-  CategoryErBar,
-  EngagementStack,
-  TopPostsBar,
-} from './ReportCharts';
+import { CategoryDonut, CategoryErBar, EngagementStack, TopPostsBar } from './ReportCharts';
 
 const FOOTER_NOTE =
   'ER = engagement(like+cmt+share+save)/views · โพสต์ที่ไม่มียอด views (เช่น รูปภาพบน Facebook/IG) ' +
@@ -378,7 +373,7 @@ export function ReportView({
               the report never triggers a scrape. */}
           {!influencerView && comments.data ? (
             <div className="mb-5">
-              <CommentPanel campaign={campaign} data={comments.data} />
+              <CommentPanel campaign={campaign} campaignName={campaignName} data={comments.data} />
             </div>
           ) : null}
 

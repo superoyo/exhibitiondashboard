@@ -634,23 +634,35 @@ def jobs_active():
 
 @router.get("/report/comments")
 def report_comments(campaign: str = "pao"):
-    """Comment breakdown for the campaign panel: category split, product
-    sentiment, top themes, and a preview of the product-related comments with
-    the KOL and platform each came from. Reads stored rows only — never
-    scrapes, so opening the report costs nothing."""
+    """Comment breakdown for the campaign panel: the topic split, how many
+    comments touch the product, and the top themes. Reads stored rows only —
+    never scrapes, so opening the report costs nothing."""
     from app.comments import summary
     return summary(campaign)
 
 
 @router.get("/report/comments/list")
-def report_comments_list(campaign: str = "pao", sentiment: str = "",
+def report_comments_list(campaign: str = "pao", category: str = "",
                          offset: int = 0, limit: int = 20):
-    """One page of product-related comments, optionally filtered by sentiment.
+    """One page of product-related comments, optionally narrowed to one topic.
 
     Paged and filtered on the server: a campaign's product comments run into the
     thousands, and the panel only ever shows twenty at a time."""
     from app.comments import list_comments
-    return list_comments(campaign, sentiment or None, max(0, offset), limit)
+    return list_comments(campaign, category or None, max(0, offset), limit)
+
+
+@router.get("/report/comments/export")
+def report_comments_export(campaign: str = "pao"):
+    """Every stored comment, flat, for the Excel export.
+
+    Returns JSON and lets the browser build the .xlsx: the frontend already
+    bundles SheetJS for roster import, so this needs no new server dependency
+    and no temp files, and Thai text avoids the CSV encoding traps entirely.
+    Unfiltered on purpose — the panel filters because it shows twenty at a time,
+    whereas a spreadsheet is where someone goes to see everything."""
+    from app.comments import export_rows
+    return export_rows(campaign)
 
 
 @router.post("/report/comments/refresh")

@@ -1,5 +1,6 @@
 import type {
   ActiveJob,
+  CommentExportResponse,
   CommentListResponse,
   CommentSummary,
   JobState,
@@ -57,12 +58,24 @@ export async function getComments(campaign: string): Promise<CommentSummary> {
 /** One page of product-related comments, filtered and paged on the server. */
 export async function getCommentList(
   campaign: string,
-  sentiment: string,
+  category: string,
   offset: number,
   limit: number,
 ): Promise<CommentListResponse> {
   const { data } = await api.get<CommentListResponse>('/report/comments/list', {
-    params: { campaign, sentiment, offset, limit },
+    params: { campaign, category, offset, limit },
+  });
+  return data;
+}
+
+/**
+ * Every stored comment, for the Excel export. Not a react-query hook: it runs
+ * once when the button is pressed, and caching a few thousand rows the page
+ * never renders would cost memory for nothing.
+ */
+export async function getCommentExport(campaign: string): Promise<CommentExportResponse> {
+  const { data } = await api.get<CommentExportResponse>('/report/comments/export', {
+    params: { campaign },
   });
   return data;
 }

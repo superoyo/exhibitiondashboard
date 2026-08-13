@@ -107,14 +107,14 @@ export function useCommentStatus(campaign: string, enabled: boolean) {
  */
 export function useCommentList(
   campaign: string,
-  sentiment: string,
+  category: string,
   offset: number,
   limit: number,
   enabled: boolean,
 ) {
   return useQuery({
-    queryKey: queryKeys.report.commentList(campaign, sentiment, offset),
-    queryFn: () => getCommentList(campaign, sentiment, offset, limit),
+    queryKey: queryKeys.report.commentList(campaign, category, offset),
+    queryFn: () => getCommentList(campaign, category, offset, limit),
     enabled: enabled && Boolean(campaign),
     placeholderData: (prev) => prev,
   });

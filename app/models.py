@@ -131,13 +131,14 @@ class ReportComment(Base):
     posted_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     is_reply: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    # FAN / PRODUCT / INTENT / ECHO / NEG / QUESTION / SPAM
+    # WHAT the comment is about: EFFECT / SENSORY / PRICE / WHERE / INTENT /
+    # QUESTION / ISSUE / OFFTOPIC / SPAM — see comments.CATEGORIES. There is no
+    # sentiment column: a pos/neu/neg axis existed and was dropped, because Thai
+    # polarity proved too unreliable to put in front of a client.
     category: Mapped[Optional[str]] = mapped_column(String(16), nullable=True, index=True)
-    # pos / neu / neg — only meaningful on comments that touch the product
-    sentiment: Mapped[Optional[str]] = mapped_column(String(8), nullable=True, index=True)
-    # free-text, one word, set from what the comments actually say (รสชาติ,
-    # ราคา, หาซื้อยาก, ...). Deliberately NOT an enum: it carries the
-    # product-specific angle without a schema change per campaign.
+    # free-text, one word, one step finer than the category (ติดทน, ผิวนุ่ม,
+    # โปรโมชัน, ...). Deliberately NOT an enum: it carries the product-specific
+    # angle without a schema change per campaign.
     theme: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     classified_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     # Which version of the classification rules produced the three fields above.
