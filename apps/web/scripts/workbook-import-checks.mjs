@@ -108,4 +108,85 @@ const parse = (wb) => parseWorkbook(XLSX, wb);
   console.log("✅ 'เพจ' / 'fanpage' / 'acc' recognised as account columns");
 }
 
+// ---- a row counter must never become the username -------------------------
+// Zilk Ultra Soft (P2026-096) imported as @1..@5: a merged title row was read as
+// the header, so every column key matched column A — the row counter.
+{
+  const posts = [
+    'https://www.tiktok.com/@mypaintingg/video/7677717482460290104',
+    'https://www.tiktok.com/@somm.ooo/video/7673398770523907334',
+    'https://www.tiktok.com/@ying_pacharaporn/video/7672660851201716073',
+  ];
+  const expected = ['mypaintingg', 'somm.ooo', 'ying_pacharaporn'];
+
+  const sheets = {
+    'merged title row above the real header': [
+      ['รายชื่อ KOL Zilk Ultra Soft', '', ''],
+      ['ลำดับ', 'ชื่อ', 'ลิงก์โพสต์'],
+      ...posts.map((u, i) => [i + 1, '', u]),
+    ],
+    'counter column named like an account column': [
+      ['KOL No.', 'ลิงก์โพสต์'],
+      ...posts.map((u, i) => [i + 1, u]),
+    ],
+    'counter styled 1. / #2 / 3)': [
+      ['ลำดับ KOL', 'ลิงก์โพสต์'],
+      ['1.', posts[0]],
+      ['#2', posts[1]],
+      ['3)', posts[2]],
+    ],
+  };
+
+  for (const [what, aoa] of Object.entries(sheets)) {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Sheet1');
+    const kols = parse(wb).kols;
+    assert.deepEqual(
+      kols.map((k) => k.username),
+      expected,
+      `${what}: usernames not taken from the post links`,
+    );
+    assert.ok(
+      !kols.some((k) => /^\d+$/.test(k.display)),
+      `${what}: a row number became the display name`,
+    );
+  }
+  console.log('✅ row counters never become usernames');
+}
+
+// ---- a genuinely numeric account (FB numeric page) still survives ----------
+{
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.aoa_to_sheet([
+      ['username', 'ลิงก์'],
+      ['100063588291234', 'https://www.facebook.com/share/p/AbCdEf/'],
+    ]),
+    'Sheet1',
+  );
+  assert.deepEqual(parse(wb).kols.map((k) => k.username), ['100063588291234']);
+  console.log('✅ numeric Facebook page id still accepted');
+}
+
+// ---- a profile link names the KOL even when the row has post links ---------
+{
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.aoa_to_sheet([
+      ['ลำดับ', 'ลิงก์บัญชี', 'ลิงก์โพสต์'],
+      [
+        1,
+        'https://www.tiktok.com/@realhandle',
+        'https://www.tiktok.com/@shared.repost/video/7300000000000000009',
+      ],
+    ]),
+    'Sheet1',
+  );
+  const kols = parse(wb).kols;
+  assert.equal(kols[0].username, 'realhandle', 'profile link should win over the post link');
+  console.log('✅ account link preferred over post link for the username');
+}
+
 console.log('\n✅ all import-behaviour checks passed');

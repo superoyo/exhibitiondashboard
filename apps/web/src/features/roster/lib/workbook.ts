@@ -97,6 +97,13 @@ const HEADER_WORDS = new Set([
   'id',
 ]);
 
+/**
+ * A running-number cell — "1", "2.", "#3", "1.1" — is the sheet's row counter,
+ * never an account. Bounded to 4 digits so a numeric Facebook page id
+ * (100063588291234) is still allowed through as a handle.
+ */
+const INDEX_LIKE = /^#?\d{1,4}(\.\d{1,3})?\s*[.)]?$/;
+
 const SOCIAL = /(tiktok\.com|facebook\.com|fb\.watch|instagram\.com|youtu|x\.com|twitter\.com)/i;
 
 /** Sheet/column words that mark a shipping-address tab rather than campaign work. */
@@ -192,14 +199,22 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
 
     const hyper = collectHyperlinks(xlsx, sheet);
 
-    // Header = the first row with any content.
-    let headerIndex = 0;
+    // Header = the first row with at least two filled cells. A single-cell first
+    // row is a merged campaign title ("รายชื่อ KOL <brand>"), and reading it as
+    // the header made every column key match column A — the row counter — so the
+    // numbers 1,2,3… were imported as usernames. Falls back to any content, for
+    // sheets that really are one column wide.
+    let headerIndex = -1;
+    let firstFilled = -1;
     for (let i = 0; i < rows.length; i++) {
-      if ((rows[i] ?? []).filter((c) => text(c)).length >= 1) {
+      const count = (rows[i] ?? []).filter((c) => text(c)).length;
+      if (count >= 1 && firstFilled < 0) firstFilled = i;
+      if (count >= 2) {
         headerIndex = i;
         break;
       }
     }
+    if (headerIndex < 0) headerIndex = Math.max(firstFilled, 0);
     const headerRow = rows[headerIndex] ?? [];
     const headers = headerRow.map(lower);
     debug.push(`“${sheetName}” [${headers.filter(Boolean).join(', ')}]`);
@@ -243,7 +258,11 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
       const workUrls = urls.filter((u) => !isProfileUrl(u));
 
       // Username, in descending order of reliability.
-      let colName = cUser >= 0 ? text(row[cUser]).replace(/^@/, '') : '';
+      const colRaw = cUser >= 0 ? text(row[cUser]) : '';
+      // A picked column holding the row counter tells us nothing about the
+      // account, so treat it as empty and let the links name the KOL instead.
+      const colIsIndex = INDEX_LIKE.test(colRaw.replace(/^@/, ''));
+      let colName = colIsIndex ? '' : colRaw.replace(/^@/, '');
       if (/https?:|\//.test(colName)) colName = handleFromUrl(colName);
 
       // Handle-like column text IS the username; free text is display-only.
@@ -288,7 +307,7 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
 
       kols.push({
         username: username.toLowerCase(),
-        display: (cUser >= 0 ? text(row[cUser]) : '') || username,
+        display: (colIsIndex ? '' : colRaw) || username,
         group,
         subgroup: cSub >= 0 ? text(row[cSub]) : '',
         links: dedupeLinks(workUrls),
