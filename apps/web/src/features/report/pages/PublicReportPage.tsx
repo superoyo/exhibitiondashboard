@@ -1,3 +1,5 @@
+import { useParams } from 'react-router-dom';
+
 import { ReportView } from '@/features/report/components/ReportView';
 
 /**
@@ -12,6 +14,11 @@ import { ReportView } from '@/features/report/components/ReportView';
  */
 export default function PublicReportPage() {
   const campaign = window.__CAMPAIGN__ ?? '';
+  // The comment reads need the token itself: they are addressed by token rather
+  // than by campaign key, so that opening them to sessionless visitors does not
+  // also open every other campaign's comments to anyone guessing short keys.
+  // Present in both route shapes — /v/:viewToken and /v/:slug/:viewToken.
+  const { viewToken = '' } = useParams<{ viewToken: string }>();
 
   if (!campaign) {
     return (
@@ -24,5 +31,5 @@ export default function PublicReportPage() {
     );
   }
 
-  return <ReportView campaign={campaign} viewOnly />;
+  return <ReportView campaign={campaign} viewOnly viewToken={viewToken} />;
 }

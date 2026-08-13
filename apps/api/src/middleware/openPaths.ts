@@ -17,6 +17,9 @@ export const OPEN_API_PREFIXES = [
   '/api/img', // image cache (used by view-only pages)
   '/api/report/data', // report stats (used by view-only pages)
   '/api/report/tiein/status', // read-only job progress (diagnostics)
+  // Client-link reads, addressed by the unguessable view token rather than by
+  // campaign key — the Python handlers 404 unless the token resolves.
+  '/api/view/',
   '/api/summary',
   '/api/trend',
   '/api/posts',

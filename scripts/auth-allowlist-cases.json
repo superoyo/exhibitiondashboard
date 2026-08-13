@@ -12,33 +12,173 @@
     "Before setting any entry to false, read the two failure modes in openPaths.ts."
   ],
   "cases": [
-    { "method": "GET", "path": "/api/version", "needsAuth": false, "why": "exact-match open" },
-    { "method": "GET", "path": "/api/health", "needsAuth": false, "why": "exact-match open" },
-    { "method": "POST", "path": "/api/scrape/run", "needsAuth": false, "why": "has its own X-ADMIN-KEY gate" },
-
-    { "method": "GET", "path": "/api/auth/profile", "needsAuth": false, "why": "login/profile proxy" },
-    { "method": "GET", "path": "/api/img", "needsAuth": false, "why": "image cache for view-only pages" },
-    { "method": "GET", "path": "/api/report/data", "needsAuth": false, "why": "view-only pages render this" },
-    { "method": "GET", "path": "/api/report/tiein/status", "needsAuth": false, "why": "read-only job progress" },
-    { "method": "GET", "path": "/api/summary", "needsAuth": false, "why": "legacy tracker read" },
-    { "method": "GET", "path": "/api/trend", "needsAuth": false, "why": "legacy tracker read" },
-    { "method": "GET", "path": "/api/posts", "needsAuth": false, "why": "legacy tracker read" },
-    { "method": "GET", "path": "/api/kols/somebody", "needsAuth": false, "why": "legacy tracker read" },
-
-    { "method": "GET", "path": "/api/campaigns/pao", "needsAuth": false, "why": "one campaign's title, for view-only pages" },
-    { "method": "GET", "path": "/api/campaigns/00003", "needsAuth": false, "why": "numeric key, same exception" },
-    { "method": "PATCH", "path": "/api/campaigns/pao", "needsAuth": true, "why": "GET-only exception must not cover writes" },
-    { "method": "DELETE", "path": "/api/campaigns/pao", "needsAuth": true, "why": "GET-only exception must not cover writes" },
-
-    { "method": "GET", "path": "/api/campaigns/summary", "needsAuth": true, "why": "REGRESSION: spans every campaign. Leaked the client roster and every campaign key while it matched the single-campaign GET exception" },
-
-    { "method": "GET", "path": "/api/campaigns", "needsAuth": true, "why": "full campaign list" },
-    { "method": "GET", "path": "/api/token", "needsAuth": true, "why": "protected read" },
-    { "method": "GET", "path": "/api/settings/ai/key", "needsAuth": true, "why": "secret" },
-    { "method": "POST", "path": "/api/report/refresh", "needsAuth": true, "why": "costly mutation" },
-    { "method": "POST", "path": "/api/campaigns", "needsAuth": true, "why": "mutation" },
-
-    { "method": "GET", "path": "/login", "needsAuth": false, "why": "not an /api path — the SPA handles page guarding" },
-    { "method": "GET", "path": "/v/sometoken", "needsAuth": false, "why": "not an /api path" }
+    {
+      "method": "GET",
+      "path": "/api/version",
+      "needsAuth": false,
+      "why": "exact-match open"
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "needsAuth": false,
+      "why": "exact-match open"
+    },
+    {
+      "method": "POST",
+      "path": "/api/scrape/run",
+      "needsAuth": false,
+      "why": "has its own X-ADMIN-KEY gate"
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/profile",
+      "needsAuth": false,
+      "why": "login/profile proxy"
+    },
+    {
+      "method": "GET",
+      "path": "/api/img",
+      "needsAuth": false,
+      "why": "image cache for view-only pages"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report/data",
+      "needsAuth": false,
+      "why": "view-only pages render this"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report/tiein/status",
+      "needsAuth": false,
+      "why": "read-only job progress"
+    },
+    {
+      "method": "GET",
+      "path": "/api/summary",
+      "needsAuth": false,
+      "why": "legacy tracker read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/trend",
+      "needsAuth": false,
+      "why": "legacy tracker read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/posts",
+      "needsAuth": false,
+      "why": "legacy tracker read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/kols/somebody",
+      "needsAuth": false,
+      "why": "legacy tracker read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/pao",
+      "needsAuth": false,
+      "why": "one campaign's title, for view-only pages"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/00003",
+      "needsAuth": false,
+      "why": "numeric key, same exception"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/campaigns/pao",
+      "needsAuth": true,
+      "why": "GET-only exception must not cover writes"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/campaigns/pao",
+      "needsAuth": true,
+      "why": "GET-only exception must not cover writes"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/summary",
+      "needsAuth": true,
+      "why": "REGRESSION: spans every campaign. Leaked the client roster and every campaign key while it matched the single-campaign GET exception"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns",
+      "needsAuth": true,
+      "why": "full campaign list"
+    },
+    {
+      "method": "GET",
+      "path": "/api/token",
+      "needsAuth": true,
+      "why": "protected read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/settings/ai/key",
+      "needsAuth": true,
+      "why": "secret"
+    },
+    {
+      "method": "POST",
+      "path": "/api/report/refresh",
+      "needsAuth": true,
+      "why": "costly mutation"
+    },
+    {
+      "method": "POST",
+      "path": "/api/campaigns",
+      "needsAuth": true,
+      "why": "mutation"
+    },
+    {
+      "method": "GET",
+      "path": "/api/view/sometoken/comments",
+      "needsAuth": false,
+      "why": "client link reads its own comments; the unguessable view token IS the credential and the handler 404s unless it resolves"
+    },
+    {
+      "method": "GET",
+      "path": "/api/view/sometoken/comments/list",
+      "needsAuth": false,
+      "why": "same, one page of comments"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report/comments",
+      "needsAuth": true,
+      "why": "keyed on the guessable campaign key — must stay behind login; clients use /api/view/<token>/comments"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report/comments/list",
+      "needsAuth": true,
+      "why": "same"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report/comments/export",
+      "needsAuth": true,
+      "why": "dumps every comment of a campaign, internal only — no client equivalent exists on purpose"
+    },
+    {
+      "method": "GET",
+      "path": "/login",
+      "needsAuth": false,
+      "why": "not an /api path — the SPA handles page guarding"
+    },
+    {
+      "method": "GET",
+      "path": "/v/sometoken",
+      "needsAuth": false,
+      "why": "not an /api path"
+    }
   ]
 }

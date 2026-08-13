@@ -186,14 +186,16 @@ function CommentList({
   campaign,
   campaignName,
   data,
+  viewToken,
 }: {
   campaign: string;
   campaignName: string;
   data: CommentSummary;
+  viewToken: string;
 }) {
   const [category, setCategory] = useState<'' | CommentCategory>('');
   const [offset, setOffset] = useState(0);
-  const list = useCommentList(campaign, category, offset, PAGE_SIZE, true);
+  const list = useCommentList(campaign, category, offset, PAGE_SIZE, true, viewToken);
 
   function pick(next: '' | CommentCategory) {
     setCategory(next);
@@ -224,8 +226,10 @@ function CommentList({
             </p>
           </div>
           {/* Next to the comments it exports, but note the scope difference:
-              this file holds EVERY comment, not the product-related page above. */}
-          <ExportButton campaign={campaign} campaignName={campaignName} />
+              this file holds EVERY comment, not the product-related page above.
+              Internal only — a client link has no session to call it with, and
+              the raw dump includes spam and off-topic chatter. */}
+          {viewToken ? null : <ExportButton campaign={campaign} campaignName={campaignName} />}
         </div>
 
         <div className="mb-3 flex flex-wrap gap-1.5">
@@ -294,12 +298,22 @@ export function CommentPanel({
   campaign,
   campaignName = '',
   data,
+  /** Set on a public client link. Routes the reads through the token endpoints
+   *  (no session exists) and hides the internal controls. */
+  viewToken = '',
 }: {
   campaign: string;
   campaignName?: string;
   data: CommentSummary;
+  viewToken?: string;
 }) {
+  // Both empty states below tell the team which button to press. A client has no
+  // such button and no reason to read about our pipeline, so on a client link the
+  // section simply is not there — the same way the rest of the controls are not.
+  const client = Boolean(viewToken);
+
   if (data.total === 0) {
+    if (client) return null;
     return (
       <Card>
         <CardContent className="p-6 text-center text-sm text-muted-foreground">
@@ -317,6 +331,7 @@ export function CommentPanel({
   // a donut of nine empty slices and an empty preview, which reads as a bug
   // rather than as "the rules changed, run it again".
   if (data.unclassified >= data.total) {
+    if (client) return null;
     return (
       <Card>
         <CardContent className="p-6 text-center text-sm text-muted-foreground">
@@ -341,11 +356,15 @@ export function CommentPanel({
             {data.replies > 0 ? <span> · reply {data.replies.toLocaleString()}</span> : null}
             {/* Never hide this: percentages computed over a subset without
                 saying so are the easiest number in a report to mislead with. */}
+            {/* Shown to the client too, minus the instruction: percentages
+                computed over a subset without saying so are the easiest number
+                in a report to mislead with, and that is truer for the client's
+                copy than for ours. */}
             {data.unclassified > 0 ? (
               <span className="text-amber-700">
                 {' '}
-                · ยังไม่จัดประเภท {data.unclassified.toLocaleString()} (กด 💬 Comment Analysis
-                เพื่อจัดต่อ)
+                · ยังไม่จัดประเภท {data.unclassified.toLocaleString()}
+                {client ? '' : ' (กด 💬 Comment Analysis เพื่อจัดต่อ)'}
               </span>
             ) : null}
           </p>
@@ -394,7 +413,12 @@ export function CommentPanel({
         </CardContent>
       </Card>
 
-      <CommentList campaign={campaign} campaignName={campaignName} data={data} />
+      <CommentList
+        campaign={campaign}
+        campaignName={campaignName}
+        data={data}
+        viewToken={viewToken}
+      />
     </div>
   );
 }

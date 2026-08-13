@@ -10,6 +10,8 @@ import {
   getRefreshStatus,
   getReportData,
   getTieinStatus,
+  getViewCommentList,
+  getViewComments,
   resetCost,
   savePackshot,
 } from '@/features/report/api/reportApi';
@@ -79,13 +81,13 @@ export function useResetCost(campaign: string) {
  * it is safe to load with the page. The scrape itself is a separate, explicit
  * action — see useCommentStatus.
  */
-export function useComments(campaign: string, enabled: boolean) {
+export function useComments(campaign: string, enabled: boolean, viewToken = '') {
   return useQuery({
     queryKey: queryKeys.report.comments(campaign),
-    queryFn: () => getComments(campaign),
-    // Off in the client-facing view: the endpoint requires auth, so leaving it
-    // on would 401 on every load of a shared link. Whether clients should see
-    // commenter names at all is a product decision, not a default.
+    // With a view token there is no session, so the read goes through the
+    // token-addressed endpoint instead. Same payload either way, hence the same
+    // cache key.
+    queryFn: () => (viewToken ? getViewComments(viewToken) : getComments(campaign)),
     enabled: enabled && Boolean(campaign),
   });
 }
@@ -111,10 +113,14 @@ export function useCommentList(
   offset: number,
   limit: number,
   enabled: boolean,
+  viewToken = '',
 ) {
   return useQuery({
     queryKey: queryKeys.report.commentList(campaign, category, offset),
-    queryFn: () => getCommentList(campaign, category, offset, limit),
+    queryFn: () =>
+      viewToken
+        ? getViewCommentList(viewToken, category, offset, limit)
+        : getCommentList(campaign, category, offset, limit),
     enabled: enabled && Boolean(campaign),
     placeholderData: (prev) => prev,
   });

@@ -69,9 +69,39 @@ export async function getCommentList(
 }
 
 /**
+ * The same two reads for a public client link (`/v/:viewToken`), which has no
+ * session at all.
+ *
+ * Addressed by the token, never by the campaign key: the key is a short
+ * guessable string, so a `?campaign=` endpoint open to the internet would serve
+ * every client's comments — and the commenters' names — to anyone who tried a
+ * few. The token is 72 random bits, and whoever has it already has the report.
+ */
+export async function getViewComments(viewToken: string): Promise<CommentSummary> {
+  const { data } = await api.get<CommentSummary>(`/view/${encodeURIComponent(viewToken)}/comments`);
+  return data;
+}
+
+export async function getViewCommentList(
+  viewToken: string,
+  category: string,
+  offset: number,
+  limit: number,
+): Promise<CommentListResponse> {
+  const { data } = await api.get<CommentListResponse>(
+    `/view/${encodeURIComponent(viewToken)}/comments/list`,
+    { params: { category, offset, limit } },
+  );
+  return data;
+}
+
+/**
  * Every stored comment, for the Excel export. Not a react-query hook: it runs
  * once when the button is pressed, and caching a few thousand rows the page
  * never renders would cost memory for nothing.
+ *
+ * There is deliberately no client-link equivalent — a raw dump of every comment,
+ * spam included, is an internal tool.
  */
 export async function getCommentExport(campaign: string): Promise<CommentExportResponse> {
   const { data } = await api.get<CommentExportResponse>('/report/comments/export', {

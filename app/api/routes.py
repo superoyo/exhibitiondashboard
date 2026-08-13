@@ -687,6 +687,49 @@ def report_comments_status(campaign: str = "pao"):
     return state_for("cm:" + campaign)
 
 
+# ---------------------------------------------------------------------------
+# Client-facing comment reads, addressed by view token (open, no session)
+# ---------------------------------------------------------------------------
+
+def _view_campaign(view_token: str) -> str:
+    """The campaign a client link points at, or 404.
+
+    The token IS the credential: `secrets.token_urlsafe(9)` — 72 bits, the same
+    unguessable string the /v/ page itself is protected by. Anyone holding it
+    already has the report.
+
+    This is why these endpoints take a token in the PATH instead of the
+    `?campaign=` the authenticated ones use. Campaign keys are short guessable
+    strings ('pao', '00008'), so opening a comment endpoint keyed on them would
+    hand every client's comments — with the commenters' names — to anyone who
+    tried a few. That is exactly how /api/campaigns/summary came to serve the
+    whole client roster.
+    """
+    # Function-level import: app.main imports this module to mount the router.
+    from app.main import _campaign_for_view_token
+
+    key = _campaign_for_view_token((view_token or "").strip())
+    if not key:
+        raise HTTPException(status_code=404, detail="ไม่พบลิงก์รายงานนี้")
+    return key
+
+
+@router.get("/view/{view_token}/comments")
+def view_comments(view_token: str):
+    """Comment breakdown for a client link. Same rollup the internal panel reads."""
+    from app.comments import summary
+    return summary(_view_campaign(view_token))
+
+
+@router.get("/view/{view_token}/comments/list")
+def view_comments_list(view_token: str, category: str = "", offset: int = 0,
+                       limit: int = 20):
+    """One page of product-related comments for a client link."""
+    from app.comments import list_comments
+    return list_comments(_view_campaign(view_token), category or None,
+                         max(0, offset), limit)
+
+
 @router.get("/ai/status")
 def ai_status_route(force: bool = False):
     """Is the Claude AI key set + funded? Shown on the settings page so the

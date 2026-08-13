@@ -94,6 +94,7 @@ export function ReportView({
   campaign,
   viewOnly,
   influencerView = false,
+  viewToken = '',
 }: {
   campaign: string;
   /** Client-facing mode: stats only, every control hidden. */
@@ -105,6 +106,13 @@ export function ReportView({
    * influencers'.
    */
   influencerView?: boolean;
+  /**
+   * The token from a public `/v/:viewToken` link. Present only when there is no
+   * session, which is what the comment reads switch on — `viewOnly` alone does
+   * not imply that, because `/c/<key>?view=1` is the team previewing the client
+   * layout while logged in.
+   */
+  viewToken?: string;
 }) {
   const [info, setInfo] = useState('');
 
@@ -117,7 +125,10 @@ export function ReportView({
   const report = useReportData(campaign);
   const refreshStatus = useRefreshStatus(campaign, !viewOnly);
   const resetCost = useResetCost(campaign);
-  const comments = useComments(campaign, !viewOnly);
+  // The client's report shows the comment analysis too. On a token link it reads
+  // through the token endpoints; on the logged-in `?view=1` preview the ordinary
+  // authenticated ones still work.
+  const comments = useComments(campaign, !influencerView, viewToken);
   const commentStatus = useCommentStatus(campaign, !viewOnly);
 
   const filters = useReportFilters();
@@ -368,12 +379,20 @@ export function ReportView({
             </div>
           )}
 
-          {/* Comment breakdown. Hidden from the client-facing view along with
-              the other controls, and rendered from stored rows only — opening
-              the report never triggers a scrape. */}
+          {/* Comment breakdown. Shown on the client report as well as ours —
+              it is analysis the client is paying for. Rendered from stored rows
+              only, so opening the report never triggers a scrape, and the panel
+              drops its own internal controls when a view token is present.
+              Still off in the influencer view: that link answers "have I
+              posted", not how the campaign performed. */}
           {!influencerView && comments.data ? (
             <div className="mb-5">
-              <CommentPanel campaign={campaign} campaignName={campaignName} data={comments.data} />
+              <CommentPanel
+                campaign={campaign}
+                campaignName={campaignName}
+                data={comments.data}
+                viewToken={viewToken}
+              />
             </div>
           ) : null}
 

@@ -34,6 +34,10 @@ _OPEN_API_PREFIXES = (
     "/api/img",             # image cache (view pages)
     "/api/report/data",     # report stats (view pages)
     "/api/report/tiein/status",  # read-only job progress (diagnostics)
+    # Client-link reads, addressed by the unguessable view token rather than by
+    # campaign key — the handlers 404 unless the token resolves. See
+    # routes._view_campaign for why the token is in the path.
+    "/api/view/",
     "/api/summary", "/api/trend", "/api/posts", "/api/kols/",  # legacy tracker reads
 )
 _OPEN_API_EXACT = {"/api/version", "/api/health", "/api/scrape/run"}  # scrape/run has X-ADMIN-KEY
