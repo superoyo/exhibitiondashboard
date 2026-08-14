@@ -186,11 +186,14 @@ function CommentList({
   campaign,
   campaignName,
   data,
+  client,
   viewToken,
 }: {
   campaign: string;
   campaignName: string;
   data: CommentSummary;
+  /** Client layout — hides the export button (see CommentPanel). */
+  client: boolean;
   viewToken: string;
 }) {
   const [category, setCategory] = useState<'' | CommentCategory>('');
@@ -227,9 +230,10 @@ function CommentList({
           </div>
           {/* Next to the comments it exports, but note the scope difference:
               this file holds EVERY comment, not the product-related page above.
-              Internal only — a client link has no session to call it with, and
-              the raw dump includes spam and off-topic chatter. */}
-          {viewToken ? null : <ExportButton campaign={campaign} campaignName={campaignName} />}
+              Internal only — the raw dump includes spam and off-topic chatter,
+              and the client layout (real link or ?view=1 preview) never shows
+              controls the client cannot have. */}
+          {client ? null : <ExportButton campaign={campaign} campaignName={campaignName} />}
         </div>
 
         <div className="mb-3 flex flex-wrap gap-1.5">
@@ -298,19 +302,25 @@ export function CommentPanel({
   campaign,
   campaignName = '',
   data,
-  /** Set on a public client link. Routes the reads through the token endpoints
-   *  (no session exists) and hides the internal controls. */
+  /** Client LAYOUT: hide the export button and the press-this-button empty
+   *  states. True on /v/ links AND on the team's logged-in ?view=1 preview —
+   *  a preview that shows controls the client will not see defeats its point. */
+  viewOnly = false,
+  /** Client TRANSPORT: set only on a public /v/ link, where no session exists,
+   *  to route the reads through the token endpoints. The ?view=1 preview keeps
+   *  the authenticated endpoints — the previewer is logged in. */
   viewToken = '',
 }: {
   campaign: string;
   campaignName?: string;
   data: CommentSummary;
+  viewOnly?: boolean;
   viewToken?: string;
 }) {
   // Both empty states below tell the team which button to press. A client has no
-  // such button and no reason to read about our pipeline, so on a client link the
-  // section simply is not there — the same way the rest of the controls are not.
-  const client = Boolean(viewToken);
+  // such button and no reason to read about our pipeline, so on the client
+  // layout the section simply is not there — like the rest of the controls.
+  const client = viewOnly || Boolean(viewToken);
 
   if (data.total === 0) {
     if (client) return null;
@@ -417,6 +427,7 @@ export function CommentPanel({
         campaign={campaign}
         campaignName={campaignName}
         data={data}
+        client={client}
         viewToken={viewToken}
       />
     </div>

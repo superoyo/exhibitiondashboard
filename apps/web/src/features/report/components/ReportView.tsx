@@ -391,6 +391,7 @@ export function ReportView({
                 campaign={campaign}
                 campaignName={campaignName}
                 data={comments.data}
+                viewOnly={viewOnly}
                 viewToken={viewToken}
               />
             </div>
