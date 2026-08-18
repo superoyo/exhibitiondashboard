@@ -58,8 +58,10 @@ FB_COMMENTS_ACTOR_ID: str = os.getenv(
     "FB_COMMENTS_ACTOR_ID", "apify~facebook-comments-scraper")
 # Ceiling per post. Comment counts are long-tailed — a handful of posts carry
 # most of the volume — so this caps the bill without changing the picture for
-# the many small posts. Raise it for a campaign where a viral post matters.
-COMMENTS_PER_POST: int = int(os.getenv("COMMENTS_PER_POST", "200"))
+# the many small posts. 200 → 500 in 2026-08 at the team's request: at 200 a
+# viral post kept only its top slice, and 500 comments is still ~$0.25-0.70 of
+# Apify spend on the one post that carries them.
+COMMENTS_PER_POST: int = int(os.getenv("COMMENTS_PER_POST", "500"))
 # Replies per top-level comment. They count against COMMENTS_PER_POST, so this
 # is a spread control, not an extra allowance: without a per-comment cap one
 # viral thread can eat a post's whole budget and crowd out every other comment.
