@@ -1,11 +1,14 @@
 import type { ReportRecordDerived } from '@kol/shared';
 
-/** Column order of the exported CSV, unchanged from the legacy export. */
+import { tierOf } from './tier';
+
+/** Column order of the exported CSV. `tier` is computed, not on the record. */
 const COLUMNS = [
   'category',
   'username',
   'nickname',
   'followers',
+  'tier',
   'views',
   'likes',
   'comments',
@@ -30,9 +33,11 @@ export function buildReportCsv(rows: ReportRecordDerived[]): string {
   const lines = [COLUMNS.join(',')];
   for (const row of rows) {
     lines.push(
-      COLUMNS.map((col) =>
-        col === 'er' ? row.er.toFixed(2) : escapeCell(row[col] as CellValue),
-      ).join(','),
+      COLUMNS.map((col) => {
+        if (col === 'er') return row.er.toFixed(2);
+        if (col === 'tier') return escapeCell(tierOf(row.followers)?.label ?? '');
+        return escapeCell(row[col]);
+      }).join(','),
     );
   }
   return lines.join('\n');

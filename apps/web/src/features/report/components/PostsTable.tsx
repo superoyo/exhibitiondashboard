@@ -7,6 +7,7 @@ import { fmt, fmtFull } from '@/lib/format';
 import type { CategoryColors } from '@/lib/colors';
 import { cn } from '@/lib/utils';
 import { erText } from '@/features/report/lib/metrics';
+import { tierOf } from '@/features/report/lib/tier';
 
 type SortKey = keyof Pick<
   ReportRecordDerived,
@@ -125,7 +126,21 @@ export function PostsTable({
                   <PlatformBadge platform={row.platform} label={row.platform_label} />
                 </span>
               </td>
-              <td className="pr-3 text-right">{fmt(row.followers)}</td>
+              {/* Tier under the count it derives from — no extra column. Absent
+                  (not "KOC") when followers are unknown; see tierOf(). */}
+              <td className="pr-3 text-right">
+                {fmt(row.followers)}
+                {(() => {
+                  const tier = tierOf(row.followers);
+                  return tier ? (
+                    <span
+                      className={`ml-1.5 rounded px-1.5 py-0.5 text-[10px] font-semibold ${tier.chip}`}
+                    >
+                      {tier.label}
+                    </span>
+                  ) : null;
+                })()}
+              </td>
               {!hideMetrics && (
                 <>
                   <td className="pr-3 text-right font-semibold">{fmtFull(row.views)}</td>
