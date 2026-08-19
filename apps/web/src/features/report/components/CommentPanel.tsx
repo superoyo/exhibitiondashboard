@@ -29,15 +29,20 @@ const CATEGORY_COLORS: Record<string, string> = {
   SPAM: '#cbd5e1',
 };
 
-/** Short chip labels. The donut legend carries the full ones from the server. */
-const CHIP_LABELS: Record<string, string> = {
-  EFFECT: '🧪 ผลลัพธ์',
-  SENSORY: '👃 กลิ่น/รสชาติ',
-  PRICE: '💰 ราคา',
-  WHERE: '🛒 หาซื้อ',
-  INTENT: '🙋 อยากซื้อ',
-  QUESTION: '❓ ถามข้อมูล',
-  ISSUE: '⚠️ ติดปัญหา',
+/**
+ * Chip emoji only — the chip TEXT is the server's label, the same string the
+ * donut legend shows. The first version abbreviated the chips (ผลลัพธ์ for
+ * สรรพคุณ / ผลลัพธ์) and the team read the two boxes as different category
+ * systems. One name per category, everywhere.
+ */
+const CATEGORY_EMOJI: Record<string, string> = {
+  EFFECT: '🧪',
+  SENSORY: '👃',
+  PRICE: '💰',
+  WHERE: '🛒',
+  INTENT: '🙋',
+  QUESTION: '❓',
+  ISSUE: '⚠️',
 };
 
 function CategoryBreakdown({ data }: { data: CommentSummary }) {
@@ -83,9 +88,16 @@ function CategoryBreakdown({ data }: { data: CommentSummary }) {
         </div>
       </div>
 
+      {/* EVERY category, zeros included and dimmed. The pie itself can only
+          draw non-zero slices, but a category missing from this list while the
+          preview's chips still showed it read as the two boxes disagreeing —
+          and a zero is information ("nobody asked about price"). */}
       <ul className="w-full flex-1 space-y-1.5">
-        {slices.map((c) => (
-          <li key={c.code} className="flex items-center gap-2 text-sm">
+        {data.categories.map((c) => (
+          <li
+            key={c.code}
+            className={`flex items-center gap-2 text-sm ${c.count === 0 ? 'opacity-40' : ''}`}
+          >
             <span
               className="h-3 w-3 shrink-0 rounded-sm"
               style={{ backgroundColor: CATEGORY_COLORS[c.code] }}
@@ -209,7 +221,8 @@ function CommentList({
     { key: '', label: 'ทั้งหมด', count: data.product_total },
     ...data.by_topic.map((t) => ({
       key: t.code,
-      label: CHIP_LABELS[t.code] ?? t.label,
+      // The server's label verbatim — the exact string the donut legend shows
+      label: `${CATEGORY_EMOJI[t.code] ?? ''} ${t.label}`.trim(),
       count: t.count,
     })),
   ];
@@ -226,6 +239,17 @@ function CommentList({
             <h3 className="mb-1 font-semibold">ตัวอย่าง Comment</h3>
             <p className="text-xs text-muted-foreground">
               เรียงตามยอดไลก์ — ยอดไลก์คือการโหวตของคนดูเองว่าคอมเมนต์ไหนสำคัญ
+              {/* Why a chip here can read one lower than the same category in
+                  the donut: the donut counts everything collected, this list
+                  drops the creator's own replies. Unexplained, that off-by-one
+                  reads as the two boxes disagreeing. */}
+              {data.creator_replies > 0 ? (
+                <>
+                  {' '}
+                  · ตัวเลขในนี้ไม่รวม reply ที่ KOL ตอบใต้โพสต์ตัวเอง (
+                  {data.creator_replies.toLocaleString()} อัน) จึงอาจน้อยกว่าในกราฟ
+                </>
+              ) : null}
             </p>
           </div>
           {/* Next to the comments it exports, but note the scope difference:
