@@ -14,16 +14,19 @@
  */
 
 export interface Tier {
-  code: 'KOC' | 'NANO' | 'MICRO' | 'MID' | 'MACRO' | 'MEGA';
+  code: 'KOC' | 'NANO' | 'MICRO' | 'MACRO' | 'MEGA';
   label: string;
   /** Tailwind classes for the badge — one hue per tier, stronger = bigger. */
   chip: string;
 }
 
+// Five rungs, not the benchmark file's six: the team merged Mid into Macro
+// (2026-08-19), so Macro spans 100K-1M. When comparing against the ER tables in
+// references/benchmarks.md — which still split Mid (100K-500K) from Macro
+// (500K-1M) — a 100K-500K account here reads against the Mid row there.
 const TIERS: { min: number; tier: Tier }[] = [
   { min: 1_000_000, tier: { code: 'MEGA', label: 'Mega', chip: 'bg-purple-100 text-purple-800' } },
-  { min: 500_000, tier: { code: 'MACRO', label: 'Macro', chip: 'bg-blue-100 text-blue-800' } },
-  { min: 100_000, tier: { code: 'MID', label: 'Mid', chip: 'bg-sky-100 text-sky-800' } },
+  { min: 100_000, tier: { code: 'MACRO', label: 'Macro', chip: 'bg-blue-100 text-blue-800' } },
   { min: 10_000, tier: { code: 'MICRO', label: 'Micro', chip: 'bg-teal-100 text-teal-800' } },
   { min: 1_000, tier: { code: 'NANO', label: 'Nano', chip: 'bg-emerald-100 text-emerald-800' } },
   { min: 1, tier: { code: 'KOC', label: 'KOC', chip: 'bg-slate-100 text-slate-700' } },
