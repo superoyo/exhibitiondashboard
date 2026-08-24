@@ -124,67 +124,84 @@ export function RosterRow({
       {showLinks && (
         // Commercial mini-form (report roster only — the tracker has no sales).
         // Stacked so the row does not get another four columns wide.
-        <td className="min-w-[170px] p-2">
-          {/* Visible labels, not placeholders: a placeholder vanishes the moment
-              a value is loaded, leaving two identical money boxes. */}
-          <div className="space-y-1">
-            <label className="flex items-center gap-1">
-              <span className="w-10 shrink-0 text-[10px] text-muted-foreground">ค่าตัว ฿</span>
-              <input
-                className={cn(inputClass, 'py-1 text-[0.78rem]')}
-                inputMode="decimal"
-                aria-label={`ค่าตัว (บาท) ของ @${kol.username}`}
-                value={draft.costText}
-                onChange={(e) => set('costText', e.target.value)}
-              />
-            </label>
-            <label className="flex items-center gap-1">
-              <span className="w-10 shrink-0 text-[10px] text-muted-foreground">บูส ฿</span>
-              <input
-                className={cn(inputClass, 'py-1 text-[0.78rem]')}
-                inputMode="decimal"
-                aria-label={`งบบูสต์ (บาท) ของ @${kol.username}`}
-                value={draft.boostText}
-                onChange={(e) => set('boostText', e.target.value)}
-              />
-            </label>
-            {draft.kpis.map((slot, i) => (
-              <div key={i} className="flex items-center gap-1">
-                <span className="w-10 shrink-0 text-[10px] text-muted-foreground">KPI {i + 1}</span>
-                <select
-                  className={cn(inputClass, 'w-[88px] px-1 py-1 text-[0.75rem]')}
-                  aria-label={`หน่วย KPI ที่ ${i + 1} ของ @${kol.username}`}
-                  value={slot.metric}
-                  onChange={(e) =>
-                    set(
-                      'kpis',
-                      draft.kpis.map((s, j) => (j === i ? { ...s, metric: e.target.value } : s)),
-                    )
-                  }
-                >
-                  <option value="">KPI: —</option>
-                  <option value="views">Views</option>
-                  <option value="impressions">Imp</option>
-                  <option value="interaction">Interaction</option>
-                  <option value="reach">Reach</option>
-                </select>
+        <td className="min-w-[280px] p-2">
+          {/* Labels ABOVE the inputs, money side by side, each KPI on its own
+              full-width line — the first cut put label + unit + number on one
+              line inside a narrow column and the number box collapsed to a few
+              pixels. Visible labels, not placeholders: a placeholder vanishes
+              the moment a value is loaded. */}
+          <div className="space-y-1.5">
+            <div className="grid grid-cols-2 gap-1.5">
+              <label className="block">
+                <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground">
+                  ค่าตัว (บาท)
+                </span>
                 <input
-                  className={cn(inputClass, 'py-1 text-[0.78rem]')}
-                  inputMode="numeric"
-                  aria-label={`เป้า KPI ที่ ${i + 1} ของ @${kol.username}`}
-                  placeholder="เป้า"
-                  value={slot.targetText}
-                  onChange={(e) =>
-                    set(
-                      'kpis',
-                      draft.kpis.map((s, j) =>
-                        j === i ? { ...s, targetText: e.target.value } : s,
-                      ),
-                    )
-                  }
+                  className={cn(inputClass, 'py-1 text-[0.82rem]')}
+                  inputMode="decimal"
+                  aria-label={`ค่าตัว (บาท) ของ @${kol.username}`}
+                  value={draft.costText}
+                  onChange={(e) => set('costText', e.target.value)}
                 />
+              </label>
+              <label className="block">
+                <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground">
+                  บูส (บาท)
+                </span>
+                <input
+                  className={cn(inputClass, 'py-1 text-[0.82rem]')}
+                  inputMode="decimal"
+                  aria-label={`งบบูสต์ (บาท) ของ @${kol.username}`}
+                  value={draft.boostText}
+                  onChange={(e) => set('boostText', e.target.value)}
+                />
+              </label>
+            </div>
+            <div>
+              <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground">
+                KPI ที่ขาย (ใส่ได้ 2 เป้า)
+              </span>
+              <div className="space-y-1">
+                {draft.kpis.map((slot, i) => (
+                  <div key={i} className="flex gap-1.5">
+                    <select
+                      className={cn(inputClass, 'w-28 flex-none px-1.5 py-1 text-[0.8rem]')}
+                      aria-label={`หน่วย KPI ที่ ${i + 1} ของ @${kol.username}`}
+                      value={slot.metric}
+                      onChange={(e) =>
+                        set(
+                          'kpis',
+                          draft.kpis.map((s, j) =>
+                            j === i ? { ...s, metric: e.target.value } : s,
+                          ),
+                        )
+                      }
+                    >
+                      <option value="">— หน่วย —</option>
+                      <option value="views">Views</option>
+                      <option value="impressions">Impressions</option>
+                      <option value="interaction">Interaction</option>
+                      <option value="reach">Reach</option>
+                    </select>
+                    <input
+                      className={cn(inputClass, 'min-w-[110px] flex-1 py-1 text-[0.82rem]')}
+                      inputMode="numeric"
+                      aria-label={`เป้า KPI ที่ ${i + 1} ของ @${kol.username}`}
+                      placeholder={`เป้าที่ ${i + 1} เช่น 500,000`}
+                      value={slot.targetText}
+                      onChange={(e) =>
+                        set(
+                          'kpis',
+                          draft.kpis.map((s, j) =>
+                            j === i ? { ...s, targetText: e.target.value } : s,
+                          ),
+                        )
+                      }
+                    />
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
           </div>
         </td>
       )}
