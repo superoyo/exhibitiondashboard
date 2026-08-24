@@ -1,7 +1,7 @@
 // Types only — `import type` is erased at compile time, so SheetJS itself is
 // NOT pulled into this chunk. The runtime module is loaded on demand below.
 import type * as XLSX from 'xlsx';
-import type { BulkKol } from '@kol/shared';
+import type { BulkKol, KolKpi } from '@kol/shared';
 
 import {
   dedupeLinks,
@@ -183,10 +183,58 @@ type XlsxModule = typeof import('xlsx');
 
 export interface ParsedWorkbook {
   kols: BulkKol[];
+  /** KPI cells merged vertically across a whole group are GROUP totals
+   *  ("7M Imp across Micro Package"), not anyone's personal target. */
+  groupKpis: Record<string, KolKpi[]>;
   /** Per-sheet header summary, shown when nothing could be parsed. */
   debug: string;
   /** Sheets skipped as non-work (e.g. address tabs). */
   skipped: string[];
+}
+
+/**
+ * Excel keeps a merged cell's value in its TOP-LEFT cell only — every other
+ * cell in the range reads as empty, even though the sheet visibly shows the
+ * value beside every row. Planner sheets lean on this constantly: a boost
+ * budget merged down a package, a KPI merged across a whole group.
+ *
+ * This copies each VERTICAL merge's value down its rows so parsing sees what
+ * the sheet shows. Horizontal merges are deliberately left alone — the classic
+ * merged campaign-title row spans columns, and propagating it would put text
+ * in several cells and get the title row mistaken for the header again (the
+ * exact bug that once imported usernames as 1,2,3,4,5).
+ *
+ * Returns the vertical span of each affected cell as "row:col" -> span, so the
+ * caller can tell "this KPI was merged across 8 rows" (a group total) from
+ * "this row has its own KPI".
+ */
+function spreadVerticalMerges(
+  xlsx: XlsxModule,
+  sheet: XLSX.WorkSheet,
+  rows: unknown[][],
+): Record<string, number> {
+  const spans: Record<string, number> = {};
+  try {
+    const origin = xlsx.utils.decode_range(sheet['!ref'] ?? 'A1').s;
+    for (const m of sheet['!merges'] ?? []) {
+      if (m.s.c !== m.e.c || m.e.r <= m.s.r) continue; // vertical, >1 row only
+      const col = m.s.c - origin.c;
+      const top = m.s.r - origin.r;
+      const value = rows[top]?.[col];
+      if (!text(value)) continue;
+      const span = m.e.r - m.s.r + 1;
+      for (let r = top; r <= m.e.r - origin.r; r++) {
+        const target = rows[r];
+        if (target) {
+          target[col] = value;
+          spans[`${r}:${col}`] = span;
+        }
+      }
+    }
+  } catch {
+    // Malformed merge metadata — plain per-cell parsing still works.
+  }
+  return spans;
 }
 
 /**
@@ -234,6 +282,7 @@ function visibleSheetNames(wb: XLSX.WorkBook): string[] {
 
 export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbook {
   const kols: BulkKol[] = [];
+  const groupKpis: Record<string, KolKpi[]> = {};
   const debug: string[] = [];
   const skipped: string[] = [];
   const sheetNames = visibleSheetNames(wb);
@@ -251,6 +300,7 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
     if (!rows.length) continue;
 
     const hyper = collectHyperlinks(xlsx, sheet);
+    const mergeSpans = spreadVerticalMerges(xlsx, sheet, rows);
 
     // Header = the first row with at least two filled cells. A single-cell first
     // row is a merged campaign title ("รายชื่อ KOL <brand>"), and reading it as
@@ -371,7 +421,20 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
       // parses the same as "100,000 Views" in one.
       const cost = cCost >= 0 ? parseAmount(text(row[cCost])) : null;
       const boost = cBoost >= 0 ? parseAmount(text(row[cBoost])) : null;
-      const kpis = kpiCols.length ? parseKpis(kpiCols.map((i2) => text(row[i2])).join(' ')) : [];
+      // A KPI cell merged down 2+ rows is the GROUP's total, not this row's
+      // own target — route it to groupKpis under this row's group and keep the
+      // per-person list empty for it.
+      const kpiMerged = kpiCols.some((i2) => (mergeSpans[`${i}:${i2}`] ?? 1) > 1);
+      const kpiText = kpiCols.length ? kpiCols.map((i2) => text(row[i2])).join(' ') : '';
+      let kpis: KolKpi[] = [];
+      if (kpiText.trim()) {
+        const parsedKpis = parseKpis(kpiText);
+        if (kpiMerged) {
+          if (parsedKpis.length && !groupKpis[group]) groupKpis[group] = parsedKpis;
+        } else {
+          kpis = parsedKpis;
+        }
+      }
 
       kols.push({
         username: username.toLowerCase(),
@@ -387,7 +450,7 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
     }
   }
 
-  return { kols, debug: debug.join('  ·  '), skipped };
+  return { kols, groupKpis, debug: debug.join('  ·  '), skipped };
 }
 
 /**

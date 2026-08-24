@@ -51,18 +51,25 @@ export function useRosterImport(campaign: string) {
     }
 
     const { linkCount } = importSummary(kols);
+    // KPI cells merged across a whole group in the sheet = group totals.
+    const groupKpiEntries = Object.entries(parsed.groupKpis ?? {});
     setStatus('กำลังนำเข้า…');
     try {
       const result = await bulkReplaceRoster(campaign, {
         kols,
+        ...(groupKpiEntries.length
+          ? { group_kpis: groupKpiEntries.map(([group, kpis]) => ({ group, kpis })) }
+          : {}),
         ...(sheetUrl ? { sheet_url: sheetUrl } : {}),
       });
       setStatus(
-        `✅ นำเข้าแล้ว ${result.count} รายชื่อ (${linkCount} ลิงก์) — แทนที่ของเดิม · ` +
-          'ไปกด Refresh Data เพื่อดึงสถิติ',
+        `✅ นำเข้าแล้ว ${result.count} รายชื่อ (${linkCount} ลิงก์)` +
+          (groupKpiEntries.length ? ` · KPI กลุ่ม ${groupKpiEntries.length} กลุ่ม` : '') +
+          ' — แทนที่ของเดิม · ไปกด Refresh Data เพื่อดึงสถิติ',
       );
       toast.success(`นำเข้า ${result.count} รายชื่อแล้ว`);
       void queryClient.invalidateQueries({ queryKey: rosterKeys.list('report', campaign) });
+      void queryClient.invalidateQueries({ queryKey: ['roster', 'groupkpi', campaign] });
       if (sheetUrl) {
         void queryClient.invalidateQueries({ queryKey: rosterKeys.sheet(campaign) });
       }

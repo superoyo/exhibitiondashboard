@@ -299,4 +299,66 @@ const parse = (wb) => parseWorkbook(XLSX, wb);
   console.log('✅ sheets without planner columns stay clean');
 }
 
+// ---- merged cells: how planner sheets actually carry group data -------------
+// Excel keeps a merged range's value in the top-left cell only. Pao Win Wash
+// showed the failure: the Micro package's "7M Imp" KPI merged across the group
+// landed on the first member as a PERSONAL target; merged boost cells lost
+// their value for every row but the first.
+{
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([
+    ['username', 'ลิงก์', 'ค่าตัว', 'Boost', 'KPI'],
+    // Macro: own KPI per row, boost merged across the two rows (rows 1-2)
+    ['macro1', 'https://www.tiktok.com/@macro1/video/7300000000000000041', '55,500', '20,000', '800K Reach'],
+    ['macro2', 'https://www.tiktok.com/@macro2/video/7300000000000000042', '47,100', '', '800K Reach'],
+    // Micro package: per-row cost, KPI merged across the whole group (rows 3-5)
+    ['micro1', 'https://www.tiktok.com/@micro1/video/7300000000000000043', '24,500', '', '7M Imp'],
+    ['micro2', 'https://www.tiktok.com/@micro2/video/7300000000000000044', '24,500', '', ''],
+    ['micro3', 'https://www.tiktok.com/@micro3/video/7300000000000000045', '24,500', '', ''],
+  ]);
+  ws['!merges'] = [
+    { s: { r: 1, c: 3 }, e: { r: 2, c: 3 } }, // boost D2:D3 (vertical)
+    { s: { r: 3, c: 4 }, e: { r: 5, c: 4 } }, // KPI E4:E6 (vertical, whole group)
+  ];
+  // groups via section headers are absent here — single sheet, no group column,
+  // so everyone lands in 'KOL'; the merged KPI becomes THAT group's total.
+  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+
+  const parsed = parse(wb);
+  const got = Object.fromEntries(parsed.kols.map((k) => [k.username, k]));
+  assert.equal(got.macro2.boost_thb, 20000, 'merged boost reaches the second row');
+  assert.deepEqual(
+    got.macro1.kpis,
+    [{ metric: 'reach', target: 800000 }],
+    'per-row KPI stays personal',
+  );
+  assert.deepEqual(got.micro1.kpis, [], 'merged KPI is NOT a personal target');
+  assert.deepEqual(got.micro2.kpis, [], 'merged KPI is NOT a personal target (2)');
+  assert.deepEqual(
+    parsed.groupKpis,
+    { KOL: [{ metric: 'impressions', target: 7000000 }] },
+    `merged KPI becomes the group total: ${JSON.stringify(parsed.groupKpis)}`,
+  );
+  console.log('✅ vertical merges spread; merged KPI becomes a group total');
+}
+
+// ---- a REAL merged title row must still not become the header ---------------
+{
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([
+    ['รายชื่อ KOL Pao Win Wash', '', ''],
+    ['ลำดับ', 'ชื่อ', 'ลิงก์โพสต์'],
+    [1, '', 'https://www.tiktok.com/@merged.title/video/7300000000000000046'],
+  ]);
+  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }]; // horizontal title merge
+  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+  const kols = parse(wb).kols;
+  assert.deepEqual(
+    kols.map((k) => k.username),
+    ['merged.title'],
+    `horizontal merge leaked into the header: ${JSON.stringify(kols.map((k) => k.username))}`,
+  );
+  console.log('✅ horizontal title merges stay inert');
+}
+
 console.log('\n✅ all import-behaviour checks passed');

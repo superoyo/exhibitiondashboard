@@ -125,25 +125,32 @@ export function RosterRow({
         // Commercial mini-form (report roster only — the tracker has no sales).
         // Stacked so the row does not get another four columns wide.
         <td className="min-w-[170px] p-2">
+          {/* Visible labels, not placeholders: a placeholder vanishes the moment
+              a value is loaded, leaving two identical money boxes. */}
           <div className="space-y-1">
-            <input
-              className={cn(inputClass, 'py-1 text-[0.78rem]')}
-              inputMode="decimal"
-              aria-label={`ค่าตัว (บาท) ของ @${kol.username}`}
-              placeholder="ค่าตัว (บาท)"
-              value={draft.costText}
-              onChange={(e) => set('costText', e.target.value)}
-            />
-            <input
-              className={cn(inputClass, 'py-1 text-[0.78rem]')}
-              inputMode="decimal"
-              aria-label={`งบบูสต์ (บาท) ของ @${kol.username}`}
-              placeholder="บูส (บาท)"
-              value={draft.boostText}
-              onChange={(e) => set('boostText', e.target.value)}
-            />
+            <label className="flex items-center gap-1">
+              <span className="w-10 shrink-0 text-[10px] text-muted-foreground">ค่าตัว ฿</span>
+              <input
+                className={cn(inputClass, 'py-1 text-[0.78rem]')}
+                inputMode="decimal"
+                aria-label={`ค่าตัว (บาท) ของ @${kol.username}`}
+                value={draft.costText}
+                onChange={(e) => set('costText', e.target.value)}
+              />
+            </label>
+            <label className="flex items-center gap-1">
+              <span className="w-10 shrink-0 text-[10px] text-muted-foreground">บูส ฿</span>
+              <input
+                className={cn(inputClass, 'py-1 text-[0.78rem]')}
+                inputMode="decimal"
+                aria-label={`งบบูสต์ (บาท) ของ @${kol.username}`}
+                value={draft.boostText}
+                onChange={(e) => set('boostText', e.target.value)}
+              />
+            </label>
             {draft.kpis.map((slot, i) => (
-              <div key={i} className="flex gap-1">
+              <div key={i} className="flex items-center gap-1">
+                <span className="w-10 shrink-0 text-[10px] text-muted-foreground">KPI {i + 1}</span>
                 <select
                   className={cn(inputClass, 'w-[88px] px-1 py-1 text-[0.75rem]')}
                   aria-label={`หน่วย KPI ที่ ${i + 1} ของ @${kol.username}`}

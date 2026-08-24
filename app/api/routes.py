@@ -352,8 +352,17 @@ class BulkKolIn(BaseModel):
     kpis: Optional[list[dict]] = None  # [{metric, target}]
 
 
+class BulkGroupKpiIn(BaseModel):
+    group: str
+    kpis: list[dict]
+
+
 class BulkRosterIn(BaseModel):
     kols: list[BulkKolIn]
+    # Group-total KPIs the parser found as vertically-merged cells. Upserted,
+    # not replace-all: a re-upload of a file WITHOUT merged KPI cells must not
+    # wipe targets the team keyed in by hand on the group-KPI card.
+    group_kpis: Optional[list[BulkGroupKpiIn]] = None
     sheet_url: Optional[str] = None  # remember the source Google Sheet for re-sync
 
 
@@ -413,6 +422,22 @@ def bulk_replace_report(body: BulkRosterIn, campaign: str = "pao",
             kpi_json=_clean_kpis(k.kpis),
             active=True,
         ))
+    # Group-total KPIs from merged cells — upsert per group.
+    if body.group_kpis:
+        from app.models import ReportGroupKpi
+        for g in body.group_kpis:
+            name = (g.group or "").strip()
+            cleaned = _clean_kpis(g.kpis)
+            if not name or not cleaned:
+                continue
+            row = session.scalar(select(ReportGroupKpi).where(
+                ReportGroupKpi.campaign == campaign,
+                ReportGroupKpi.group_name == name))
+            if row:
+                row.kpi_json = cleaned
+            else:
+                session.add(ReportGroupKpi(campaign=campaign, group_name=name,
+                                           kpi_json=cleaned))
     session.commit()
     if body.sheet_url is not None:
         from app.settings import set_setting

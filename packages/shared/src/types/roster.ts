@@ -115,6 +115,8 @@ export interface GroupKpiResponse {
 
 export interface BulkRosterInput {
   kols: BulkKol[];
+  /** Group-total KPIs found as vertically-merged cells in the sheet. */
+  group_kpis?: { group: string; kpis: KolKpi[] }[];
   /** Remembered so the campaign can be re-synced from the same file later. */
   sheet_url?: string;
 }
