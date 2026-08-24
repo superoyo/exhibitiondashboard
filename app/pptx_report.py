@@ -131,6 +131,13 @@ def _referer_for(url: str) -> Optional[str]:
 
 
 def _image_bytes(session, url: Optional[str]) -> Optional[bytes]:
+    """Bytes for an image URL: from ImageCache, else downloaded — and STORED.
+
+    Storing on every successful download is what keeps decks rebuildable:
+    TikTok/Facebook CDN links are signed and die within about a day, so any
+    byte fetched while a link still works is the last chance to have it. The
+    key matches /api/img's, so the web UI and the deck share one cache.
+    """
     if not url:
         return None
     h = hashlib.sha256(url.encode("utf-8")).hexdigest()[:40]
@@ -147,6 +154,12 @@ def _image_bytes(session, url: Optional[str]) -> Optional[bytes]:
             r = httpx.get(url, timeout=8, follow_redirects=True, headers=headers)
             ct = (r.headers.get("content-type") or "").lower()
             if r.status_code == 200 and r.content and ct.startswith("image/"):
+                try:
+                    session.merge(ImageCache(hash=h, content_type=ct.split(";")[0].strip(),
+                                             data=r.content))
+                    session.commit()
+                except Exception:  # noqa: BLE001 — caching is best-effort
+                    session.rollback()
                 return r.content
         except Exception:  # noqa: BLE001
             continue

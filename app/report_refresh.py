@@ -615,6 +615,47 @@ def _today() -> dt.date:
     return dt.datetime.now(config.TZ).date()
 
 
+def _cache_campaign_images(campaign: str, st: Optional[Dict[str, Any]] = None) -> int:
+    """Pull every cover/avatar the campaign points at into ImageCache, NOW.
+
+    The scrape stores URLs, not pixels — and TikTok/Facebook CDN links are
+    signed to die within about a day. A deck built later than that got black
+    boxes where the covers used to be (the DNA report, 2026-08-20). So the
+    bytes are fetched in the same run that obtained the URLs, the one moment
+    they are guaranteed to work. Already-cached URLs are skipped, so re-runs
+    cost nothing; failures are skipped too — one dead link must not stop the
+    other ninety-nine.
+
+    Returns how many images were newly stored.
+    """
+    import hashlib as _hl
+
+    from app.models import ImageCache
+    from app.pptx_report import _image_bytes
+
+    saved = 0
+    with session_scope() as session:
+        urls: List[str] = []
+        for p in session.scalars(select(ReportPost).where(
+                ReportPost.campaign == campaign)).all():
+            urls.extend(u for u in (p.cover_url, p.avatar_url) if u)
+        for k in session.scalars(select(ReportKol).where(
+                ReportKol.campaign == campaign)).all():
+            if k.avatar_url:
+                urls.append(k.avatar_url)
+        urls = list(dict.fromkeys(urls))
+        for i, u in enumerate(urls, 1):
+            h = _hl.sha256(u.encode("utf-8")).hexdigest()[:40]
+            row = session.get(ImageCache, h)
+            if row and row.data:
+                continue
+            if _image_bytes(session, u) is not None:  # downloads AND stores
+                saved += 1
+            if st is not None and i % 10 == 0:
+                st.update(message=f"เก็บรูปลงคลังถาวร… {i}/{len(urls)} รูป")
+    return saved
+
+
 def _parse_report_items(items: List[Dict[str, Any]]):
     """Return (posts, profile) where profile maps username -> {followers, nick}."""
     posts: List[Dict[str, Any]] = []
@@ -723,6 +764,13 @@ def fetch_profiles(campaign: str = "sahagroup") -> dict:
             add_cost(campaign, cost, kind="profiles")
         except Exception:  # noqa: BLE001
             pass
+        # Same expiring-CDN-link problem as post covers: store the avatar bytes
+        # while the fresh URLs still resolve.
+        try:
+            st.update(message="กำลังเก็บรูปโปรไฟล์ลงคลังถาวร…")
+            _cache_campaign_images(campaign, st)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("avatar caching failed (%s): %s", campaign, _redact(exc))
         st.update(status="success", message=f"ดึงรูปโปรไฟล์แล้ว {done}/{len(usernames)} ราย",
                   finished_at=dt.datetime.now(config.TZ).isoformat(),
                   posts=done, cost_usd=round(cost, 4) if cost else None)
@@ -1167,6 +1215,17 @@ def refresh_report(campaign: str = "pao") -> dict:
                       finished_at=dt.datetime.now(config.TZ).isoformat())
             return {"status": "failed", "errors": scrape_errors}
 
+        # The cover/avatar links just stored die within about a day — fetch the
+        # actual bytes now, while they work, so a deck built weeks later still
+        # has its images. Free (plain downloads), and must never fail the run.
+        cached_imgs = 0
+        if n_posts:
+            st.update(message="กำลังเก็บรูปปก/รูปโปรไฟล์ลงคลังถาวร…")
+            try:
+                cached_imgs = _cache_campaign_images(campaign, st)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("image caching failed (%s): %s", campaign, _redact(exc))
+
         breakdown = " · ".join(f"{_PLATFORM_LABELS.get(p, p)} {c}"
                                for p, c in plat_counts.items()) or "—"
         # platforms that returned data but matched 0 posts → likely actor field
@@ -1178,6 +1237,8 @@ def refresh_report(campaign: str = "pao") -> dict:
             msg += f" · ข้าม {skipped_profiles} ลิงก์โปรไฟล์ (ยังไม่มีลิงก์งาน — ไม่เปลือง Apify)"
         if skip_followers:
             msg += " · ใช้ followers ชุดเดิม (ดึงล่าสุดไม่เกิน 24 ชม.)"
+        if cached_imgs:
+            msg += f" · เก็บรูปถาวร {cached_imgs} รูป"
         if unmatched:
             msg += " · จับคู่ไม่ได้: " + ", ".join(unmatched)
         if partial:
