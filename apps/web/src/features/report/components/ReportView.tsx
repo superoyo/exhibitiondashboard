@@ -44,7 +44,9 @@ const FOOTER_NOTE =
 const COST_LABELS: Record<string, string> = {
   refresh: 'อัปเดตสถิติ',
   comments: 'วิเคราะห์คอมเมนต์',
-  tiein: 'หา tie-in shot',
+  // tiein is step 1 of the 📥 PowerPoint button, not a button of its own —
+  // labelled so this line reads as part of the deck's production cost.
+  tiein: 'หา tie-in shot (ปุ่ม PowerPoint)',
   profiles: 'ดึงรูปโปรไฟล์',
 };
 
@@ -75,14 +77,14 @@ function CostBreakdown({
     <div className="mt-1 space-y-0.5 border-l-2 border-brand-400 pl-2">
       {rows.map(([kind, v]) => (
         <div key={kind} className="flex gap-2 text-[11px] text-muted-foreground">
-          <span className="w-32 shrink-0">{COST_LABELS[kind]}</span>
+          <span className="w-44 shrink-0">{COST_LABELS[kind]}</span>
           <span className="w-16 text-right tabular-nums">${v.total.toFixed(3)}</span>
           <span className="tabular-nums">{v.count} ครั้ง</span>
         </div>
       ))}
       {legacy > 0.0005 ? (
         <div className="flex gap-2 text-[11px] text-muted-foreground/70">
-          <span className="w-32 shrink-0">ก่อนหน้านี้ (แยกไม่ได้)</span>
+          <span className="w-44 shrink-0">ก่อนหน้านี้ (แยกไม่ได้)</span>
           <span className="w-16 text-right tabular-nums">${legacy.toFixed(3)}</span>
         </div>
       ) : null}

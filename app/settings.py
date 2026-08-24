@@ -81,7 +81,10 @@ def _cost_key(campaign: str) -> str:
 COST_KINDS = {
     "refresh": "อัปเดตสถิติ",
     "comments": "วิเคราะห์คอมเมนต์",
-    "tiein": "หา tie-in shot",
+    # tiein has no button of its own — it is step 1 of 📥 PowerPoint (see
+    # usePptxExport). Labelled that way so the team reads this line as part of
+    # the cost of producing the deck, not as some job they never pressed.
+    "tiein": "หา tie-in shot (ขั้นแรกของปุ่ม PowerPoint)",
     "profiles": "ดึงรูปโปรไฟล์",
 }
 
