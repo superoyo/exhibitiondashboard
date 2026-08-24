@@ -78,13 +78,33 @@ class ReportKol(Base):
     # client links get forwarded to KOLs, who must never read their resale price.
     cost_thb: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2), nullable=True)
     boost_thb: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2), nullable=True)
-    kpi_metric: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
-    kpi_target: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    # JSON list of {"metric","target"} — a LIST because one KOL can be sold on
+    # two KPIs at once (Views AND Engagement). Group-total KPIs live in
+    # ReportGroupKpi, not here.
+    kpi_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
     __table_args__ = (UniqueConstraint("campaign", "username", name="uq_report_kols_campaign_username"),)
+
+
+class ReportGroupKpi(Base):
+    """KPI sold on a whole GROUP ("7M Impressions across Micro Package").
+
+    Keyed by the group NAME as roster rows carry it — renaming a group in the
+    roster orphans its KPI row, and the editing UI shows orphans rather than
+    silently dropping them. kpi_json is a list of {"metric","target"}, same
+    shape as ReportKol.kpi_json. Authenticated /api/roster/* exposure only.
+    """
+    __tablename__ = "report_group_kpis"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    campaign: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    group_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    kpi_json: Mapped[str] = mapped_column(Text, nullable=False)
+    __table_args__ = (UniqueConstraint("campaign", "group_name",
+                                       name="uq_report_group_kpis_campaign_group"),)
 
 
 class ReportPost(Base):

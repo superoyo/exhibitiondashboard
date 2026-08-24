@@ -21,16 +21,24 @@ export interface KolLink {
 }
 
 /**
- * A roster row. Shape mirrors `_serialize()` in app/api/routes.py:175 — `url`,
+ * The KPI unit a KOL (or a whole group) was sold on. Impressions and Reach are
+ * backstage numbers — not verifiable from public data — so the UI shows those
+ * targets without an achievement figure.
+ */
+export type KpiMetric = 'views' | 'impressions' | 'interaction' | 'reach';
+
+/** One sold KPI. A KOL or group can carry several (Views AND Engagement). */
+export interface KolKpi {
+  /** Usually a KpiMetric; free text so a new sales unit is data, not a crash. */
+  metric: string;
+  target: number;
+}
+
+/**
+ * A roster row. Shape mirrors `_serialize()` in app/api/routes.py — `url`,
  * `links` and `subgroup` are only present on models that have those columns,
  * so all three are optional.
  */
-/**
- * The KPI unit a KOL was sold on. Impressions cannot be verified from public
- * data — the UI shows those targets without an achievement figure.
- */
-export type KpiMetric = 'views' | 'impressions' | 'interaction';
-
 export interface RosterKol {
   id: number;
   username: string;
@@ -45,10 +53,7 @@ export interface RosterKol {
    *  authenticated roster endpoints, never by /api/report/data. */
   cost_thb?: number | null;
   boost_thb?: number | null;
-  /** Usually a KpiMetric, but stored as free text so a new sales unit is data,
-   *  not a crash — consumers must handle unknown strings. */
-  kpi_metric?: string | null;
-  kpi_target?: number | null;
+  kpis?: KolKpi[];
 }
 
 export interface RosterListResponse {
@@ -76,8 +81,8 @@ export interface RosterPatchInput {
   links?: KolLink[];
   cost_thb?: number;
   boost_thb?: number;
-  kpi_metric?: string;
-  kpi_target?: number;
+  /** Full replacement; [] clears. */
+  kpis?: KolKpi[];
 }
 
 export interface RosterDeleteResponse {
@@ -98,8 +103,14 @@ export interface BulkKol {
   /** From the planner's sheet, when its columns exist. null = not stated. */
   cost_thb?: number | null;
   boost_thb?: number | null;
-  kpi_metric?: string | null;
-  kpi_target?: number | null;
+  kpis?: KolKpi[];
+}
+
+// ---- Group-level KPIs -------------------------------------------------------
+
+/** `GET /api/roster/report/groupkpi` — {group_name: KPI list}. */
+export interface GroupKpiResponse {
+  groups: Record<string, KolKpi[]>;
 }
 
 export interface BulkRosterInput {

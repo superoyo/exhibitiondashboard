@@ -187,7 +187,6 @@ export function ReportActions({
           ? '⏳ Analyzing…'
           : `💬 Comment Analysis${commentCount ? ` (${commentCount.toLocaleString()})` : ''}`}
       </Button>
-
     </div>
   );
 }

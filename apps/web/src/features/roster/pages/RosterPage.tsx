@@ -11,6 +11,7 @@ import { apiErrorMessage } from '@/lib/axios';
 import { toast } from '@/stores/toastStore';
 import { listCampaigns } from '@/features/campaigns/api/campaignsApi';
 import { AddKolForm, type AddKolDraft } from '@/features/roster/components/AddKolForm';
+import { GroupKpiCard } from '@/features/roster/components/GroupKpiCard';
 import { ImportCard } from '@/features/roster/components/ImportCard';
 import { RosterRow, type RosterRowDraft } from '@/features/roster/components/RosterRow';
 import { parseLinksTextarea } from '@/features/roster/lib/importSync';
@@ -104,15 +105,18 @@ export default function RosterPage() {
           active: draft.active,
           ...(showSubgroup ? { subgroup: draft.subgroup.trim() } : {}),
           ...(isReport ? { links: parseLinksTextarea(draft.linksText) } : {}),
-          // -1 / '' = clear on the server; an emptied input really does erase.
+          // -1 = clear on the server; the kpis list is a full replacement, so
+          // emptied slots really do erase.
           ...(isReport
             ? {
                 cost_thb: draft.costText.trim() ? Number(draft.costText.replace(/,/g, '')) : -1,
                 boost_thb: draft.boostText.trim() ? Number(draft.boostText.replace(/,/g, '')) : -1,
-                kpi_metric: draft.kpiMetric,
-                kpi_target: draft.kpiTargetText.trim()
-                  ? Math.round(Number(draft.kpiTargetText.replace(/,/g, '')))
-                  : -1,
+                kpis: draft.kpis
+                  .filter((s) => s.targetText.trim())
+                  .map((s) => ({
+                    metric: s.metric,
+                    target: Math.round(Number(s.targetText.replace(/,/g, ''))) || 0,
+                  })),
               }
             : {}),
         },
@@ -180,6 +184,12 @@ export default function RosterPage() {
           onImportFile={(file) => void importer.importFile(file)}
           onImportUrl={(url) => void importer.importFromUrl(url)}
         />
+      )}
+
+      {/* Group-total KPIs — keyed in here because planner sheets write them as
+          merged/summary cells that row-wise import cannot own. */}
+      {isReport && (
+        <GroupKpiCard campaign={campaign} groups={[...new Set(kols.map((k) => k.group))]} />
       )}
 
       <AddKolForm

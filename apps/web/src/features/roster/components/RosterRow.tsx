@@ -28,8 +28,8 @@ export interface RosterRowDraft {
   /** Commercial fields, kept as input text — '' means "no value". */
   costText: string;
   boostText: string;
-  kpiMetric: string;
-  kpiTargetText: string;
+  /** Two KPI slots — one KOL can be sold on Views AND Engagement at once. */
+  kpis: { metric: string; targetText: string }[];
 }
 
 function draftFrom(kol: RosterKol): RosterRowDraft {
@@ -42,8 +42,10 @@ function draftFrom(kol: RosterKol): RosterRowDraft {
     linksText: (kol.links ?? []).map((l) => l.url).join('\n') || (kol.url ?? ''),
     costText: kol.cost_thb != null ? String(kol.cost_thb) : '',
     boostText: kol.boost_thb != null ? String(kol.boost_thb) : '',
-    kpiMetric: kol.kpi_metric ?? '',
-    kpiTargetText: kol.kpi_target != null ? String(kol.kpi_target) : '',
+    kpis: [0, 1].map((i) => ({
+      metric: kol.kpis?.[i]?.metric ?? '',
+      targetText: kol.kpis?.[i]?.target != null ? String(kol.kpis[i].target) : '',
+    })),
   };
 }
 
@@ -140,27 +142,42 @@ export function RosterRow({
               value={draft.boostText}
               onChange={(e) => set('boostText', e.target.value)}
             />
-            <div className="flex gap-1">
-              <select
-                className={cn(inputClass, 'w-[88px] px-1 py-1 text-[0.75rem]')}
-                aria-label={`หน่วย KPI ของ @${kol.username}`}
-                value={draft.kpiMetric}
-                onChange={(e) => set('kpiMetric', e.target.value)}
-              >
-                <option value="">KPI: —</option>
-                <option value="views">Views</option>
-                <option value="impressions">Imp</option>
-                <option value="interaction">Interaction</option>
-              </select>
-              <input
-                className={cn(inputClass, 'py-1 text-[0.78rem]')}
-                inputMode="numeric"
-                aria-label={`เป้า KPI ของ @${kol.username}`}
-                placeholder="เป้า"
-                value={draft.kpiTargetText}
-                onChange={(e) => set('kpiTargetText', e.target.value)}
-              />
-            </div>
+            {draft.kpis.map((slot, i) => (
+              <div key={i} className="flex gap-1">
+                <select
+                  className={cn(inputClass, 'w-[88px] px-1 py-1 text-[0.75rem]')}
+                  aria-label={`หน่วย KPI ที่ ${i + 1} ของ @${kol.username}`}
+                  value={slot.metric}
+                  onChange={(e) =>
+                    set(
+                      'kpis',
+                      draft.kpis.map((s, j) => (j === i ? { ...s, metric: e.target.value } : s)),
+                    )
+                  }
+                >
+                  <option value="">KPI: —</option>
+                  <option value="views">Views</option>
+                  <option value="impressions">Imp</option>
+                  <option value="interaction">Interaction</option>
+                  <option value="reach">Reach</option>
+                </select>
+                <input
+                  className={cn(inputClass, 'py-1 text-[0.78rem]')}
+                  inputMode="numeric"
+                  aria-label={`เป้า KPI ที่ ${i + 1} ของ @${kol.username}`}
+                  placeholder="เป้า"
+                  value={slot.targetText}
+                  onChange={(e) =>
+                    set(
+                      'kpis',
+                      draft.kpis.map((s, j) =>
+                        j === i ? { ...s, targetText: e.target.value } : s,
+                      ),
+                    )
+                  }
+                />
+              </div>
+            ))}
           </div>
         </td>
       )}

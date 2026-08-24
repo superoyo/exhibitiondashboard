@@ -170,13 +170,39 @@ class KolPatch(BaseModel):
     active: Optional[bool] = None
     url: Optional[str] = None
     links: Optional[list[dict]] = None  # [{platform,url,handle}] — all channels
-    # Commercial fields (report roster only). Sent as -1 to CLEAR a value —
-    # Pydantic can't tell "field absent" from "field null" without sentinels,
-    # and absent must mean "leave alone" so saving a name never wipes a price.
+    # Commercial fields (report roster only). Numbers sent as -1 CLEAR the
+    # value; `kpis` replaces the whole list ([] clears). Absent means "leave
+    # alone", so saving a name never wipes a price.
     cost_thb: Optional[float] = None
     boost_thb: Optional[float] = None
-    kpi_metric: Optional[str] = None   # '' clears
-    kpi_target: Optional[int] = None
+    kpis: Optional[list[dict]] = None  # [{metric, target}]
+
+
+def _clean_kpis(raw: Optional[list]) -> Optional[str]:
+    """[{metric, target}] -> kpi_json, dropping junk. None when nothing valid.
+
+    Metric is free text (lowercased, capped) — a new sales unit must be data,
+    not a 422 — but a KPI without a positive numeric target is meaningless and
+    is dropped rather than stored as noise.
+    """
+    out = []
+    for item in raw or []:
+        try:
+            target = int(float(item.get("target") or 0))
+        except (TypeError, ValueError):
+            continue
+        if target <= 0:
+            continue
+        out.append({"metric": str(item.get("metric") or "").strip().lower()[:16],
+                    "target": target})
+    return json.dumps(out, ensure_ascii=False) if out else None
+
+
+def _kpis_of(k) -> list:
+    try:
+        return json.loads(k.kpi_json) if k.kpi_json else []
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def _serialize(k) -> dict:
@@ -199,8 +225,7 @@ def _serialize(k) -> dict:
     if hasattr(k, "cost_thb"):
         out["cost_thb"] = float(k.cost_thb) if k.cost_thb is not None else None
         out["boost_thb"] = float(k.boost_thb) if k.boost_thb is not None else None
-        out["kpi_metric"] = k.kpi_metric
-        out["kpi_target"] = k.kpi_target
+        out["kpis"] = _kpis_of(k)
     return out
 
 
@@ -263,15 +288,13 @@ def _roster_endpoints(model, is_report: bool):
         if is_report and body.subgroup is not None:
             k.subgroup = body.subgroup.strip() or None
         if is_report:
-            # -1 (numbers) / '' (metric) mean CLEAR; absent means leave alone.
+            # -1 (numbers) means CLEAR; absent means leave alone.
             if body.cost_thb is not None:
                 k.cost_thb = None if body.cost_thb < 0 else round(body.cost_thb, 2)
             if body.boost_thb is not None:
                 k.boost_thb = None if body.boost_thb < 0 else round(body.boost_thb, 2)
-            if body.kpi_metric is not None:
-                k.kpi_metric = body.kpi_metric.strip().lower() or None
-            if body.kpi_target is not None:
-                k.kpi_target = None if body.kpi_target < 0 else body.kpi_target
+            if body.kpis is not None:  # full replacement; [] clears
+                k.kpi_json = _clean_kpis(body.kpis)
         if is_report and body.links is not None:
             links = [{"platform": (l.get("platform") or ""), "url": (l.get("url") or "").strip(),
                       "handle": (l.get("handle") or "")}
@@ -323,11 +346,10 @@ class BulkKolIn(BaseModel):
     url: Optional[str] = None
     links: Optional[list[BulkLinkIn]] = None
     followers: Optional[int] = 0
-    # From the planner's sheet — see the 0019_commercial migration docstring.
+    # From the planner's sheet — see the 0019/0020 migration docstrings.
     cost_thb: Optional[float] = None
     boost_thb: Optional[float] = None
-    kpi_metric: Optional[str] = None
-    kpi_target: Optional[int] = None
+    kpis: Optional[list[dict]] = None  # [{metric, target}]
 
 
 class BulkRosterIn(BaseModel):
@@ -354,7 +376,7 @@ def bulk_replace_report(body: BulkRosterIn, campaign: str = "pao",
             if not prev.followers and k.followers:
                 prev.followers = k.followers
             # commercial fields: first row wins, later rows only fill gaps
-            for f in ("cost_thb", "boost_thb", "kpi_metric", "kpi_target"):
+            for f in ("cost_thb", "boost_thb", "kpis"):
                 if not getattr(prev, f) and getattr(k, f):
                     setattr(prev, f, getattr(k, f))
         else:
@@ -388,8 +410,7 @@ def bulk_replace_report(body: BulkRosterIn, campaign: str = "pao",
             followers=int(k.followers or 0),
             cost_thb=round(k.cost_thb, 2) if k.cost_thb and k.cost_thb > 0 else None,
             boost_thb=round(k.boost_thb, 2) if k.boost_thb and k.boost_thb > 0 else None,
-            kpi_metric=(k.kpi_metric or "").strip().lower() or None,
-            kpi_target=k.kpi_target if k.kpi_target and k.kpi_target > 0 else None,
+            kpi_json=_clean_kpis(k.kpis),
             active=True,
         ))
     session.commit()
@@ -404,6 +425,57 @@ def get_report_sheet(campaign: str = "pao"):
     """The Google Sheet URL last imported for this campaign (for re-sync)."""
     from app.settings import get_setting
     return {"url": get_setting(f"sheet_url:{campaign}") or ""}
+
+
+# ---- Group-level KPIs -------------------------------------------------------
+# A package group is sold on a TOTAL ("7M Impressions across Micro Package"),
+# which belongs to no roster row. Entered on the web per group — the planner
+# sheets write it as merged/summary cells that row-wise parsing cannot own.
+# Authenticated like every /api/roster/* route.
+
+class GroupKpiIn(BaseModel):
+    group: str
+    kpis: list[dict]  # [{metric, target}] — [] deletes the group's entry
+
+
+@router.get("/roster/report/groupkpi")
+def group_kpis_get(campaign: str = "pao", session: Session = Depends(db_dependency)):
+    """{group_name: [{metric, target}]} for one campaign."""
+    from app.models import ReportGroupKpi
+    out = {}
+    for row in session.scalars(select(ReportGroupKpi).where(
+            ReportGroupKpi.campaign == campaign)).all():
+        try:
+            out[row.group_name] = json.loads(row.kpi_json)
+        except Exception:  # noqa: BLE001
+            out[row.group_name] = []
+    return {"groups": out}
+
+
+@router.post("/roster/report/groupkpi")
+def group_kpis_set(body: GroupKpiIn, campaign: str = "pao",
+                   session: Session = Depends(db_dependency)):
+    """Upsert one group's KPI list; an empty list removes the row."""
+    from app.models import ReportGroupKpi
+    group = (body.group or "").strip()
+    if not group:
+        raise HTTPException(400, "ต้องระบุชื่อกลุ่ม")
+    row = session.scalar(select(ReportGroupKpi).where(
+        ReportGroupKpi.campaign == campaign,
+        ReportGroupKpi.group_name == group))
+    cleaned = _clean_kpis(body.kpis)
+    if not cleaned:
+        if row:
+            session.delete(row)
+            session.commit()
+        return {"status": "cleared", "group": group}
+    if row:
+        row.kpi_json = cleaned
+    else:
+        session.add(ReportGroupKpi(campaign=campaign, group_name=group,
+                                   kpi_json=cleaned))
+    session.commit()
+    return {"status": "saved", "group": group, "kpis": json.loads(cleaned)}
 
 
 def _to_download_url(u: str) -> str:

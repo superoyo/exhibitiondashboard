@@ -97,21 +97,37 @@ function parseAmount(raw: string): number | null {
   return base * mul;
 }
 
+/** The unit vocabulary the planner team actually sells on. */
+function kpiMetricOf(fragment: string): string {
+  const low = fragment.toLowerCase();
+  if (/reach|รีช|เข้าถึง/.test(low)) return 'reach';
+  if (/imp|อิม/.test(low)) return 'impressions';
+  if (/inter|eng|ปฏิสัมพันธ์|เอนเกจ/.test(low)) return 'interaction';
+  if (/view|วิว|ยอดชม/.test(low)) return 'views';
+  return '';
+}
+
 /**
- * "100,000 Views" / "Imp 500K" / "Interaction: 5,000" → unit + number.
- * The unit vocabulary is what the planner team actually sells on; an
- * unrecognised word keeps the number with metric '' rather than dropping it.
+ * KPI cell text → list of {metric, target}. A LIST, because one KOL can be
+ * sold on two KPIs at once — "100K Views + 5,000 Engagement". The text is
+ * split on the separators planner sheets actually use (/ + , และ newlines)
+ * and each fragment read as "unit word + number"; a fragment with a number
+ * but an unrecognised word keeps the number with metric '' rather than being
+ * dropped. Units seen so far: Views · Impressions · Interaction/Engagement ·
+ * Reach (the last two verifiable only from the creator's own insights).
  */
-function parseKpi(raw: string): { metric: string; target: number | null } {
-  const low = raw.toLowerCase();
-  const metric = /imp|อิม/.test(low)
-    ? 'impressions'
-    : /inter|eng|ปฏิสัมพันธ์|เอนเกจ/.test(low)
-      ? 'interaction'
-      : /view|วิว|ยอดชม/.test(low)
-        ? 'views'
-        : '';
-  return { metric, target: parseAmount(raw) };
+function parseKpis(raw: string): { metric: string; target: number }[] {
+  const out: { metric: string; target: number }[] = [];
+  // A comma is a LIST separator only when what follows is not a digit —
+  // otherwise it is the thousands separator inside "250,000".
+  for (const fragment of raw.split(/[/+\n·]|และ|,(?=\s*\D)/)) {
+    const target = parseAmount(fragment);
+    if (target === null || target <= 0) continue;
+    const metric = kpiMetricOf(fragment);
+    if (out.some((k) => k.metric === metric)) continue; // same unit twice = noise
+    out.push({ metric, target });
+  }
+  return out;
 }
 
 /** Words that leak in as a "username" when a header row is mistaken for data. */
@@ -355,9 +371,7 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
       // parses the same as "100,000 Views" in one.
       const cost = cCost >= 0 ? parseAmount(text(row[cCost])) : null;
       const boost = cBoost >= 0 ? parseAmount(text(row[cBoost])) : null;
-      const kpi = kpiCols.length
-        ? parseKpi(kpiCols.map((i2) => text(row[i2])).join(' '))
-        : { metric: '', target: null };
+      const kpis = kpiCols.length ? parseKpis(kpiCols.map((i2) => text(row[i2])).join(' ')) : [];
 
       kols.push({
         username: username.toLowerCase(),
@@ -368,8 +382,7 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
         followers,
         cost_thb: cost,
         boost_thb: boost,
-        kpi_metric: kpi.metric || null,
-        kpi_target: kpi.target,
+        kpis,
       });
     }
   }

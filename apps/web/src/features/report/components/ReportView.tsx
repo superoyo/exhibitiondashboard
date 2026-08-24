@@ -30,8 +30,9 @@ import {
 import { useReportFilters } from '@/features/report/store/reportFiltersStore';
 import { EngagementBreakdown, KpiRow } from './KpiRow';
 import { Podium } from './Podium';
-import { PostsTable, type CommercialByUser } from './PostsTable';
+import { KpiLine, PostsTable, type CommercialByUser } from './PostsTable';
 import { useRoster } from '@/features/roster/hooks/useRoster';
+import { getGroupKpis } from '@/features/roster/api/rosterApi';
 import { CommentPanel } from './CommentPanel';
 import { ReportActions } from './ReportActions';
 import { CategoryDonut, CategoryErBar, EngagementStack, TopPostsBar } from './ReportCharts';
@@ -156,15 +157,19 @@ export function ReportView({
   // link forwarded to a KOL must not show what they are resold at. Fetched only
   // on the internal view; on ?view=1 and /v/ the columns simply don't exist.
   const roster = useRoster('report', campaign, !viewOnly);
+  const groupKpis = useQuery({
+    queryKey: ['roster', 'groupkpi', campaign],
+    queryFn: () => getGroupKpis(campaign),
+    enabled: !viewOnly && Boolean(campaign),
+  });
   const commercial = useMemo(() => {
     const map: CommercialByUser = {};
     for (const k of roster.data ?? []) {
-      if (k.cost_thb != null || k.boost_thb != null || k.kpi_target != null) {
+      if (k.cost_thb != null || k.boost_thb != null || (k.kpis ?? []).length > 0) {
         map[k.username.toLowerCase()] = {
           cost_thb: k.cost_thb,
           boost_thb: k.boost_thb,
-          kpi_metric: k.kpi_metric,
-          kpi_target: k.kpi_target,
+          kpis: k.kpis ?? [],
         };
       }
     }
@@ -483,6 +488,38 @@ export function ReportView({
                     ⬇ ดาวน์โหลด CSV
                   </Button>
                 </div>
+                {/* Group-total KPIs ("7M Imp across Micro Package") — a target
+                    that belongs to the whole group, checked against the SUM of
+                    that group's rows. Internal view only, like the columns. */}
+                {!viewOnly && Object.keys(groupKpis.data ?? {}).length > 0 ? (
+                  <div className="mb-3 space-y-1 rounded-lg border border-brand-400 bg-brand-200/40 p-2 text-xs">
+                    <div className="font-semibold">📦 KPI รายกลุ่ม (เฉพาะทีม)</div>
+                    {Object.entries(groupKpis.data ?? {}).map(([g, kpis]) => {
+                      const members = allRows.filter((r) => r.biggroup === g || r.category === g);
+                      const totals = {
+                        views: members.reduce((s, r) => s + r.views, 0),
+                        engagement: members.reduce((s, r) => s + r.engagement, 0),
+                      };
+                      return (
+                        <div key={g} className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                          <span className="chip" style={{ background: colors.colorOf(g) }}>
+                            {g}
+                          </span>
+                          {members.length === 0 ? (
+                            <span className="text-amber-700">
+                              ⚠️ ไม่มี KOL ในกลุ่มชื่อนี้แล้ว (กลุ่มอาจถูกเปลี่ยนชื่อ —
+                              แก้ได้ในหน้ารายชื่อ)
+                            </span>
+                          ) : (
+                            kpis.map((k) => (
+                              <KpiLine key={k.metric + k.target} kpi={k} totals={totals} />
+                            ))
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
                 <PostsTable
                   rows={rows}
                   colors={colors}

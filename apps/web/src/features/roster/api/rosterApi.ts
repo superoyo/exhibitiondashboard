@@ -1,6 +1,8 @@
 import type {
   BulkRosterInput,
   BulkRosterResponse,
+  GroupKpiResponse,
+  KolKpi,
   ResolveHandlesResponse,
   RosterAddInput,
   RosterDeleteResponse,
@@ -26,6 +28,18 @@ export async function listRoster(kind: RosterKind, campaign: string): Promise<Ro
     params: scope(kind, campaign),
   });
   return data.kols;
+}
+
+/** Group-total KPIs ("7M Imp across Micro Package"). Report rosters only. */
+export async function getGroupKpis(campaign: string): Promise<Record<string, KolKpi[]>> {
+  const { data } = await api.get<GroupKpiResponse>('/roster/report/groupkpi', {
+    params: { campaign },
+  });
+  return data.groups;
+}
+
+export async function saveGroupKpi(campaign: string, group: string, kpis: KolKpi[]): Promise<void> {
+  await api.post('/roster/report/groupkpi', { group, kpis }, { params: { campaign } });
 }
 
 export async function addRosterKol(

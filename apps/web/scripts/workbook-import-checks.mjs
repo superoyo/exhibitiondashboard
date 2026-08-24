@@ -208,15 +208,15 @@ const parse = (wb) => parseWorkbook(XLSX, wb);
   assert.equal(got.kolview.cost_thb, 12500.5, 'baht sign + comma + decimals');
   assert.equal(got.kolview.boost_thb, 3000, '"Boost Budget" is boost, not cost');
   assert.deepEqual(
-    [got.kolview.kpi_metric, got.kolview.kpi_target],
-    ['views', 100000],
-    `100K Views: ${got.kolview.kpi_metric} ${got.kolview.kpi_target}`,
+    got.kolview.kpis,
+    [{ metric: 'views', target: 100000 }],
+    `100K Views: ${JSON.stringify(got.kolview.kpis)}`,
   );
-  assert.deepEqual([got.kolimp.kpi_metric, got.kolimp.kpi_target], ['impressions', 500000]);
+  assert.deepEqual(got.kolimp.kpis, [{ metric: 'impressions', target: 500000 }]);
   assert.equal(got.kolint.boost_thb, 1500, '1.5k boost');
-  assert.deepEqual([got.kolint.kpi_metric, got.kolint.kpi_target], ['interaction', 5000]);
+  assert.deepEqual(got.kolint.kpis, [{ metric: 'interaction', target: 5000 }]);
   assert.equal(got.kolnone.cost_thb, null, 'empty cells stay null');
-  assert.equal(got.kolnone.kpi_target, null, 'no KPI stays null');
+  assert.deepEqual(got.kolnone.kpis, [], 'no KPI stays empty');
   console.log('✅ cost / boost / one-column KPI parsed');
 }
 
@@ -233,11 +233,52 @@ const parse = (wb) => parseWorkbook(XLSX, wb);
   );
   const k = parse(wb).kols[0];
   assert.deepEqual(
-    [k.kpi_metric, k.kpi_target],
-    ['views', 250000],
-    `split KPI columns: ${k.kpi_metric} ${k.kpi_target}`,
+    k.kpis,
+    [{ metric: 'views', target: 250000 }],
+    `split KPI columns: ${JSON.stringify(k.kpis)}`,
   );
   console.log('✅ two-column KPI (หน่วย + จำนวน) parsed');
+}
+
+// ---- multi-KPI cells and the Reach unit -------------------------------------
+{
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.aoa_to_sheet([
+      ['username', 'ลิงก์', 'KPI'],
+      // one KOL sold on TWO KPIs in one cell
+      ['dualkol', 'https://www.tiktok.com/@dualkol/video/7300000000000000031', '100,000 Views + 5,000 Engagement'],
+      // Facebook page sold on Reach — the unit the first version did not know
+      ['reachkol', 'https://www.facebook.com/reachkol/posts/123', 'Reach 500,000'],
+      // slash-separated pair with thousands commas intact
+      ['slashkol', 'https://www.tiktok.com/@slashkol/video/7300000000000000032', 'View 250,000 / Imp 1,000,000'],
+    ]),
+    'Sheet1',
+  );
+  const got = Object.fromEntries(parse(wb).kols.map((k) => [k.username, k]));
+  assert.deepEqual(
+    got.dualkol.kpis,
+    [
+      { metric: 'views', target: 100000 },
+      { metric: 'interaction', target: 5000 },
+    ],
+    `dual KPI: ${JSON.stringify(got.dualkol.kpis)}`,
+  );
+  assert.deepEqual(
+    got.reachkol.kpis,
+    [{ metric: 'reach', target: 500000 }],
+    `reach: ${JSON.stringify(got.reachkol.kpis)}`,
+  );
+  assert.deepEqual(
+    got.slashkol.kpis,
+    [
+      { metric: 'views', target: 250000 },
+      { metric: 'impressions', target: 1000000 },
+    ],
+    `slash pair keeps its thousands commas: ${JSON.stringify(got.slashkol.kpis)}`,
+  );
+  console.log('✅ multi-KPI cells and Reach parsed');
 }
 
 {
@@ -254,7 +295,7 @@ const parse = (wb) => parseWorkbook(XLSX, wb);
   const k = parse(wb).kols[0];
   assert.equal(k.cost_thb, null);
   assert.equal(k.boost_thb, null);
-  assert.equal(k.kpi_metric, null);
+  assert.deepEqual(k.kpis, []);
   console.log('✅ sheets without planner columns stay clean');
 }
 

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { ReportRecordDerived } from '@kol/shared';
+import type { KolKpi, ReportRecordDerived } from '@kol/shared';
 
 import { CachedImage } from '@/components/common/CachedImage';
 import { PlatformBadge } from '@/components/common/PlatformBadge';
@@ -44,16 +44,56 @@ export interface CommercialByUser {
   [username: string]: {
     cost_thb?: number | null;
     boost_thb?: number | null;
-    kpi_metric?: string | null;
-    kpi_target?: number | null;
+    kpis?: KolKpi[];
   };
 }
 
-const KPI_LABEL: Record<string, string> = {
+export const KPI_LABEL: Record<string, string> = {
   views: 'Views',
   impressions: 'Imp',
   interaction: 'Interaction',
+  reach: 'Reach',
 };
+
+/**
+ * The number a sold KPI is checked against, from public stats:
+ * views→views, interaction→engagement. Impressions and Reach exist only in the
+ * creator's own insights — null, and the UI says so instead of inventing one.
+ */
+export function kpiActual(
+  metric: string | null | undefined,
+  totals: { views: number; engagement: number } | undefined,
+): number | null {
+  if (!totals) return null;
+  if (metric === 'views') return totals.views;
+  if (metric === 'interaction') return totals.engagement;
+  return null;
+}
+
+/** One KPI rendered as "เป้า unit · %" — shared row/group appearance. */
+export function KpiLine({
+  kpi,
+  totals,
+}: {
+  kpi: KolKpi;
+  totals: { views: number; engagement: number } | undefined;
+}) {
+  const unit = KPI_LABEL[kpi.metric] ?? kpi.metric ?? '';
+  const actual = kpiActual(kpi.metric, totals);
+  const pct = actual !== null && kpi.target > 0 ? Math.round((100 * actual) / kpi.target) : null;
+  return (
+    <span className="whitespace-nowrap">
+      {fmt(kpi.target)} {unit}
+      {pct !== null ? (
+        <span className={cn('ml-1 font-semibold', pct >= 100 ? 'text-state-ok' : 'text-amber-600')}>
+          {pct >= 100 ? '✅' : ''} {pct}%
+        </span>
+      ) : (
+        <span className="ml-1 text-[10px] text-muted-foreground">(วัดจากหลังบ้าน)</span>
+      )}
+    </span>
+  );
+}
 
 /** "12,500" → "12.5K"-style money, but exact — the team quotes these numbers. */
 const baht = (n: number) => `฿${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -97,29 +137,15 @@ export function PostsTable({
   }, [rows, commercial]);
 
   function kpiCell(username: string) {
-    const c = commercial?.[username.toLowerCase()];
-    if (!c?.kpi_target) return <span className="text-muted-foreground">—</span>;
-    const unit = KPI_LABEL[c.kpi_metric ?? ''] ?? c.kpi_metric ?? '';
+    const kpis = commercial?.[username.toLowerCase()]?.kpis ?? [];
+    if (!kpis.length) return <span className="text-muted-foreground">—</span>;
     const totals = personTotals[username.toLowerCase()];
-    const actual =
-      c.kpi_metric === 'views'
-        ? totals?.views
-        : c.kpi_metric === 'interaction'
-          ? totals?.engagement
-          : undefined; // impressions: not verifiable from public data
-    const pct = actual !== undefined ? Math.round((100 * actual) / c.kpi_target) : null;
+    // One line per sold KPI — a KOL can carry Views AND Engagement at once.
     return (
-      <span className="whitespace-nowrap">
-        {fmt(c.kpi_target)} {unit}
-        {pct !== null ? (
-          <span
-            className={cn('ml-1 font-semibold', pct >= 100 ? 'text-state-ok' : 'text-amber-600')}
-          >
-            {pct >= 100 ? '✅' : ''} {pct}%
-          </span>
-        ) : (
-          <span className="ml-1 text-[10px] text-muted-foreground">(วัดจากหลังบ้าน)</span>
-        )}
+      <span className="inline-flex flex-col gap-0.5">
+        {kpis.map((k) => (
+          <KpiLine key={k.metric + k.target} kpi={k} totals={totals} />
+        ))}
       </span>
     );
   }
