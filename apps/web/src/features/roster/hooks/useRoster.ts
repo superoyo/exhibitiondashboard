@@ -15,10 +15,12 @@ export const rosterKeys = {
   sheet: (campaign: string) => ['roster', 'sheet', campaign] as const,
 };
 
-export function useRoster(kind: RosterKind, campaign: string) {
+export function useRoster(kind: RosterKind, campaign: string, enabled = true) {
   return useQuery({
     queryKey: rosterKeys.list(kind, campaign),
     queryFn: () => listRoster(kind, campaign),
+    // Off on sessionless pages: the endpoint requires auth and would 401.
+    enabled,
   });
 }
 

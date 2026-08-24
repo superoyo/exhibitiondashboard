@@ -37,10 +37,32 @@ const COLUMNS: Array<{ key: SortKey; label: string; align?: 'right'; metric?: tr
   { key: 'posted', label: 'โพสต์เมื่อ' },
 ];
 
+/** Per-KOL commercial data, keyed by lowercase username. Comes from the
+ *  AUTHENTICATED roster endpoint — when absent (client link, ?view=1 preview,
+ *  not logged in) the columns simply do not exist. */
+export interface CommercialByUser {
+  [username: string]: {
+    cost_thb?: number | null;
+    boost_thb?: number | null;
+    kpi_metric?: string | null;
+    kpi_target?: number | null;
+  };
+}
+
+const KPI_LABEL: Record<string, string> = {
+  views: 'Views',
+  impressions: 'Imp',
+  interaction: 'Interaction',
+};
+
+/** "12,500" → "12.5K"-style money, but exact — the team quotes these numbers. */
+const baht = (n: number) => `฿${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+
 export function PostsTable({
   rows,
   colors,
   hideMetrics = false,
+  commercial,
 }: {
   rows: ReportRecordDerived[];
   colors: CategoryColors;
@@ -49,12 +71,58 @@ export function PostsTable({
    * seeing everyone else's numbers is a different (client) report.
    */
   hideMetrics?: boolean;
+  /** Present only on the logged-in team view. */
+  commercial?: CommercialByUser;
 }) {
   // Sorting by views is meaningless when the column is hidden.
   const [sortKey, setSortKey] = useState<SortKey>(hideMetrics ? 'category' : 'views');
   const [ascending, setAscending] = useState(false);
 
   const columns = hideMetrics ? COLUMNS.filter((c) => !c.metric) : COLUMNS;
+  const showMoney = Boolean(commercial);
+
+  // A KPI target is sold per PERSON, but rows are per platform — so achievement
+  // compares the target against the SUM of that person's rows, shown the same
+  // on each of their rows. views→views, interaction→engagement; impressions
+  // have no public counterpart and show the target with no achieved figure.
+  const personTotals = useMemo(() => {
+    const t: Record<string, { views: number; engagement: number }> = {};
+    if (!commercial) return t;
+    for (const r of rows) {
+      const k = (t[r.username.toLowerCase()] ??= { views: 0, engagement: 0 });
+      k.views += r.views;
+      k.engagement += r.engagement;
+    }
+    return t;
+  }, [rows, commercial]);
+
+  function kpiCell(username: string) {
+    const c = commercial?.[username.toLowerCase()];
+    if (!c?.kpi_target) return <span className="text-muted-foreground">—</span>;
+    const unit = KPI_LABEL[c.kpi_metric ?? ''] ?? c.kpi_metric ?? '';
+    const totals = personTotals[username.toLowerCase()];
+    const actual =
+      c.kpi_metric === 'views'
+        ? totals?.views
+        : c.kpi_metric === 'interaction'
+          ? totals?.engagement
+          : undefined; // impressions: not verifiable from public data
+    const pct = actual !== undefined ? Math.round((100 * actual) / c.kpi_target) : null;
+    return (
+      <span className="whitespace-nowrap">
+        {fmt(c.kpi_target)} {unit}
+        {pct !== null ? (
+          <span
+            className={cn('ml-1 font-semibold', pct >= 100 ? 'text-state-ok' : 'text-amber-600')}
+          >
+            {pct >= 100 ? '✅' : ''} {pct}%
+          </span>
+        ) : (
+          <span className="ml-1 text-[10px] text-muted-foreground">(วัดจากหลังบ้าน)</span>
+        )}
+      </span>
+    );
+  }
 
   const sorted = useMemo(() => {
     return [...rows].sort((a, b) => {
@@ -81,6 +149,14 @@ export function PostsTable({
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border text-left text-muted-foreground">
+            {/* Commercial columns leftmost, per the team's layout. Not sortable
+                — they come from the roster, not the record the sorter reads. */}
+            {showMoney && (
+              <>
+                <th className="whitespace-nowrap py-2 pr-3 text-right font-normal">ค่าตัว</th>
+                <th className="whitespace-nowrap py-2 pr-3 text-right font-normal">บูส</th>
+              </>
+            )}
             {columns.map((col) => (
               <th
                 key={col.key}
@@ -95,13 +171,17 @@ export function PostsTable({
                 {sortKey === col.key && (ascending ? ' ▲' : ' ▼')}
               </th>
             ))}
+            {showMoney && <th className="whitespace-nowrap py-2 pr-3 font-normal">KPI ที่ขาย</th>}
             <th className="py-2 font-normal">ลิงก์</th>
           </tr>
         </thead>
         <tbody>
           {sorted.length === 0 && (
             <tr>
-              <td colSpan={columns.length + 1} className="py-3 text-muted-foreground">
+              <td
+                colSpan={columns.length + 1 + (showMoney ? 3 : 0)}
+                className="py-3 text-muted-foreground"
+              >
                 — ไม่มี (ทุกคนมี link แล้ว) —
               </td>
             </tr>
@@ -111,6 +191,20 @@ export function PostsTable({
               key={`${row.username}-${row.platform}-${row.url}`}
               className="border-b border-border hover:bg-black/5"
             >
+              {showMoney &&
+                (() => {
+                  const c = commercial?.[row.username.toLowerCase()];
+                  return (
+                    <>
+                      <td className="whitespace-nowrap py-2 pr-3 text-right tabular-nums">
+                        {c?.cost_thb != null ? baht(c.cost_thb) : ''}
+                      </td>
+                      <td className="whitespace-nowrap py-2 pr-3 text-right tabular-nums">
+                        {c?.boost_thb != null ? baht(c.boost_thb) : ''}
+                      </td>
+                    </>
+                  );
+                })()}
               <td className="py-2 pr-3">
                 <span className="chip" style={{ background: colors.colorOf(row.category) }}>
                   {row.category}
@@ -152,6 +246,7 @@ export function PostsTable({
                 </>
               )}
               <td className="pr-3 text-muted-foreground">{row.posted || ''}</td>
+              {showMoney && <td className="pr-3 text-xs">{kpiCell(row.username)}</td>}
               <td>
                 {row.url && (
                   <a href={row.url} target="_blank" rel="noopener noreferrer">

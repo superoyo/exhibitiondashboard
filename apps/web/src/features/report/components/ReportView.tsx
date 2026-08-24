@@ -30,7 +30,8 @@ import {
 import { useReportFilters } from '@/features/report/store/reportFiltersStore';
 import { EngagementBreakdown, KpiRow } from './KpiRow';
 import { Podium } from './Podium';
-import { PostsTable } from './PostsTable';
+import { PostsTable, type CommercialByUser } from './PostsTable';
+import { useRoster } from '@/features/roster/hooks/useRoster';
 import { CommentPanel } from './CommentPanel';
 import { ReportActions } from './ReportActions';
 import { CategoryDonut, CategoryErBar, EngagementStack, TopPostsBar } from './ReportCharts';
@@ -150,6 +151,29 @@ export function ReportView({
   });
 
   const report = useReportData(campaign);
+  // Commercial fields (selling price / boost budget / KPI) come from the
+  // AUTHENTICATED roster endpoint, never from the open report data — a client
+  // link forwarded to a KOL must not show what they are resold at. Fetched only
+  // on the internal view; on ?view=1 and /v/ the columns simply don't exist.
+  const roster = useRoster('report', campaign, !viewOnly);
+  const commercial = useMemo(() => {
+    const map: CommercialByUser = {};
+    for (const k of roster.data ?? []) {
+      if (k.cost_thb != null || k.boost_thb != null || k.kpi_target != null) {
+        map[k.username.toLowerCase()] = {
+          cost_thb: k.cost_thb,
+          boost_thb: k.boost_thb,
+          kpi_metric: k.kpi_metric,
+          kpi_target: k.kpi_target,
+        };
+      }
+    }
+    return map;
+  }, [roster.data]);
+  // Columns appear only when at least one KOL actually carries a value —
+  // a campaign without planner data keeps its familiar table.
+  const hasCommercial = !viewOnly && Object.keys(commercial).length > 0;
+
   const refreshStatus = useRefreshStatus(campaign, !viewOnly);
   const resetCost = useResetCost(campaign);
   // The client's report shows the comment analysis too. On a token link it reads
@@ -459,7 +483,11 @@ export function ReportView({
                     ⬇ ดาวน์โหลด CSV
                   </Button>
                 </div>
-                <PostsTable rows={rows} colors={colors} />
+                <PostsTable
+                  rows={rows}
+                  colors={colors}
+                  commercial={hasCommercial ? commercial : undefined}
+                />
               </CardContent>
             </Card>
           )}

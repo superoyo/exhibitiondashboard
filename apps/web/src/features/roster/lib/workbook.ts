@@ -76,6 +76,43 @@ const COL_USERNAME = [
 const COL_GROUP = ['หมวด', 'ประเภท', 'group', 'category', 'type', 'tier', 'กลุ่ม'];
 const COL_SUBGROUP = ['ย่อย', 'subgroup', 'sub'];
 const COL_FOLLOWERS = ['follow', 'ติดตาม', 'fan'];
+// Commercial columns from the planner's sheet. Boost is matched BEFORE cost so
+// a header like "Boost Budget" cannot be eaten by the generic "budget"/"ราคา"
+// cost words. KPI columns are collected (plural — some sheets split unit and
+// number into two columns) and their text is parsed as one string.
+const COL_BOOST = ['boost', 'บูส'];
+const COL_COST = ['cost', 'ค่าตัว', 'ราคา', 'rate', 'budget', 'งบ'];
+const COL_KPI = ['kpi', 'การันตี', 'เป้า', 'target', 'guarantee'];
+
+/**
+ * "12,500", "฿12,500.50", "100K", "1.2m" → number. null when no digits.
+ * K/M suffixes appear constantly in planner KPI cells ("100K views").
+ */
+function parseAmount(raw: string): number | null {
+  const m = /([0-9][0-9,]*(?:\.[0-9]+)?)\s*([kKmM]?)/.exec(raw.replace(/[฿$]/g, ''));
+  if (!m?.[1]) return null;
+  const base = Number.parseFloat(m[1].replace(/,/g, ''));
+  if (!Number.isFinite(base)) return null;
+  const mul = m[2]?.toLowerCase() === 'k' ? 1_000 : m[2]?.toLowerCase() === 'm' ? 1_000_000 : 1;
+  return base * mul;
+}
+
+/**
+ * "100,000 Views" / "Imp 500K" / "Interaction: 5,000" → unit + number.
+ * The unit vocabulary is what the planner team actually sells on; an
+ * unrecognised word keeps the number with metric '' rather than dropping it.
+ */
+function parseKpi(raw: string): { metric: string; target: number | null } {
+  const low = raw.toLowerCase();
+  const metric = /imp|อิม/.test(low)
+    ? 'impressions'
+    : /inter|eng|ปฏิสัมพันธ์|เอนเกจ/.test(low)
+      ? 'interaction'
+      : /view|วิว|ยอดชม/.test(low)
+        ? 'views'
+        : '';
+  return { metric, target: parseAmount(raw) };
+}
 
 /** Words that leak in as a "username" when a header row is mistaken for data. */
 const HEADER_WORDS = new Set([
@@ -231,6 +268,14 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
     const cGroup = pickCol(headers, COL_GROUP);
     const cSub = pickCol(headers, COL_SUBGROUP);
     const cFollowers = pickCol(headers, COL_FOLLOWERS);
+    // boost first, then cost among the REMAINING headers — "Boost Budget"
+    // contains the cost word "budget" and must not become the cost column
+    const cBoost = pickCol(headers, COL_BOOST);
+    const cCost = headers.findIndex(
+      (h, i) => i !== cBoost && Boolean(h) && COL_COST.some((k) => h.includes(k)),
+    );
+    // every KPI-ish column — sheets that split unit and number use two
+    const kpiCols = headers.flatMap((h, i) => (h && COL_KPI.some((k) => h.includes(k)) ? [i] : []));
 
     // A "header" row that already contains links/@handles IS data.
     const headerIsData = headerRow.some((c) => looksUrl(cellText(c)) || /^@[\w.]+$/.test(text(c)));
@@ -305,6 +350,15 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
         if (!Number.isNaN(parsed)) followers = parsed;
       }
 
+      // Commercial columns, when the sheet has them. KPI cells are joined into
+      // one string first, so "หน่วย: Views" + "จำนวน: 100,000" in two columns
+      // parses the same as "100,000 Views" in one.
+      const cost = cCost >= 0 ? parseAmount(text(row[cCost])) : null;
+      const boost = cBoost >= 0 ? parseAmount(text(row[cBoost])) : null;
+      const kpi = kpiCols.length
+        ? parseKpi(kpiCols.map((i2) => text(row[i2])).join(' '))
+        : { metric: '', target: null };
+
       kols.push({
         username: username.toLowerCase(),
         display: (colIsIndex ? '' : colRaw) || username,
@@ -312,6 +366,10 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
         subgroup: cSub >= 0 ? text(row[cSub]) : '',
         links: dedupeLinks(workUrls),
         followers,
+        cost_thb: cost,
+        boost_thb: boost,
+        kpi_metric: kpi.metric || null,
+        kpi_target: kpi.target,
       });
     }
   }

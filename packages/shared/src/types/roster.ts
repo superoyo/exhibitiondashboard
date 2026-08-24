@@ -25,6 +25,12 @@ export interface KolLink {
  * `links` and `subgroup` are only present on models that have those columns,
  * so all three are optional.
  */
+/**
+ * The KPI unit a KOL was sold on. Impressions cannot be verified from public
+ * data — the UI shows those targets without an achievement figure.
+ */
+export type KpiMetric = 'views' | 'impressions' | 'interaction';
+
 export interface RosterKol {
   id: number;
   username: string;
@@ -35,6 +41,14 @@ export interface RosterKol {
   url?: string | null;
   links?: KolLink[];
   subgroup?: string | null;
+  /** Commercial fields (report roster only) — served ONLY by the
+   *  authenticated roster endpoints, never by /api/report/data. */
+  cost_thb?: number | null;
+  boost_thb?: number | null;
+  /** Usually a KpiMetric, but stored as free text so a new sales unit is data,
+   *  not a crash — consumers must handle unknown strings. */
+  kpi_metric?: string | null;
+  kpi_target?: number | null;
 }
 
 export interface RosterListResponse {
@@ -50,7 +64,9 @@ export interface RosterAddInput {
   url?: string;
 }
 
-/** `PATCH /api/roster/:kind/:id` — every field optional. */
+/** `PATCH /api/roster/:kind/:id` — every field optional. For the commercial
+ *  fields, -1 (numbers) or '' (metric) clears the stored value; absent leaves
+ *  it alone. */
 export interface RosterPatchInput {
   display?: string;
   group?: string;
@@ -58,6 +74,10 @@ export interface RosterPatchInput {
   active?: boolean;
   url?: string;
   links?: KolLink[];
+  cost_thb?: number;
+  boost_thb?: number;
+  kpi_metric?: string;
+  kpi_target?: number;
 }
 
 export interface RosterDeleteResponse {
@@ -75,6 +95,11 @@ export interface BulkKol {
   subgroup: string;
   links: KolLink[];
   followers: number;
+  /** From the planner's sheet, when its columns exist. null = not stated. */
+  cost_thb?: number | null;
+  boost_thb?: number | null;
+  kpi_metric?: string | null;
+  kpi_target?: number | null;
 }
 
 export interface BulkRosterInput {

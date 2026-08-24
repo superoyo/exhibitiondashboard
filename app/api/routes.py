@@ -170,6 +170,13 @@ class KolPatch(BaseModel):
     active: Optional[bool] = None
     url: Optional[str] = None
     links: Optional[list[dict]] = None  # [{platform,url,handle}] — all channels
+    # Commercial fields (report roster only). Sent as -1 to CLEAR a value —
+    # Pydantic can't tell "field absent" from "field null" without sentinels,
+    # and absent must mean "leave alone" so saving a name never wipes a price.
+    cost_thb: Optional[float] = None
+    boost_thb: Optional[float] = None
+    kpi_metric: Optional[str] = None   # '' clears
+    kpi_target: Optional[int] = None
 
 
 def _serialize(k) -> dict:
@@ -186,6 +193,14 @@ def _serialize(k) -> dict:
         out["links"] = kol_links(k)  # [{platform,url,handle}], all platforms
     if hasattr(k, "subgroup"):
         out["subgroup"] = k.subgroup
+    # Commercial fields, report roster only. Safe HERE because every
+    # /api/roster/* route requires login; the open report endpoints build their
+    # own payloads and never touch these.
+    if hasattr(k, "cost_thb"):
+        out["cost_thb"] = float(k.cost_thb) if k.cost_thb is not None else None
+        out["boost_thb"] = float(k.boost_thb) if k.boost_thb is not None else None
+        out["kpi_metric"] = k.kpi_metric
+        out["kpi_target"] = k.kpi_target
     return out
 
 
@@ -247,6 +262,16 @@ def _roster_endpoints(model, is_report: bool):
             k.active = body.active
         if is_report and body.subgroup is not None:
             k.subgroup = body.subgroup.strip() or None
+        if is_report:
+            # -1 (numbers) / '' (metric) mean CLEAR; absent means leave alone.
+            if body.cost_thb is not None:
+                k.cost_thb = None if body.cost_thb < 0 else round(body.cost_thb, 2)
+            if body.boost_thb is not None:
+                k.boost_thb = None if body.boost_thb < 0 else round(body.boost_thb, 2)
+            if body.kpi_metric is not None:
+                k.kpi_metric = body.kpi_metric.strip().lower() or None
+            if body.kpi_target is not None:
+                k.kpi_target = None if body.kpi_target < 0 else body.kpi_target
         if is_report and body.links is not None:
             links = [{"platform": (l.get("platform") or ""), "url": (l.get("url") or "").strip(),
                       "handle": (l.get("handle") or "")}
@@ -298,6 +323,11 @@ class BulkKolIn(BaseModel):
     url: Optional[str] = None
     links: Optional[list[BulkLinkIn]] = None
     followers: Optional[int] = 0
+    # From the planner's sheet — see the 0019_commercial migration docstring.
+    cost_thb: Optional[float] = None
+    boost_thb: Optional[float] = None
+    kpi_metric: Optional[str] = None
+    kpi_target: Optional[int] = None
 
 
 class BulkRosterIn(BaseModel):
@@ -323,6 +353,10 @@ def bulk_replace_report(body: BulkRosterIn, campaign: str = "pao",
             prev.links = (prev.links or []) + (k.links or [])
             if not prev.followers and k.followers:
                 prev.followers = k.followers
+            # commercial fields: first row wins, later rows only fill gaps
+            for f in ("cost_thb", "boost_thb", "kpi_metric", "kpi_target"):
+                if not getattr(prev, f) and getattr(k, f):
+                    setattr(prev, f, getattr(k, f))
         else:
             seen[u] = k
     if not seen:
@@ -352,6 +386,10 @@ def bulk_replace_report(body: BulkRosterIn, campaign: str = "pao",
             url=primary or None,
             links_json=json.dumps(links, ensure_ascii=False) if links else None,
             followers=int(k.followers or 0),
+            cost_thb=round(k.cost_thb, 2) if k.cost_thb and k.cost_thb > 0 else None,
+            boost_thb=round(k.boost_thb, 2) if k.boost_thb and k.boost_thb > 0 else None,
+            kpi_metric=(k.kpi_metric or "").strip().lower() or None,
+            kpi_target=k.kpi_target if k.kpi_target and k.kpi_target > 0 else None,
             active=True,
         ))
     session.commit()

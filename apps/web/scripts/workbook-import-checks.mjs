@@ -189,4 +189,73 @@ const parse = (wb) => parseWorkbook(XLSX, wb);
   console.log('✅ account link preferred over post link for the username');
 }
 
+// ---- planner commercial columns: cost / boost / KPI ------------------------
+{
+  // one-column KPI: unit word and number share a cell
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.aoa_to_sheet([
+      ['username', 'ลิงก์', 'ค่าตัว', 'Boost Budget', 'KPI'],
+      ['kolview', 'https://www.tiktok.com/@kolview/video/7300000000000000021', '฿12,500.50', '3,000', '100K Views'],
+      ['kolimp', 'https://www.tiktok.com/@kolimp/video/7300000000000000022', '45,000', '', 'Imp 500,000'],
+      ['kolint', 'https://www.tiktok.com/@kolint/video/7300000000000000023', '', '1.5k', 'Interaction: 5,000'],
+      ['kolnone', 'https://www.tiktok.com/@kolnone/video/7300000000000000024', '', '', ''],
+    ]),
+    'Sheet1',
+  );
+  const got = Object.fromEntries(parse(wb).kols.map((k) => [k.username, k]));
+  assert.equal(got.kolview.cost_thb, 12500.5, 'baht sign + comma + decimals');
+  assert.equal(got.kolview.boost_thb, 3000, '"Boost Budget" is boost, not cost');
+  assert.deepEqual(
+    [got.kolview.kpi_metric, got.kolview.kpi_target],
+    ['views', 100000],
+    `100K Views: ${got.kolview.kpi_metric} ${got.kolview.kpi_target}`,
+  );
+  assert.deepEqual([got.kolimp.kpi_metric, got.kolimp.kpi_target], ['impressions', 500000]);
+  assert.equal(got.kolint.boost_thb, 1500, '1.5k boost');
+  assert.deepEqual([got.kolint.kpi_metric, got.kolint.kpi_target], ['interaction', 5000]);
+  assert.equal(got.kolnone.cost_thb, null, 'empty cells stay null');
+  assert.equal(got.kolnone.kpi_target, null, 'no KPI stays null');
+  console.log('✅ cost / boost / one-column KPI parsed');
+}
+
+{
+  // two-column KPI: unit in one column, number in the next
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.aoa_to_sheet([
+      ['username', 'ลิงก์', 'KPI หน่วยวัด', 'KPI จำนวน'],
+      ['splitkol', 'https://www.tiktok.com/@splitkol/video/7300000000000000025', 'Views', '250,000'],
+    ]),
+    'Sheet1',
+  );
+  const k = parse(wb).kols[0];
+  assert.deepEqual(
+    [k.kpi_metric, k.kpi_target],
+    ['views', 250000],
+    `split KPI columns: ${k.kpi_metric} ${k.kpi_target}`,
+  );
+  console.log('✅ two-column KPI (หน่วย + จำนวน) parsed');
+}
+
+{
+  // a sheet WITHOUT commercial columns must not invent values
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.aoa_to_sheet([
+      ['username', 'ลิงก์'],
+      ['plainkol', 'https://www.tiktok.com/@plainkol/video/7300000000000000026'],
+    ]),
+    'Sheet1',
+  );
+  const k = parse(wb).kols[0];
+  assert.equal(k.cost_thb, null);
+  assert.equal(k.boost_thb, null);
+  assert.equal(k.kpi_metric, null);
+  console.log('✅ sheets without planner columns stay clean');
+}
+
 console.log('\n✅ all import-behaviour checks passed');

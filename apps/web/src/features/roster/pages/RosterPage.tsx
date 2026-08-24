@@ -104,6 +104,17 @@ export default function RosterPage() {
           active: draft.active,
           ...(showSubgroup ? { subgroup: draft.subgroup.trim() } : {}),
           ...(isReport ? { links: parseLinksTextarea(draft.linksText) } : {}),
+          // -1 / '' = clear on the server; an emptied input really does erase.
+          ...(isReport
+            ? {
+                cost_thb: draft.costText.trim() ? Number(draft.costText.replace(/,/g, '')) : -1,
+                boost_thb: draft.boostText.trim() ? Number(draft.boostText.replace(/,/g, '')) : -1,
+                kpi_metric: draft.kpiMetric,
+                kpi_target: draft.kpiTargetText.trim()
+                  ? Math.round(Number(draft.kpiTargetText.replace(/,/g, '')))
+                  : -1,
+              }
+            : {}),
         },
       },
       {
@@ -127,7 +138,7 @@ export default function RosterPage() {
     { to: backHref, label: '← กลับหน้ารายงาน' },
   ];
 
-  const columnCount = 6 + (showSubgroup ? 1 : 0) + (isReport ? 1 : 0);
+  const columnCount = 6 + (showSubgroup ? 1 : 0) + (isReport ? 2 : 0);
   const kols = roster.data ?? [];
 
   return (
@@ -217,6 +228,9 @@ export default function RosterPage() {
                   )}
                   {isReport && (
                     <th className="whitespace-nowrap p-2 font-semibold">🔗 ลิงก์โพสต์</th>
+                  )}
+                  {isReport && (
+                    <th className="whitespace-nowrap p-2 font-semibold">💰 การขาย (เฉพาะทีม)</th>
                   )}
                   <th className="whitespace-nowrap p-2 font-semibold">สถานะ</th>
                   <th className="whitespace-nowrap p-2 text-right font-semibold">จัดการ</th>

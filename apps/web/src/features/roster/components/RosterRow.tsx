@@ -25,6 +25,11 @@ export interface RosterRowDraft {
   active: boolean;
   /** Raw textarea contents: one link per line. */
   linksText: string;
+  /** Commercial fields, kept as input text — '' means "no value". */
+  costText: string;
+  boostText: string;
+  kpiMetric: string;
+  kpiTargetText: string;
 }
 
 function draftFrom(kol: RosterKol): RosterRowDraft {
@@ -35,6 +40,10 @@ function draftFrom(kol: RosterKol): RosterRowDraft {
     active: kol.active,
     // Fall back to the legacy single `url` when a row predates links_json.
     linksText: (kol.links ?? []).map((l) => l.url).join('\n') || (kol.url ?? ''),
+    costText: kol.cost_thb != null ? String(kol.cost_thb) : '',
+    boostText: kol.boost_thb != null ? String(kol.boost_thb) : '',
+    kpiMetric: kol.kpi_metric ?? '',
+    kpiTargetText: kol.kpi_target != null ? String(kol.kpi_target) : '',
   };
 }
 
@@ -108,6 +117,51 @@ export function RosterRow({
             value={draft.linksText}
             onChange={(e) => set('linksText', e.target.value)}
           />
+        </td>
+      )}
+      {showLinks && (
+        // Commercial mini-form (report roster only — the tracker has no sales).
+        // Stacked so the row does not get another four columns wide.
+        <td className="min-w-[170px] p-2">
+          <div className="space-y-1">
+            <input
+              className={cn(inputClass, 'py-1 text-[0.78rem]')}
+              inputMode="decimal"
+              aria-label={`ค่าตัว (บาท) ของ @${kol.username}`}
+              placeholder="ค่าตัว (บาท)"
+              value={draft.costText}
+              onChange={(e) => set('costText', e.target.value)}
+            />
+            <input
+              className={cn(inputClass, 'py-1 text-[0.78rem]')}
+              inputMode="decimal"
+              aria-label={`งบบูสต์ (บาท) ของ @${kol.username}`}
+              placeholder="บูส (บาท)"
+              value={draft.boostText}
+              onChange={(e) => set('boostText', e.target.value)}
+            />
+            <div className="flex gap-1">
+              <select
+                className={cn(inputClass, 'w-[88px] px-1 py-1 text-[0.75rem]')}
+                aria-label={`หน่วย KPI ของ @${kol.username}`}
+                value={draft.kpiMetric}
+                onChange={(e) => set('kpiMetric', e.target.value)}
+              >
+                <option value="">KPI: —</option>
+                <option value="views">Views</option>
+                <option value="impressions">Imp</option>
+                <option value="interaction">Interaction</option>
+              </select>
+              <input
+                className={cn(inputClass, 'py-1 text-[0.78rem]')}
+                inputMode="numeric"
+                aria-label={`เป้า KPI ของ @${kol.username}`}
+                placeholder="เป้า"
+                value={draft.kpiTargetText}
+                onChange={(e) => set('kpiTargetText', e.target.value)}
+              />
+            </div>
+          </div>
         </td>
       )}
       <td className="p-2">

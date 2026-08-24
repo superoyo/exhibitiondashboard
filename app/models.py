@@ -7,6 +7,7 @@ as "group".
 from __future__ import annotations
 
 import datetime as dt
+from decimal import Decimal
 from typing import List, Optional
 
 from sqlalchemy import (
@@ -69,6 +70,17 @@ class ReportKol(Base):
     followers: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # Commercial fields from the planner's sheet — selling price to the client,
+    # boost budget, and the KPI this KOL was sold on ('views'/'impressions'/
+    # 'interaction' + a target). Not derivable from any scrape. These ride ONLY
+    # on the authenticated /api/roster/* endpoints: /api/report/data is open and
+    # client links get forwarded to KOLs, who must never read their resale price.
+    cost_thb: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2), nullable=True)
+    boost_thb: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2), nullable=True)
+    kpi_metric: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    kpi_target: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
