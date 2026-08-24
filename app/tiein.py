@@ -69,7 +69,12 @@ PICK_MAX_SIDE = 896
 # the budget on thinking and return an empty string, which this code reads as
 # "no product in this clip" — for every single clip.
 PICK_MAX_TOKENS = 2048
-MAX_VIDEOS_PER_RUN = 40
+# Runaway backstop only — NOT a per-press working cap. A 40-clip cap used to
+# mean a ~100-post campaign needed three PowerPoint presses to get a complete
+# deck; the team wants one press to finish the job, and per-clip idempotence
+# (tiein_hash) already bounds spend to clips that are genuinely new. 500 clips
+# is beyond any real campaign, so hitting it means data has gone wrong.
+MAX_VIDEOS_PER_RUN = 500
 FRAMES_PER_VIDEO = 24
 # bump when the sampling/selection algorithm improves — posts whose stored
 # shot came from an older version are automatically redone on the next run
