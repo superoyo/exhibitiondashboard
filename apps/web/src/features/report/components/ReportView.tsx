@@ -92,6 +92,31 @@ function CostBreakdown({
   );
 }
 
+/**
+ * "ลงงานแล้ว X/Y คน" chip beside the posts-table heading.
+ *
+ * Counts PEOPLE, not rows: the table has one row per KOL-platform, so a KOL on
+ * TikTok+Instagram is two rows but one person. "Posted" = at least one of their
+ * rows carries a post link — the same split the influencer view uses for its
+ * Active/Waiting sections. Counted from the rows currently shown, so filtering
+ * to one big group makes the chip answer for that group.
+ */
+function PostedCount({ rows }: { rows: { username: string; url: string }[] }) {
+  const everyone = new Set(rows.map((r) => r.username));
+  const posted = new Set(rows.filter((r) => r.url).map((r) => r.username));
+  if (everyone.size === 0) return null;
+  const done = posted.size === everyone.size;
+  return (
+    <span
+      className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+        done ? 'bg-emerald-50 text-state-ok' : 'bg-brand-200 text-[#8a6a00]'
+      }`}
+    >
+      {done ? '✅' : '⏳'} ลงงานแล้ว {posted.size}/{everyone.size} คน
+    </span>
+  );
+}
+
 export function ReportView({
   campaign,
   viewOnly,
@@ -420,8 +445,11 @@ export function ReportView({
           ) : (
             <Card>
               <CardContent className="p-4">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <h3 className="font-semibold">รายโพสต์ทั้งหมด (คลิกหัวคอลัมน์เพื่อจัดเรียง)</h3>
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <h3 className="font-semibold">รายโพสต์ทั้งหมด (คลิกหัวคอลัมน์เพื่อจัดเรียง)</h3>
+                    <PostedCount rows={rows} />
+                  </div>
                   <Button
                     variant="outline"
                     size="sm"
