@@ -157,6 +157,29 @@ const HEADER_WORDS = new Set([
  */
 const INDEX_LIKE = /^#?\d{1,4}(\.\d{1,3})?\s*[.)]?$/;
 
+/**
+ * Words that mark a cell as a real COLUMN HEADER. Header detection scores rows
+ * by how many cells match one of these, because "first row with 2+ filled
+ * cells" broke on the Pao Win Wash Proof sheet: its decorative top row held
+ * " Tiktok Micro Influencer" + "เลือก 10 Account" — two filled cells — and once
+ * that row was taken as the header, every column (Boost Budget, Kpi) went
+ * unfound for the whole sheet.
+ */
+const HEADER_HINTS = [
+  ...COL_USERNAME,
+  ...COL_GROUP,
+  ...COL_SUBGROUP,
+  ...COL_FOLLOWERS,
+  ...COL_BOOST,
+  ...COL_COST,
+  ...COL_KPI,
+  'link',
+  'ลิงก์',
+  'period',
+  'sow',
+  'สถานะ',
+];
+
 const SOCIAL = /(tiktok\.com|facebook\.com|fb\.watch|instagram\.com|youtu|x\.com|twitter\.com)/i;
 
 /** Sheet/column words that mark a shipping-address tab rather than campaign work. */
@@ -183,9 +206,6 @@ type XlsxModule = typeof import('xlsx');
 
 export interface ParsedWorkbook {
   kols: BulkKol[];
-  /** KPI cells merged vertically across a whole group are GROUP totals
-   *  ("7M Imp across Micro Package"), not anyone's personal target. */
-  groupKpis: Record<string, KolKpi[]>;
   /** Per-sheet header summary, shown when nothing could be parsed. */
   debug: string;
   /** Sheets skipped as non-work (e.g. address tabs). */
@@ -204,16 +224,16 @@ export interface ParsedWorkbook {
  * in several cells and get the title row mistaken for the header again (the
  * exact bug that once imported usernames as 1,2,3,4,5).
  *
- * Returns the vertical span of each affected cell as "row:col" -> span, so the
- * caller can tell "this KPI was merged across 8 rows" (a group total) from
- * "this row has its own KPI".
+ * Returns a merge id per affected cell ("row:col" -> "col@top"), so the caller
+ * can tell "this KPI cell is shared with other rows" — and WHICH rows share it
+ * — from "this row has its own KPI".
  */
 function spreadVerticalMerges(
   xlsx: XlsxModule,
   sheet: XLSX.WorkSheet,
   rows: unknown[][],
-): Record<string, number> {
-  const spans: Record<string, number> = {};
+): Record<string, string> {
+  const spans: Record<string, string> = {};
   try {
     const origin = xlsx.utils.decode_range(sheet['!ref'] ?? 'A1').s;
     for (const m of sheet['!merges'] ?? []) {
@@ -222,12 +242,11 @@ function spreadVerticalMerges(
       const top = m.s.r - origin.r;
       const value = rows[top]?.[col];
       if (!text(value)) continue;
-      const span = m.e.r - m.s.r + 1;
       for (let r = top; r <= m.e.r - origin.r; r++) {
         const target = rows[r];
         if (target) {
           target[col] = value;
-          spans[`${r}:${col}`] = span;
+          spans[`${r}:${col}`] = `${col}@${top}`;
         }
       }
     }
@@ -282,7 +301,11 @@ function visibleSheetNames(wb: XLSX.WorkBook): string[] {
 
 export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbook {
   const kols: BulkKol[] = [];
-  const groupKpis: Record<string, KolKpi[]> = {};
+  // KPI cells merged across several rows: the value is a shared TOTAL. Team
+  // decision (Pao Win Wash): split it evenly across the rows that share it,
+  // as each person's own target — collected here, divided once the sheet's
+  // member count is known.
+  const shared: Record<string, { kpis: KolKpi[]; kolIdx: number[] }> = {};
   const debug: string[] = [];
   const skipped: string[] = [];
   const sheetNames = visibleSheetNames(wb);
@@ -302,22 +325,37 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
     const hyper = collectHyperlinks(xlsx, sheet);
     const mergeSpans = spreadVerticalMerges(xlsx, sheet, rows);
 
-    // Header = the first row with at least two filled cells. A single-cell first
-    // row is a merged campaign title ("รายชื่อ KOL <brand>"), and reading it as
-    // the header made every column key match column A — the row counter — so the
-    // numbers 1,2,3… were imported as usernames. Falls back to any content, for
-    // sheets that really are one column wide.
+    // Header = within the first rows (up to the first row that carries a URL —
+    // that one is data), the row whose cells match the MOST header words, two
+    // matches minimum. Scoring, not position: title rows above the header can
+    // hold header-ish words too (" Tiktok Micro Influencer" + "เลือก 10
+    // Account" scores 2), but the real header row outsc scores them (No · name ·
+    // Link · Boost Budget · Kpi · Period ≈ 6). Falls back to the old shape
+    // rules (first row with 2+ filled cells, else first content) for sheets
+    // with unrecognised header names.
     let headerIndex = -1;
-    let firstFilled = -1;
-    for (let i = 0; i < rows.length; i++) {
-      const count = (rows[i] ?? []).filter((c) => text(c)).length;
-      if (count >= 1 && firstFilled < 0) firstFilled = i;
-      if (count >= 2) {
+    let bestScore = 0;
+    for (let i = 0; i < Math.min(rows.length, 10); i++) {
+      const cells = (rows[i] ?? []).map(lower);
+      if (cells.some((c) => looksUrl(c))) break; // reached data
+      const score = cells.filter((c) => c && HEADER_HINTS.some((k) => c.includes(k))).length;
+      if (score >= 2 && score > bestScore) {
         headerIndex = i;
-        break;
+        bestScore = score;
       }
     }
-    if (headerIndex < 0) headerIndex = Math.max(firstFilled, 0);
+    if (headerIndex < 0) {
+      let firstFilled = -1;
+      for (let i = 0; i < rows.length; i++) {
+        const count = (rows[i] ?? []).filter((c) => text(c)).length;
+        if (count >= 1 && firstFilled < 0) firstFilled = i;
+        if (count >= 2) {
+          headerIndex = i;
+          break;
+        }
+      }
+      if (headerIndex < 0) headerIndex = Math.max(firstFilled, 0);
+    }
     const headerRow = rows[headerIndex] ?? [];
     const headers = headerRow.map(lower);
     debug.push(`“${sheetName}” [${headers.filter(Boolean).join(', ')}]`);
@@ -421,16 +459,18 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
       // parses the same as "100,000 Views" in one.
       const cost = cCost >= 0 ? parseAmount(text(row[cCost])) : null;
       const boost = cBoost >= 0 ? parseAmount(text(row[cBoost])) : null;
-      // A KPI cell merged down 2+ rows is the GROUP's total, not this row's
-      // own target — route it to groupKpis under this row's group and keep the
-      // per-person list empty for it.
-      const kpiMerged = kpiCols.some((i2) => (mergeSpans[`${i}:${i2}`] ?? 1) > 1);
+      // A KPI cell merged down 2+ rows is a TOTAL shared by those rows.
+      const mergeId = kpiCols.map((i2) => mergeSpans[`${i}:${i2}`]).find(Boolean);
       const kpiText = kpiCols.length ? kpiCols.map((i2) => text(row[i2])).join(' ') : '';
       let kpis: KolKpi[] = [];
+      let sharedKey: string | null = null;
       if (kpiText.trim()) {
         const parsedKpis = parseKpis(kpiText);
-        if (kpiMerged) {
-          if (parsedKpis.length && !groupKpis[group]) groupKpis[group] = parsedKpis;
+        if (mergeId) {
+          sharedKey = `${sheetName}|${mergeId}`;
+          if (parsedKpis.length && !shared[sharedKey]) {
+            shared[sharedKey] = { kpis: parsedKpis, kolIdx: [] };
+          }
         } else {
           kpis = parsedKpis;
         }
@@ -447,10 +487,28 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
         boost_thb: boost,
         kpis,
       });
+      const pool = sharedKey ? shared[sharedKey] : undefined;
+      if (pool) pool.kolIdx.push(kols.length - 1);
     }
   }
 
-  return { kols, groupKpis, debug: debug.join('  ·  '), skipped };
+  // Split each shared KPI total evenly across the people who share it:
+  // "7,000,000 imp." merged over 10 rows -> 700,000 imp. per person. Divided by
+  // the people actually IMPORTED from those rows, so a dropped junk row cannot
+  // silently inflate everyone else's share.
+  for (const { kpis: totals, kolIdx } of Object.values(shared)) {
+    if (!kolIdx.length) continue;
+    const each = totals.map((k) => ({
+      metric: k.metric,
+      target: Math.max(1, Math.round(k.target / kolIdx.length)),
+    }));
+    for (const idx of kolIdx) {
+      const k = kols[idx];
+      if (k && !(k.kpis ?? []).length) k.kpis = each;
+    }
+  }
+
+  return { kols, debug: debug.join('  ·  '), skipped };
 }
 
 /**

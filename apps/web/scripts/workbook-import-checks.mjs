@@ -330,16 +330,18 @@ const parse = (wb) => parseWorkbook(XLSX, wb);
   assert.deepEqual(
     got.macro1.kpis,
     [{ metric: 'reach', target: 800000 }],
-    'per-row KPI stays personal',
+    'per-row KPI stays personal and undivided',
   );
-  assert.deepEqual(got.micro1.kpis, [], 'merged KPI is NOT a personal target');
-  assert.deepEqual(got.micro2.kpis, [], 'merged KPI is NOT a personal target (2)');
-  assert.deepEqual(
-    parsed.groupKpis,
-    { KOL: [{ metric: 'impressions', target: 7000000 }] },
-    `merged KPI becomes the group total: ${JSON.stringify(parsed.groupKpis)}`,
-  );
-  console.log('✅ vertical merges spread; merged KPI becomes a group total');
+  // Team decision: a KPI merged across N rows is a shared total, split evenly —
+  // 7,000,000 imp over 3 people = 2,333,333 each.
+  for (const u of ['micro1', 'micro2', 'micro3']) {
+    assert.deepEqual(
+      got[u].kpis,
+      [{ metric: 'impressions', target: 2333333 }],
+      `${u} gets the divided share: ${JSON.stringify(got[u].kpis)}`,
+    );
+  }
+  console.log('✅ vertical merges spread; shared KPI split per person');
 }
 
 // ---- a REAL merged title row must still not become the header ---------------
@@ -359,6 +361,37 @@ const parse = (wb) => parseWorkbook(XLSX, wb);
     `horizontal merge leaked into the header: ${JSON.stringify(kols.map((k) => k.username))}`,
   );
   console.log('✅ horizontal title merges stay inert');
+}
+
+// ---- the Proof-sheet shape: decorative 2-cell row above the real header -----
+// The real Pao Win Wash "Micro Package (Proof)" sheet opens with
+// " Tiktok Micro Influencer..." + "เลือก 10 Account" — two filled cells. Header
+// detection by cell COUNT took that as the header and lost every column.
+{
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([
+    [' Tiktok Micro Influencer จำนวน 10 คน', '', '', 'เลือก 10 Account ', ''],
+    ['No', 'name', 'Link', 'sow', 'Boost Budget', 'Kpi', 'Period '],
+    ['1', '', 'https://www.tiktok.com/@proof1', 'SOW : Tiktok Content', '24500', '7,000,000 imp.', 'W1-W3 Oct'],
+    ['2', '', 'https://www.tiktok.com/@proof2', 'SOW : Tiktok Content', '24500', '', 'W1-W3 Oct'],
+  ]);
+  ws['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }, // decorative banner (horizontal)
+    { s: { r: 2, c: 5 }, e: { r: 3, c: 5 } }, // Kpi merged down the group
+  ];
+  XLSX.utils.book_append_sheet(wb, ws, 'Micro Package (Proof) ');
+  const got = Object.fromEntries(parse(wb).kols.map((k) => [k.username, k]));
+  assert.deepEqual(Object.keys(got).sort(), ['proof1', 'proof2'], 'both rows imported');
+  assert.equal(got.proof1.boost_thb, 24500, 'Boost Budget column found despite the banner row');
+  assert.equal(got.proof2.boost_thb, 24500, 'boost on every row');
+  for (const u of ['proof1', 'proof2']) {
+    assert.deepEqual(
+      got[u].kpis,
+      [{ metric: 'impressions', target: 3500000 }],
+      `${u}: shared 7M split by 2 = 3.5M each`,
+    );
+  }
+  console.log('✅ Proof-sheet banner row no longer eats the header');
 }
 
 console.log('\n✅ all import-behaviour checks passed');

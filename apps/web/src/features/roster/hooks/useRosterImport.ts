@@ -51,20 +51,17 @@ export function useRosterImport(campaign: string) {
     }
 
     const { linkCount } = importSummary(kols);
-    // KPI cells merged across a whole group in the sheet = group totals.
-    const groupKpiEntries = Object.entries(parsed.groupKpis ?? {});
+    // KOLs whose KPI came from a shared (merged) total, already divided per head
+    const kpiCount = kols.filter((k) => (k.kpis ?? []).length > 0).length;
     setStatus('กำลังนำเข้า…');
     try {
       const result = await bulkReplaceRoster(campaign, {
         kols,
-        ...(groupKpiEntries.length
-          ? { group_kpis: groupKpiEntries.map(([group, kpis]) => ({ group, kpis })) }
-          : {}),
         ...(sheetUrl ? { sheet_url: sheetUrl } : {}),
       });
       setStatus(
         `✅ นำเข้าแล้ว ${result.count} รายชื่อ (${linkCount} ลิงก์)` +
-          (groupKpiEntries.length ? ` · KPI กลุ่ม ${groupKpiEntries.length} กลุ่ม` : '') +
+          (kpiCount ? ` · KPI ${kpiCount} คน` : '') +
           ' — แทนที่ของเดิม · ไปกด Refresh Data เพื่อดึงสถิติ',
       );
       toast.success(`นำเข้า ${result.count} รายชื่อแล้ว`);
