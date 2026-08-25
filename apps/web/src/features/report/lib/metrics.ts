@@ -18,7 +18,16 @@ import type { ReportRecord, ReportRecordDerived } from '@kol/shared';
  */
 export function derive(records: ReportRecord[]): ReportRecordDerived[] {
   return records.map((r) => {
-    const engagement = r.likes + r.comments + r.shares + (r.saves || 0);
+    // Negative counts are the scrapers' "hidden" sentinel — Instagram returns
+    // likes = -1 when the creator hides like counts. Clamped here ONCE so no
+    // sum, chart, CSV or ER downstream ever subtracts a phantom like; the flag
+    // lets the table say "ซ่อน" instead of a fabricated 0.
+    const likesHidden = r.likes < 0;
+    const likes = Math.max(0, r.likes);
+    const comments = Math.max(0, r.comments);
+    const shares = Math.max(0, r.shares);
+    const saves = Math.max(0, r.saves || 0);
+    const engagement = likes + comments + shares + saves;
     const byFollowers = !r.views && engagement > 0 && r.followers > 0;
     const er = r.views
       ? (engagement / r.views) * 100
@@ -27,6 +36,11 @@ export function derive(records: ReportRecord[]): ReportRecordDerived[] {
         : 0;
     return {
       ...r,
+      likes,
+      comments,
+      shares,
+      saves,
+      likesHidden,
       engagement,
       er,
       erByFollowers: byFollowers,

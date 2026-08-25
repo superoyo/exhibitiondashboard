@@ -57,14 +57,22 @@ PLAT_FALLBACK = {"x": ("X", (17, 17, 17)), "line": ("L", (6, 199, 85)),
 
 
 def _fmt(n) -> str:
-    return f"{int(n):,}" if n else ""
+    # Negative counts are the scrapers' "hidden" sentinel — Instagram returns
+    # likes = -1 when the creator turned on hide-like-count. A hidden number is
+    # rendered like a missing one (blank), never as "-1" in a client deck.
+    return f"{int(n):,}" if n and n > 0 else ""
+
+
+def _pos(n) -> int:
+    """Metric value for arithmetic/overlays: hidden (-1) counts as 0."""
+    return max(int(n or 0), 0)
 
 
 def _stat_rows(platform: str, p: Optional[ReportPost]) -> list:
     """(label, value) rows exactly as the team lays them out per platform —
     blank where the scraper has no data."""
     if platform == "facebook":
-        eng = (p.likes + p.comments + p.shares) if p else 0
+        eng = (_pos(p.likes) + _pos(p.comments) + _pos(p.shares)) if p else 0
         return [("Reach", ""), ("View", _fmt(p.views) if p else ""),
                 ("Engagement", _fmt(eng) if p else ""),
                 ("Reactions", _fmt(p.likes) if p else ""),
@@ -663,12 +671,12 @@ def build_pptx(campaign_key: str) -> tuple[io.BytesIO, str]:
                         dt_s = (f"{p.posted_at.month}-{p.posted_at.day}"
                                 if p and p.posted_at else "")
                         card = _tiktok_card(shot, avatar, k.username, dt_s, cap,
-                                            p.likes if p else 0, p.comments if p else 0,
-                                            p.saves if p else 0, p.shares if p else 0)
+                                            _pos(p.likes) if p else 0, _pos(p.comments) if p else 0,
+                                            _pos(p.saves) if p else 0, _pos(p.shares) if p else 0)
                     elif plat == "facebook":
                         card = _fb_card(avatar, name, posted, cap, shot,
-                                        p.likes if p else 0, p.comments if p else 0,
-                                        p.shares if p else 0)
+                                        _pos(p.likes) if p else 0, _pos(p.comments) if p else 0,
+                                        _pos(p.shares) if p else 0)
                     else:
                         card = _compose_post_card(logo, name, cap, shot)
                     if card:

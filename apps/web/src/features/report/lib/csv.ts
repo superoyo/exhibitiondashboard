@@ -36,6 +36,8 @@ export function buildReportCsv(rows: ReportRecordDerived[]): string {
       COLUMNS.map((col) => {
         if (col === 'er') return row.er.toFixed(2);
         if (col === 'tier') return escapeCell(tierOf(row.followers)?.label ?? '');
+        // hidden like counts export as empty, not as a fabricated 0
+        if (col === 'likes' && row.likesHidden) return '';
         return escapeCell(row[col]);
       }).join(','),
     );

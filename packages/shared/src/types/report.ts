@@ -64,6 +64,10 @@ export interface ReportRecordDerived extends ReportRecord {
   er: number;
   erByFollowers: boolean;
   erUnavailable: boolean;
+  /** Instagram hide-like-count: the scraper reports -1. Derived rows clamp the
+   *  number to 0 for every sum, and this flag lets the UI say "ซ่อน" instead
+   *  of a fabricated zero. */
+  likesHidden: boolean;
 }
 
 /** Metric keys the podium can rank by. */

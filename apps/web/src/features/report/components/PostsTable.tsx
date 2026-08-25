@@ -264,7 +264,18 @@ export function PostsTable({
               {!hideMetrics && (
                 <>
                   <td className="pr-3 text-right font-semibold">{fmtFull(row.views)}</td>
-                  <td className="pr-3 text-right">{fmtFull(row.likes)}</td>
+                  <td className="pr-3 text-right">
+                    {row.likesHidden ? (
+                      <span
+                        className="text-xs text-muted-foreground"
+                        title="Instagram ซ่อนยอดไลก์ของโพสต์นี้ (ครีเอเตอร์เปิด hide like count)"
+                      >
+                        ซ่อน
+                      </span>
+                    ) : (
+                      fmtFull(row.likes)
+                    )}
+                  </td>
                   <td className="pr-3 text-right">{fmtFull(row.comments)}</td>
                   <td className="pr-3 text-right">{fmtFull(row.shares)}</td>
                   <td className="pr-3 text-right">{fmtFull(row.saves)}</td>
