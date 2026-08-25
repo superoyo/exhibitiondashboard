@@ -270,7 +270,7 @@ export function PostsTable({
                         className="text-xs text-muted-foreground"
                         title="Instagram ซ่อนยอดไลก์ของโพสต์นี้ (ครีเอเตอร์เปิด hide like count)"
                       >
-                        ซ่อน
+                        Hide
                       </span>
                     ) : (
                       fmtFull(row.likes)
