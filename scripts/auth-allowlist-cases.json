@@ -170,6 +170,18 @@
     },
     {
       "method": "GET",
+      "path": "/api/report/advisor",
+      "needsAuth": true,
+      "why": "advisor result quotes CPV/CPE derived from selling prices — internal only"
+    },
+    {
+      "method": "POST",
+      "path": "/api/report/advisor/run",
+      "needsAuth": true,
+      "why": "spends AI credit"
+    },
+    {
+      "method": "GET",
       "path": "/login",
       "needsAuth": false,
       "why": "not an /api path — the SPA handles page guarding"

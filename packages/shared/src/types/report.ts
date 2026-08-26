@@ -102,7 +102,7 @@ export interface ActiveJob {
   campaign: string;
   campaign_name: string;
   emoji: string;
-  kind: 'refresh' | 'profiles' | 'tiein' | 'comments';
+  kind: 'refresh' | 'profiles' | 'tiein' | 'comments' | 'advisor';
   kind_label: string;
   status: JobStatus;
   message: string;
@@ -217,6 +217,42 @@ export interface CommentExportResponse {
   /** True when the campaign holds more comments than one export can carry. */
   truncated: boolean;
   rows: CommentExportRow[];
+}
+
+// ---- Performance advisor ----------------------------------------------------
+
+/** One verdict per posted KOL, produced by the team's analyst prompt. */
+export type AdvisorVerdict = 'BOOST_NOW' | 'REBOOK' | 'SOLID' | 'WATCH' | 'PENDING';
+
+export interface AdvisorKol {
+  handle: string;
+  category: string;
+  tier: string;
+  platform: string;
+  verdict: AdvisorVerdict;
+  /** Numbers straight from the data — never invented. */
+  evidence: string;
+  /** Client-safe sentence the AE can say verbatim. */
+  ae_talking_point: string;
+  /** Internal only — may contain CPV/CPE derived from selling prices. */
+  internal_note: string;
+  confidence: string;
+}
+
+export interface AdvisorResult {
+  campaign_summary: string;
+  posted_count: number;
+  pending_count: number;
+  median_er_by_platform: Record<string, number>;
+  kols: AdvisorKol[];
+}
+
+/** `GET /api/report/advisor` — the STORED analysis; running is a separate press. */
+export interface AdvisorState {
+  is_set: boolean;
+  generated_at?: string;
+  model?: string;
+  result?: AdvisorResult;
 }
 
 /** `GET /api/report/packshot` */

@@ -1,5 +1,6 @@
 import type {
   ActiveJob,
+  AdvisorState,
   CommentExportResponse,
   CommentListResponse,
   CommentSummary,
@@ -121,6 +122,25 @@ export async function startCommentRefresh(campaign: string): Promise<void> {
 
 export async function getCommentStatus(campaign: string): Promise<JobState> {
   const { data } = await api.get<JobState>('/report/comments/status', { params: { campaign } });
+  return data;
+}
+
+// ---- Performance advisor ----------------------------------------------------
+// Internal only: the analysis input includes selling prices, so none of this is
+// ever fetched on a client link.
+
+export async function getAdvisor(campaign: string): Promise<AdvisorState> {
+  const { data } = await api.get<AdvisorState>('/report/advisor', { params: { campaign } });
+  return data;
+}
+
+/** One Claude call over the whole campaign (~a few baht, not in the cost table). */
+export async function runAdvisor(campaign: string): Promise<void> {
+  await api.post('/report/advisor/run', null, { params: { campaign } });
+}
+
+export async function getAdvisorStatus(campaign: string): Promise<JobState> {
+  const { data } = await api.get<JobState>('/report/advisor/status', { params: { campaign } });
   return data;
 }
 

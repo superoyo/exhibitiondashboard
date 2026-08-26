@@ -33,6 +33,7 @@ import { Podium } from './Podium';
 import { KpiLine, PostsTable, type CommercialByUser } from './PostsTable';
 import { useRoster } from '@/features/roster/hooks/useRoster';
 import { getGroupKpis } from '@/features/roster/api/rosterApi';
+import { AdvisorPanel } from './AdvisorPanel';
 import { CommentPanel } from './CommentPanel';
 import { ReportActions } from './ReportActions';
 import { CategoryDonut, CategoryErBar, EngagementStack, TopPostsBar } from './ReportCharts';
@@ -434,6 +435,15 @@ export function ReportView({
               </Card>
             </div>
           )}
+
+          {/* Performance advisor — verdicts per posted KOL from the team's own
+              analyst prompt. STRICTLY internal: its input carries selling
+              prices, so neither /v/ links nor the ?view=1 preview render it. */}
+          {!viewOnly && !influencerView ? (
+            <div className="mb-5">
+              <AdvisorPanel campaign={campaign} />
+            </div>
+          ) : null}
 
           {/* Comment breakdown. Shown on the client report as well as ours —
               it is analysis the client is paying for. Rendered from stored rows

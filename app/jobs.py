@@ -29,6 +29,7 @@ KINDS = {
     "cm:": ("comments", "วิเคราะห์คอมเมนต์"),
     "ti:": ("tiein", "หา tie-in shot"),
     "pf:": ("profiles", "ดึงรูปโปรไฟล์"),
+    "adv:": ("advisor", "วิเคราะห์ Performance"),
 }
 REFRESH_KIND = ("refresh", "อัปเดตสถิติ")
 

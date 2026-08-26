@@ -865,6 +865,35 @@ def view_comments_list(view_token: str, category: str = "", offset: int = 0,
                          max(0, offset), limit)
 
 
+# ---- Performance advisor (internal only — input includes selling prices) ----
+
+@router.get("/report/advisor")
+def report_advisor(campaign: str = "pao"):
+    """The stored analysis with its timestamp — reading costs nothing."""
+    from app.advisor import stored
+    return stored(campaign)
+
+
+@router.post("/report/advisor/run")
+def report_advisor_run(background: BackgroundTasks, campaign: str = "pao"):
+    """Run the analyst over the campaign's current numbers (one Claude call).
+
+    Its own explicit press: boost advice goes stale in days, and re-billing AI
+    silently on every page open would hide when the advice was generated."""
+    from app.advisor import run_advisor
+    st = state_for("adv:" + campaign)
+    if st.get("status") == "running":
+        raise HTTPException(status_code=409, detail="กำลังวิเคราะห์อยู่แล้ว")
+    st.update(status="running", message="เริ่มงาน…", posts=0)
+    background.add_task(run_advisor, campaign)
+    return {"status": "started", "campaign": campaign}
+
+
+@router.get("/report/advisor/status")
+def report_advisor_status(campaign: str = "pao"):
+    return state_for("adv:" + campaign)
+
+
 @router.get("/ai/status")
 def ai_status_route(force: bool = False):
     """Is the Claude AI key set + funded? Shown on the settings page so the
