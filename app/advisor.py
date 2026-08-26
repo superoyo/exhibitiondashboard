@@ -32,11 +32,12 @@ from app.report_refresh import _redact, state_for
 
 log = logging.getLogger("advisor")
 
-# Sonnet, not the Haiku the comment classifier uses: this is one judgment-heavy
-# call per press over the whole campaign, not thousands of label lookups — the
-# quality of the verdicts IS the product here, and the whole run costs a few
-# baht. Thinking stays on (the model's default); max_tokens covers it.
-ADVISOR_MODEL: str = os.getenv("ADVISOR_MODEL", "claude-sonnet-5")
+# Opus, at the team's explicit call (2026-08: "เอาเป็น Opus ไปเลย มันไม่ได้แพง"):
+# one judgment-heavy call per press over the whole campaign, and the quality of
+# the verdicts IS the product. ~5-12฿ per press vs Sonnet's ~2-5฿ — the delta is
+# smaller than a single comment-analysis run. Thinking stays on (the model's
+# default); max_tokens covers it.
+ADVISOR_MODEL: str = os.getenv("ADVISOR_MODEL", "claude-opus-5")
 ADVISOR_MAX_TOKENS = 20000
 
 # Five rungs, matching apps/web/src/features/report/lib/tier.ts (Mid was merged
