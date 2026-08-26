@@ -1,25 +1,22 @@
 import type { AdvisorKol, AdvisorVerdict } from '@kol/shared';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
 
-import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { apiErrorMessage } from '@/lib/axios';
 import { cn } from '@/lib/utils';
-import { getAdvisor, getAdvisorStatus, runAdvisor } from '@/features/report/api/reportApi';
+import { getAdvisor } from '@/features/report/api/reportApi';
 
 /**
- * Performance Advisor — the team's analyst prompt run over the campaign's
- * numbers, one verdict per posted KOL.
+ * Performance Analysis — the team's analyst prompt run over the campaign's
+ * numbers, one verdict per posted KOL. Display only: the trigger lives in the
+ * top action bar with the other buttons (ReportActions), at the team's request.
  *
  * INTERNAL ONLY. Mounted behind !viewOnly and its endpoints require login: the
  * analysis input carries selling prices, and internal_note may quote CPV/CPE
  * derived from them. Never render any of this on a client link.
  *
- * The stored result is shown with its timestamp instead of auto-running:
- * boost advice has a ~7-day shelf life, so WHEN it was generated is part of
- * the answer, and re-running is a deliberate press (one Claude call ≈ a few
- * baht — AI spend, so it does not appear in the Apify cost table).
+ * The stored result is shown with its timestamp: boost advice has a ~7-day
+ * shelf life, so WHEN it was generated is part of the answer.
  */
 
 const VERDICT: Record<AdvisorVerdict, { label: string; chip: string; order: number }> = {
@@ -55,48 +52,27 @@ function KolCard({ kol }: { kol: AdvisorKol }) {
   );
 }
 
-export function AdvisorPanel({ campaign }: { campaign: string }) {
-  const qc = useQueryClient();
-  const [starting, setStarting] = useState(false);
-  const [error, setError] = useState('');
-
+export function AdvisorPanel({
+  campaign,
+  running,
+  statusMessage,
+}: {
+  campaign: string;
+  /** True while a run started from the top button is in progress. */
+  running: boolean;
+  statusMessage?: string;
+}) {
   const advisor = useQuery({
     queryKey: ['report', 'advisor', campaign],
     queryFn: () => getAdvisor(campaign),
     enabled: Boolean(campaign),
   });
-  const status = useQuery({
-    queryKey: ['report', 'advisor-status', campaign],
-    queryFn: () => getAdvisorStatus(campaign),
-    enabled: Boolean(campaign),
-    refetchInterval: (q) => (q.state.data?.status === 'running' ? 4000 : false),
-  });
 
-  const running = status.data?.status === 'running';
-
-  async function start() {
-    setStarting(true);
-    setError('');
-    try {
-      await runAdvisor(campaign);
-      await status.refetch();
-      // Poll the stored result after the job ends via a lightweight interval.
-      const timer = setInterval(() => {
-        void (async () => {
-          const s = await getAdvisorStatus(campaign);
-          if (s.status !== 'running') {
-            clearInterval(timer);
-            await qc.invalidateQueries({ queryKey: ['report', 'advisor', campaign] });
-            await status.refetch();
-          }
-        })();
-      }, 4000);
-    } catch (e) {
-      setError(apiErrorMessage(e));
-    } finally {
-      setStarting(false);
-    }
-  }
+  // Pull the fresh result in the moment a run finishes (running: true → false).
+  const refetch = advisor.refetch;
+  useEffect(() => {
+    if (!running) void refetch();
+  }, [running, refetch]);
 
   const data = advisor.data;
   const result = data?.is_set ? data.result : undefined;
@@ -115,30 +91,28 @@ export function AdvisorPanel({ campaign }: { campaign: string }) {
     ? Math.floor((Date.now() - new Date(data.generated_at).getTime()) / 86_400_000)
     : 0;
 
+  if (!result && !running) {
+    return (
+      <Card>
+        <CardContent className="p-4">
+          <h3 className="mb-1 font-semibold">📈 Performance Analysis (เฉพาะทีม)</h3>
+          <p className="text-sm text-muted-foreground">
+            ยังไม่เคยวิเคราะห์แคมเปญนี้ — กดปุ่ม <strong>📈 Performance Analysis</strong> ด้านบน
+            (หลัง Refresh Data แล้ว) AI จะชี้ว่าโพสต์ไหนควรบูส คนไหนน่าจ้างซ้ำ
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card>
       <CardContent className="p-4">
-        <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <h3 className="font-semibold">📈 Performance Advisor (เฉพาะทีม)</h3>
-            <p className="text-xs text-muted-foreground">
-              AI อ่านตัวเลขทุกโพสต์แล้วชี้ว่าโพสต์ไหนควรบูส คนไหนน่าจ้างซ้ำ — ใช้ AI
-              หนึ่งครั้งต่อการกด (หลักบาท ไม่ขึ้นในตารางค่าใช้จ่าย)
-            </p>
-          </div>
-          <Button size="sm" onClick={() => void start()} disabled={running || starting}>
-            {running
-              ? '⏳ กำลังวิเคราะห์…'
-              : result
-                ? '🔄 วิเคราะห์ใหม่'
-                : '📈 วิเคราะห์ Performance'}
-          </Button>
-        </div>
+        <h3 className="mb-1 font-semibold">📈 Performance Analysis (เฉพาะทีม)</h3>
 
-        {error ? <p className="mb-2 text-xs text-destructive">{error}</p> : null}
         {running ? (
-          <p className="text-sm text-muted-foreground">
-            {status.data?.message || 'กำลังวิเคราะห์…'} (ปิดหน้านี้ได้ งานเดินต่อเอง)
+          <p className="mb-2 text-sm text-muted-foreground">
+            ⏳ {statusMessage || 'กำลังวิเคราะห์…'} (ปิดหน้านี้ได้ งานเดินต่อเอง)
           </p>
         ) : null}
 
@@ -163,10 +137,6 @@ export function AdvisorPanel({ campaign }: { campaign: string }) {
               ))}
             </div>
           </>
-        ) : !running ? (
-          <p className="text-sm text-muted-foreground">
-            ยังไม่เคยวิเคราะห์แคมเปญนี้ — กดปุ่มด้านบนหลังจาก Refresh Data แล้ว
-          </p>
         ) : null}
       </CardContent>
     </Card>

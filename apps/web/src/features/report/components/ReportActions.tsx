@@ -34,6 +34,9 @@ interface ReportActionsProps {
    *  at a glance rather than only in the status line right after a run. */
   commentCount: number;
   onRefreshComments: () => void;
+  /** True while the performance analysis is running. */
+  advisorBusy: boolean;
+  onRunAdvisor: () => void;
   onStatus: (message: string) => void;
 }
 
@@ -44,6 +47,8 @@ export function ReportActions({
   commentsBusy,
   commentCount,
   onRefreshComments,
+  advisorBusy,
+  onRunAdvisor,
   onStatus,
 }: ReportActionsProps) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -186,6 +191,17 @@ export function ReportActions({
         {commentsBusy
           ? '⏳ Analyzing…'
           : `💬 Comment Analysis${commentCount ? ` (${commentCount.toLocaleString()})` : ''}`}
+      </Button>
+
+      {/* AI-only (no Apify): one Opus call over the campaign's numbers. Lives
+          up here with the other actions at the team's request; the panel below
+          only displays the stored result. */}
+      <Button
+        onClick={onRunAdvisor}
+        disabled={advisorBusy}
+        className="rounded-[10px] bg-indigo-600 font-bold hover:bg-indigo-700"
+      >
+        {advisorBusy ? '⏳ Analyzing…' : '📈 Performance Analysis'}
       </Button>
     </div>
   );

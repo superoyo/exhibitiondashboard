@@ -19,7 +19,7 @@ import {
   distinctPlatforms,
   sumBy,
 } from '@/features/report/lib/metrics';
-import { startCommentRefresh } from '@/features/report/api/reportApi';
+import { getAdvisorStatus, runAdvisor, startCommentRefresh } from '@/features/report/api/reportApi';
 import {
   useCommentStatus,
   useComments,
@@ -254,6 +254,34 @@ export function ReportView({
 
   const commentsBusy = commentStatus.data?.status === 'running';
 
+  // Performance Analysis — triggered from the top action bar, displayed by the
+  // panel below. One Opus call per press; status polled like the other jobs.
+  const advisorStatus = useQuery({
+    queryKey: ['report', 'advisor-status', campaign],
+    queryFn: () => getAdvisorStatus(campaign),
+    enabled: !viewOnly && Boolean(campaign),
+    refetchInterval: (q) => (q.state.data?.status === 'running' ? 4000 : false),
+  });
+  const advisorBusy = advisorStatus.data?.status === 'running';
+
+  async function handleRunAdvisor() {
+    try {
+      await runAdvisor(campaign);
+      setInfo('📈 เริ่มวิเคราะห์ Performance…');
+      await advisorStatus.refetch();
+    } catch (error) {
+      setInfo(`⚠️ ${apiErrorMessage(error)}`);
+    }
+  }
+
+  useEffect(() => {
+    const state = advisorStatus.data;
+    if (!state || state.status === 'idle') return;
+    if (state.status === 'running') setInfo(`📈 ${state.message || 'กำลังวิเคราะห์…'}`);
+    else if (state.status === 'failed') setInfo(`⚠️ ${state.message || 'วิเคราะห์ไม่สำเร็จ'}`);
+    else if (state.status === 'success' && state.message) setInfo(`✅ ${state.message}`);
+  }, [advisorStatus.data]);
+
   // Reload the breakdown once a comment run finishes, and surface its progress
   // in the same status line everything else writes to.
   const commentsDone = commentStatus.data?.status === 'success';
@@ -326,6 +354,8 @@ export function ReportView({
               commentsBusy={commentsBusy}
               commentCount={comments.data?.total ?? 0}
               onRefreshComments={() => void handleRefreshComments()}
+              advisorBusy={advisorBusy}
+              onRunAdvisor={() => void handleRunAdvisor()}
               onStatus={setInfo}
             />
             <div className="mt-1 text-xs text-muted-foreground">
@@ -441,7 +471,11 @@ export function ReportView({
               prices, so neither /v/ links nor the ?view=1 preview render it. */}
           {!viewOnly && !influencerView ? (
             <div className="mb-5">
-              <AdvisorPanel campaign={campaign} />
+              <AdvisorPanel
+                campaign={campaign}
+                running={advisorBusy}
+                statusMessage={advisorStatus.data?.message}
+              />
             </div>
           ) : null}
 
