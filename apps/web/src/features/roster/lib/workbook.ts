@@ -481,7 +481,11 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
         display: (colIsIndex ? '' : colRaw) || username,
         group,
         subgroup: cSub >= 0 ? text(row[cSub]) : '',
-        links: dedupeLinks(workUrls),
+        // Profile links ride along AFTER work links: they cost nothing (the
+        // refresh skips them for scraping) and they are the only way the
+        // report can link a name to its channel. Work links first, so the
+        // roster's primary link stays the post when both exist.
+        links: dedupeLinks([...workUrls, ...profileUrls]),
         followers,
         cost_thb: cost,
         boost_thb: boost,

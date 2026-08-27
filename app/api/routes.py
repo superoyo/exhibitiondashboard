@@ -24,6 +24,7 @@ from app.models import Campaign, ImageCache, Kol, ReportKol, ReportPost
 from app.report_refresh import (
     _PLATFORM_LABELS,
     fetch_profiles,
+    is_profile_link,
     kol_links,
     refresh_report,
     state_for,
@@ -686,6 +687,21 @@ def report_data(campaign: str = "pao", session: Session = Depends(db_dependency)
     with_data = 0
     for k in roster:
         links = kol_links(k)
+        # The KOL's profile page per platform, when the planner's file supplied
+        # one — clicking a name should land on the channel, not nowhere. Rows
+        # without one simply aren't links (the team's call: ไม่ใส่ก็ช่างมัน).
+        profile_by_plat = {ln["platform"]: ln["url"] for ln in links
+                           if ln.get("url") and is_profile_link(ln["platform"], ln["url"])}
+        # Rows are driven by WORK links only. A profile link is identity, not a
+        # post: giving it a row of its own next to the post's row would double
+        # every stat, and putting it in `url` would flip the influencer view's
+        # Active/Waiting split. Profile-only KOLs still get a per-platform row
+        # (correct badge, zero stats) with the profile reachable via profile_url.
+        links = [ln for ln in links
+                 if not (ln.get("url") and is_profile_link(ln["platform"], ln["url"]))]
+        if not links and profile_by_plat:
+            links = [{"platform": plat, "url": "", "handle": k.username.lower()}
+                     for plat in profile_by_plat]
         if not links:
             # linkless KOL: surface its best existing post on ANY platform, so
             # legacy/scraped data still shows instead of a permanent zero row
@@ -715,6 +731,7 @@ def report_data(campaign: str = "pao", session: Session = Depends(db_dependency)
                 "saves": p.saves if p else 0,
                 "posted": (p.posted_at.date().isoformat() if p and p.posted_at else ""),
                 "url": ln["url"] or (p.url if p else "") or "",
+                "profile_url": profile_by_plat.get(plat, ""),
                 "thumb": (p.cover_url if p else "") or "",
                 "avatar": (p.avatar_url if p else "") or k.avatar_url or "",
                 "has_data": bool(p),

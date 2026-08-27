@@ -27,7 +27,12 @@ export interface ReportRecord {
   saves: number;
   /** ISO date (yyyy-mm-dd) or '' when unknown. */
   posted: string;
+  /** The post link ('' when nothing posted yet — the influencer view's
+   *  Active/Waiting split depends on this staying post-only). */
   url: string;
+  /** The KOL's channel/profile page, when the planner's file supplied one —
+   *  '' otherwise, and then the name simply isn't a link. */
+  profile_url: string;
   thumb: string;
   avatar: string;
   has_data: boolean;

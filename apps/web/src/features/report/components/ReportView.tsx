@@ -51,6 +51,7 @@ const COST_LABELS: Record<string, string> = {
   // labelled so this line reads as part of the deck's production cost.
   tiein: 'หา tie-in shot (ปุ่ม PowerPoint)',
   profiles: 'ดึงรูปโปรไฟล์',
+  advisor: 'Performance Analysis (ค่า AI)',
 };
 
 /**

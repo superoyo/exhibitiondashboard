@@ -186,7 +186,17 @@ const parse = (wb) => parseWorkbook(XLSX, wb);
   );
   const kols = parse(wb).kols;
   assert.equal(kols[0].username, 'realhandle', 'profile link should win over the post link');
-  console.log('✅ account link preferred over post link for the username');
+  // ...and the profile link is KEPT (after the work link), so the report can
+  // link the name to the channel. It costs nothing — refresh never scrapes it.
+  assert.equal(kols[0].links.length, 2, 'both links kept');
+  assert.ok(
+    kols[0].links[0].url.includes('/video/'),
+    'work link stays first (it remains the primary)',
+  );
+  assert.ok(
+    kols[0].links.some((l) => l.url === 'https://www.tiktok.com/@realhandle'),
+    'profile link kept for the clickable name');
+  console.log('✅ account link preferred over post link for the username (and kept)');
 }
 
 // ---- planner commercial columns: cost / boost / KPI ------------------------

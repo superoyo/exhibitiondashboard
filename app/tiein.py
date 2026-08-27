@@ -116,7 +116,9 @@ def _api_error_thai(r) -> str:
 
 
 def _claude(content: list, max_tokens: int = 1500,
-            model: Optional[str] = None) -> Optional[str]:
+            model: Optional[str] = None, with_usage: bool = False):
+    """Returns the reply text — or (text, usage_dict) when with_usage=True, so a
+    caller can bill its own run from the API's actual token counts."""
     from app.settings import get_anthropic_key
     key = get_anthropic_key()
     if not key:
@@ -138,7 +140,10 @@ def _claude(content: list, max_tokens: int = 1500,
     data = r.json()
     # thinking blocks are type "thinking", so they never reach the parsed text
     parts = [b.get("text", "") for b in data.get("content", []) if b.get("type") == "text"]
-    return "".join(parts).strip()
+    text = "".join(parts).strip()
+    if with_usage:
+        return text, (data.get("usage") or {})
+    return text
 
 
 _AI_STATUS_CACHE: dict = {"t": 0.0, "data": None}

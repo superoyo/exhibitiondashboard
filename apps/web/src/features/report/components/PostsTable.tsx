@@ -242,7 +242,20 @@ export function PostsTable({
                     src={row.avatar}
                     className="size-10 flex-none rounded-full bg-slate-200 object-cover"
                   />
-                  @{row.username}{' '}
+                  {row.profile_url ? (
+                    // The channel page, straight from the planner's file. Rows
+                    // without one aren't links — no guessed URLs.
+                    <a
+                      href={row.profile_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:underline"
+                    >
+                      @{row.username} ↗
+                    </a>
+                  ) : (
+                    <>@{row.username}</>
+                  )}{' '}
                   <PlatformBadge platform={row.platform} label={row.platform_label} />
                 </span>
               </td>

@@ -39,7 +39,12 @@ function urlsNeedingResolution(kols: BulkKol[]): string[] {
   return [
     ...new Set(
       kols.flatMap((k) =>
-        (k.links ?? []).filter((l) => !l.handle || !postIdOf(l.platform, l.url)).map((l) => l.url),
+        (k.links ?? [])
+          // Profile links with a handle are already canonical — resolving them
+          // would add a slow HTTP round-trip per KOL for nothing.
+          .filter((l) => !(l.handle && isProfileUrl(l.url)))
+          .filter((l) => !l.handle || !postIdOf(l.platform, l.url))
+          .map((l) => l.url),
       ),
     ),
   ];

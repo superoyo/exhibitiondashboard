@@ -40,6 +40,25 @@ log = logging.getLogger("advisor")
 ADVISOR_MODEL: str = os.getenv("ADVISOR_MODEL", "claude-opus-5")
 ADVISOR_MAX_TOKENS = 20000
 
+# First-party API rates, USD per MILLION tokens (input, output) — used to turn
+# the response's actual usage counts into a recorded cost, so the report's
+# spend table finally shows an AI line instead of "ไม่ขึ้นในตาราง". Output
+# includes thinking tokens. Unknown model -> no line rather than a wrong one.
+_PRICE_PER_MTOK = {
+    "claude-opus-5": (5.0, 25.0),
+    "claude-sonnet-5": (2.0, 10.0),
+    "claude-haiku-4-5": (1.0, 5.0),
+}
+
+
+def _run_cost_usd(model: str, usage: dict) -> Optional[float]:
+    rates = next((v for k, v in _PRICE_PER_MTOK.items() if model.startswith(k)), None)
+    if not rates:
+        return None
+    cost = (usage.get("input_tokens") or 0) / 1e6 * rates[0] \
+        + (usage.get("output_tokens") or 0) / 1e6 * rates[1]
+    return round(cost, 4)
+
 # Five rungs, matching apps/web/src/features/report/lib/tier.ts (Mid was merged
 # into Macro at the team's request). If one side changes, change both.
 def _tier(followers: int) -> Optional[str]:
@@ -227,8 +246,16 @@ def run_advisor(campaign: str) -> dict:
                   f"วันนี้คือ {today} (ใช้คำนวณอายุโพสต์)\n"
                   f"มี KOL ที่ยังไม่ลงงานอีก {pending} คน (นับใน pending_count)\n\n"
                   f"ข้อมูลรายโพสต์:\n{json.dumps(rows, ensure_ascii=False)}")
-        reply = _claude([{"type": "text", "text": prompt}],
-                        max_tokens=ADVISOR_MAX_TOKENS, model=ADVISOR_MODEL)
+        reply, usage = _claude([{"type": "text", "text": prompt}],
+                               max_tokens=ADVISOR_MAX_TOKENS, model=ADVISOR_MODEL,
+                               with_usage=True)
+        cost = _run_cost_usd(ADVISOR_MODEL, usage or {})
+        if cost:
+            try:
+                from app.settings import add_cost
+                add_cost(campaign, cost, kind="advisor")
+            except Exception:  # noqa: BLE001 — cost tracking must not break the run
+                pass
         try:
             result = json.loads(_FENCE.sub("", (reply or "").strip()))
         except (ValueError, TypeError):
@@ -250,7 +277,8 @@ def run_advisor(campaign: str) -> dict:
         n = len(result.get("kols") or [])
         st.update(status="success",
                   message=f"วิเคราะห์แล้ว {n} คนที่ลงงาน · {pending} คนยังไม่ลงงาน",
-                  finished_at=dt.datetime.now(config.TZ).isoformat(), posts=n)
+                  finished_at=dt.datetime.now(config.TZ).isoformat(), posts=n,
+                  cost_usd=cost)
         return {"status": "success", "kols": n}
     except Exception as exc:  # noqa: BLE001
         log.exception("advisor[%s] failed", campaign)

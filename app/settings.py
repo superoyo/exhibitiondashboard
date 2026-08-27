@@ -86,6 +86,9 @@ COST_KINDS = {
     # the cost of producing the deck, not as some job they never pressed.
     "tiein": "หา tie-in shot (ขั้นแรกของปุ่ม PowerPoint)",
     "profiles": "ดึงรูปโปรไฟล์",
+    # AI spend (Anthropic), unlike the four Apify lines above — billed from the
+    # response's actual token usage. The only AI cost the table tracks so far.
+    "advisor": "Performance Analysis (ค่า AI)",
 }
 
 
