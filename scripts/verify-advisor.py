@@ -56,6 +56,10 @@ with eng.begin() as c:
         "('waitkol','Wait','Influ','dm',9000,true,1,NULL,NULL,NULL,NULL)"),
         {"k": json.dumps([{"metric": "views", "target": 100000}]), "v": VID_LINKS})
     c.execute(sa.text(
+        "insert into report_group_kpis (campaign, group_name, kpi_json) "
+        "values ('dm','Influ',:g)"),
+        {"g": json.dumps([{"metric": "views", "target": 500000}])})
+    c.execute(sa.text(
         "insert into report_posts (campaign, username, platform, video_id, url, "
         "views, likes, comments, shares, saves, posted_at) values "
         "('dm','vidkol','tiktok','dm_t_1','https://www.tiktok.com/@vidkol/video/1',"
@@ -145,9 +149,24 @@ check("30000" not in recs_json and '"cost' not in recs_json
       and '"boost' not in recs_json and '"kpis"' not in recs_json,
       "no money fields in open records")
 check(cl.get("/api/report/advisor?campaign=dm").status_code == 401,
-      "advisor without login → 401")
-check("cost" not in cl.get("/api/view/Tok111222333/comments").text.lower(),
-      "client link carries nothing of the advisor")
+      "advisor without login → 401 (campaign keys are guessable)")
+
+# The client LINK shows the full commercial picture + the stored analysis
+# (team decision 2026-09-01) — token-addressed, no session needed.
+r = cl.get("/api/view/Tok111222333/advisor")
+check(r.status_code == 200 and r.json()["result"]["posts"][0]["grade"] == "ON_TRACK",
+      "client link reads the stored analysis by token")
+r = cl.get("/api/view/Tok111222333/commercial")
+j = r.json()
+check(r.status_code == 200
+      and j["kols"]["vidkol"] == {"cost_thb": 30000.0, "boost_thb": 5000.0,
+                                  "kpis": [{"metric": "views", "target": 100000}]}
+      and "waitkol" not in j["kols"]
+      and j["group_kpis"] == {"Influ": [{"metric": "views", "target": 500000}]},
+      f"client link reads KPI/price/boost + group KPIs by token: {r.text[:120]}")
+check(cl.get("/api/view/WRONGTOKEN00/advisor").status_code == 404
+      and cl.get("/api/view/WRONGTOKEN00/commercial").status_code == 404,
+      "wrong token → 404, nothing served")
 
 from app.db import engine as app_engine  # noqa: E402
 app_engine.dispose()

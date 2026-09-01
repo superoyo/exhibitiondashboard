@@ -4,15 +4,17 @@ import { useEffect } from 'react';
 
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { getAdvisor } from '@/features/report/api/reportApi';
+import { getAdvisor, getViewAdvisor } from '@/features/report/api/reportApi';
 
 /**
  * Performance Analysis, spec v2: one GRADE line per post, anchored to the sold
  * target — the team judged v1's verdicts and talking points "กว้างและเยอะไป".
  * Display only; the trigger lives in the top action bar.
  *
- * INTERNAL ONLY: the analysis input carries selling prices (weighed, never
- * echoed). Mounted behind !viewOnly; endpoints require login.
+ * Shown on the client link too (2026-09-01): the OUTPUT is grades and
+ * engagement figures only — the prompt bans money in it, even though the
+ * analysis input weighs selling prices. On a /v/ link the stored result is
+ * read through the token endpoint; RUNNING an analysis stays logged-in.
  */
 
 const GRADE: Record<AdvisorGrade, { label: string; chip: string; order: number }> = {
@@ -45,15 +47,21 @@ export function AdvisorPanel({
   campaign,
   running,
   statusMessage,
+  viewOnly = false,
+  viewToken = '',
 }: {
   campaign: string;
   /** True while a run started from the top button is in progress. */
   running: boolean;
   statusMessage?: string;
+  /** Client-facing: no "press the button" hints — the reader has no button. */
+  viewOnly?: boolean;
+  /** Set on /v/ links (no session): read the stored result by token instead. */
+  viewToken?: string;
 }) {
   const advisor = useQuery({
-    queryKey: ['report', 'advisor', campaign],
-    queryFn: () => getAdvisor(campaign),
+    queryKey: ['report', 'advisor', campaign, viewToken],
+    queryFn: () => (viewToken ? getViewAdvisor(viewToken) : getAdvisor(campaign)),
     enabled: Boolean(campaign),
   });
 
@@ -85,10 +93,15 @@ export function AdvisorPanel({
     return acc;
   }, {});
 
+  // A client can't run an analysis, so a card full of "press the button"
+  // would only advertise a control they don't have — show the panel to them
+  // only once a result in the current format exists.
+  if (viewOnly && (!result || staleFormat)) return null;
+
   return (
     <Card>
       <CardContent className="p-4">
-        <h3 className="mb-1 font-semibold">📈 Performance Analysis (เฉพาะทีม)</h3>
+        <h3 className="mb-1 font-semibold">📈 Performance Analysis</h3>
 
         {running ? (
           <p className="mb-2 text-sm text-muted-foreground">
@@ -118,7 +131,7 @@ export function AdvisorPanel({
               {ageDays >= 7 ? (
                 <span className="font-semibold text-amber-700">
                   {' '}
-                  · ผ่านมา {ageDays} วัน — กดวิเคราะห์ใหม่ก่อนใช้
+                  · ผ่านมา {ageDays} วัน{viewOnly ? '' : ' — กดวิเคราะห์ใหม่ก่อนใช้'}
                 </span>
               ) : null}
               {' · '}ลงงานแล้ว {result.posted_count} · รอลงงาน {result.pending_count}

@@ -1,4 +1,5 @@
 import type { Platform } from './platform.js';
+import type { KolKpi } from './roster.js';
 
 /**
  * One row of `GET /api/report/data` — a single KOL on a single platform, showing
@@ -255,6 +256,17 @@ export interface AdvisorState {
   generated_at?: string;
   model?: string;
   result?: AdvisorResult;
+}
+
+/**
+ * `GET /api/view/:token/commercial` — sold KPI / price / boost per KOL plus the
+ * group KPIs, for the client link. Token-addressed like the comment reads (the
+ * campaign-key endpoints stay clean of money); team decision of 2026-09-01 that
+ * the client link shows the full commercial picture.
+ */
+export interface ViewCommercialResponse {
+  kols: Record<string, { cost_thb: number | null; boost_thb: number | null; kpis: KolKpi[] }>;
+  group_kpis: Record<string, KolKpi[]>;
 }
 
 /** `GET /api/report/packshot` */

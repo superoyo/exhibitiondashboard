@@ -152,6 +152,18 @@
     },
     {
       "method": "GET",
+      "path": "/api/view/sometoken/commercial",
+      "needsAuth": false,
+      "why": "client link shows sold KPI/price/boost (team decision 2026-09-01); token-addressed so campaign-key endpoints stay clean of money"
+    },
+    {
+      "method": "GET",
+      "path": "/api/view/sometoken/advisor",
+      "needsAuth": false,
+      "why": "client link reads the stored Performance Analysis; its v2 output is grades only — the prompt bans money figures in it"
+    },
+    {
+      "method": "GET",
       "path": "/api/report/comments",
       "needsAuth": true,
       "why": "keyed on the guessable campaign key — must stay behind login; clients use /api/view/<token>/comments"
@@ -172,7 +184,7 @@
       "method": "GET",
       "path": "/api/report/advisor",
       "needsAuth": true,
-      "why": "advisor result quotes CPV/CPE derived from selling prices — internal only"
+      "why": "campaign-key-addressed read stays behind login; client links use the token-addressed /api/view/<token>/advisor instead"
     },
     {
       "method": "POST",

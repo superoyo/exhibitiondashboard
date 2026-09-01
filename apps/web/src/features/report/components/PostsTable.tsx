@@ -37,9 +37,11 @@ const COLUMNS: Array<{ key: SortKey; label: string; align?: 'right'; metric?: tr
   { key: 'posted', label: 'โพสต์เมื่อ' },
 ];
 
-/** Per-KOL commercial data, keyed by lowercase username. Comes from the
- *  AUTHENTICATED roster endpoint — when absent (client link, ?view=1 preview,
- *  not logged in) the columns simply do not exist. */
+/** Per-KOL commercial data, keyed by lowercase username. Logged-in views read
+ *  it from the roster endpoint; /v/ client links read it token-addressed
+ *  (team decision 2026-09-01: the client link shows the commercial picture).
+ *  When absent (influencer list, campaign without planner data) the columns
+ *  simply do not exist. */
 export interface CommercialByUser {
   [username: string]: {
     cost_thb?: number | null;

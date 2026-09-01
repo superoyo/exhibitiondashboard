@@ -882,7 +882,49 @@ def view_comments_list(view_token: str, category: str = "", offset: int = 0,
                          max(0, offset), limit)
 
 
-# ---- Performance advisor (internal only — input includes selling prices) ----
+@router.get("/view/{view_token}/commercial")
+def view_commercial(view_token: str, session: Session = Depends(db_dependency)):
+    """Per-KOL sold KPI / price / boost + group KPIs, for a client link.
+
+    These figures used to be login-only everywhere. On 2026-09-01 the team
+    decided the client link shows the full commercial picture — the client
+    bought these numbers. They stay OFF /api/report/data on purpose: that
+    endpoint is keyed by short guessable campaign keys, while this one needs
+    the 72-bit token, i.e. the link itself.
+    """
+    campaign = _view_campaign(view_token)
+    kols = {}
+    for k in session.scalars(select(ReportKol).where(
+            ReportKol.campaign == campaign, ReportKol.active.is_(True))).all():
+        kpis = _kpis_of(k)
+        if k.cost_thb is None and k.boost_thb is None and not kpis:
+            continue
+        kols[k.username.lower()] = {
+            "cost_thb": float(k.cost_thb) if k.cost_thb is not None else None,
+            "boost_thb": float(k.boost_thb) if k.boost_thb is not None else None,
+            "kpis": kpis,
+        }
+    from app.models import ReportGroupKpi
+    groups = {}
+    for row in session.scalars(select(ReportGroupKpi).where(
+            ReportGroupKpi.campaign == campaign)).all():
+        try:
+            groups[row.group_name] = json.loads(row.kpi_json)
+        except Exception:  # noqa: BLE001
+            groups[row.group_name] = []
+    return {"kols": kols, "group_kpis": groups}
+
+
+@router.get("/view/{view_token}/advisor")
+def view_advisor(view_token: str):
+    """The stored Performance Analysis for a client link — read-only; running
+    a new analysis stays a logged-in button. The v2 output is grades and
+    engagement figures only (money is banned from it by the prompt)."""
+    from app.advisor import stored
+    return stored(_view_campaign(view_token))
+
+
+# ---- Performance advisor (running it stays internal) ----
 
 @router.get("/report/advisor")
 def report_advisor(campaign: str = "pao"):

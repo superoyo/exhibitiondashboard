@@ -19,7 +19,12 @@ import {
   distinctPlatforms,
   sumBy,
 } from '@/features/report/lib/metrics';
-import { getAdvisorStatus, runAdvisor, startCommentRefresh } from '@/features/report/api/reportApi';
+import {
+  getAdvisorStatus,
+  getViewCommercial,
+  runAdvisor,
+  startCommentRefresh,
+} from '@/features/report/api/reportApi';
 import {
   useCommentStatus,
   useComments,
@@ -154,17 +159,26 @@ export function ReportView({
   });
 
   const report = useReportData(campaign);
-  // Commercial fields (selling price / boost budget / KPI) come from the
-  // AUTHENTICATED roster endpoint, never from the open report data — a client
-  // link forwarded to a KOL must not show what they are resold at. Fetched only
-  // on the internal view; on ?view=1 and /v/ the columns simply don't exist.
-  const roster = useRoster('report', campaign, !viewOnly);
+  // Commercial fields (selling price / boost budget / KPI). The client link
+  // shows them too since 2026-09-01 (team decision) — but they still never ride
+  // on the open, campaign-key-addressed report data. Logged-in views (internal
+  // and the ?view=1 preview) read the roster endpoints; a /v/ token link reads
+  // the token-addressed endpoint, exactly like the comment panel does.
+  // The influencer list (/vi/) shows none of this — that link answers "have I
+  // posted", and its readers are the KOLs themselves.
+  const roster = useRoster('report', campaign, !influencerView && !viewToken);
   const groupKpis = useQuery({
     queryKey: ['roster', 'groupkpi', campaign],
     queryFn: () => getGroupKpis(campaign),
-    enabled: !viewOnly && Boolean(campaign),
+    enabled: !influencerView && !viewToken && Boolean(campaign),
+  });
+  const viewCommercial = useQuery({
+    queryKey: ['report', 'view-commercial', viewToken],
+    queryFn: () => getViewCommercial(viewToken),
+    enabled: !influencerView && Boolean(viewToken),
   });
   const commercial = useMemo(() => {
+    if (viewToken) return viewCommercial.data?.kols ?? {};
     const map: CommercialByUser = {};
     for (const k of roster.data ?? []) {
       if (k.cost_thb != null || k.boost_thb != null || (k.kpis ?? []).length > 0) {
@@ -176,10 +190,11 @@ export function ReportView({
       }
     }
     return map;
-  }, [roster.data]);
+  }, [viewToken, viewCommercial.data, roster.data]);
+  const groupKpiData = (viewToken ? viewCommercial.data?.group_kpis : groupKpis.data) ?? {};
   // Columns appear only when at least one KOL actually carries a value —
   // a campaign without planner data keeps its familiar table.
-  const hasCommercial = !viewOnly && Object.keys(commercial).length > 0;
+  const hasCommercial = !influencerView && Object.keys(commercial).length > 0;
 
   const refreshStatus = useRefreshStatus(campaign, !viewOnly);
   const resetCost = useResetCost(campaign);
@@ -467,15 +482,18 @@ export function ReportView({
             </div>
           )}
 
-          {/* Performance advisor — verdicts per posted KOL from the team's own
-              analyst prompt. STRICTLY internal: its input carries selling
-              prices, so neither /v/ links nor the ?view=1 preview render it. */}
-          {!viewOnly && !influencerView ? (
+          {/* Performance advisor — grades per posted KOL. Shown to the client
+              too (its v2 output is engagement figures only; the prompt bans
+              money in it) — the analysis is part of what the client pays for.
+              Off in the influencer view: KOLs don't get each other's grades. */}
+          {!influencerView ? (
             <div className="mb-5">
               <AdvisorPanel
                 campaign={campaign}
                 running={advisorBusy}
                 statusMessage={advisorStatus.data?.message}
+                viewOnly={viewOnly}
+                viewToken={viewToken}
               />
             </div>
           ) : null}
@@ -535,11 +553,11 @@ export function ReportView({
                 </div>
                 {/* Group-total KPIs ("7M Imp across Micro Package") — a target
                     that belongs to the whole group, checked against the SUM of
-                    that group's rows. Internal view only, like the columns. */}
-                {!viewOnly && Object.keys(groupKpis.data ?? {}).length > 0 ? (
+                    that group's rows. On the client link too, like the columns. */}
+                {Object.keys(groupKpiData).length > 0 ? (
                   <div className="mb-3 space-y-1 rounded-lg border border-brand-400 bg-brand-200/40 p-2 text-xs">
-                    <div className="font-semibold">📦 KPI รายกลุ่ม (เฉพาะทีม)</div>
-                    {Object.entries(groupKpis.data ?? {}).map(([g, kpis]) => {
+                    <div className="font-semibold">📦 KPI รายกลุ่ม</div>
+                    {Object.entries(groupKpiData).map(([g, kpis]) => {
                       const members = allRows.filter((r) => r.biggroup === g || r.category === g);
                       const totals = {
                         views: members.reduce((s, r) => s + r.views, 0),
@@ -552,8 +570,8 @@ export function ReportView({
                           </span>
                           {members.length === 0 ? (
                             <span className="text-amber-700">
-                              ⚠️ ไม่มี KOL ในกลุ่มชื่อนี้แล้ว (กลุ่มอาจถูกเปลี่ยนชื่อ —
-                              แก้ได้ในหน้ารายชื่อ)
+                              ⚠️ ไม่มี KOL ในกลุ่มชื่อนี้แล้ว
+                              {viewOnly ? '' : ' (กลุ่มอาจถูกเปลี่ยนชื่อ — แก้ได้ในหน้ารายชื่อ)'}
                             </span>
                           ) : (
                             kpis.map((k) => (

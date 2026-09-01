@@ -8,6 +8,7 @@ import type {
   PackshotSaveResult,
   PackshotState,
   ReportDataResponse,
+  ViewCommercialResponse,
 } from '@kol/shared';
 
 import { api } from '@/lib/axios';
@@ -125,12 +126,29 @@ export async function getCommentStatus(campaign: string): Promise<JobState> {
   return data;
 }
 
+/**
+ * Commercial data (sold KPI / price / boost / group KPIs) for a client link.
+ * Token-addressed for the same reason as the comment reads above. The logged-in
+ * views keep reading these from the roster endpoints instead.
+ */
+export async function getViewCommercial(viewToken: string): Promise<ViewCommercialResponse> {
+  const { data } = await api.get<ViewCommercialResponse>(
+    `/view/${encodeURIComponent(viewToken)}/commercial`,
+  );
+  return data;
+}
+
 // ---- Performance advisor ----------------------------------------------------
-// Internal only: the analysis input includes selling prices, so none of this is
-// ever fetched on a client link.
+// Reading the stored analysis works on client links too (token-addressed);
+// RUNNING one stays a logged-in button.
 
 export async function getAdvisor(campaign: string): Promise<AdvisorState> {
   const { data } = await api.get<AdvisorState>('/report/advisor', { params: { campaign } });
+  return data;
+}
+
+export async function getViewAdvisor(viewToken: string): Promise<AdvisorState> {
+  const { data } = await api.get<AdvisorState>(`/view/${encodeURIComponent(viewToken)}/advisor`);
   return data;
 }
 
