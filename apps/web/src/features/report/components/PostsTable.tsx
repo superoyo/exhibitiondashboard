@@ -152,17 +152,56 @@ export function PostsTable({
     );
   }
 
-  const sorted = useMemo(() => {
-    return [...rows].sort((a, b) => {
-      const x = a[sortKey];
-      const y = b[sortKey];
+  // One KOL = one visual block (team feedback, Shokubutsu 2026-09-01): a KOL
+  // posting on several platforms used to scatter across the table — the TikTok
+  // row ranked high while the same person's Facebook/YouTube rows sank to the
+  // zero-views bottom, and the money/KPI columns repeated on each row as if
+  // billed per platform. Rows are grouped by person; name, หมวด, ค่าตัว, บูส
+  // and KPI render once per group, stats stay one line per platform.
+  const groups = useMemo(() => {
+    const order: string[] = [];
+    const by = new Map<string, ReportRecordDerived[]>();
+    for (const r of rows) {
+      const k = r.username.toLowerCase();
+      const list = by.get(k);
+      if (list) list.push(r);
+      else {
+        by.set(k, [r]);
+        order.push(k);
+      }
+    }
+    // Within a group: best-performing platform first, zero rows last.
+    return order.map((k) => {
+      const members = [...(by.get(k) ?? [])].sort(
+        (a, b) => b.views - a.views || a.platform_label.localeCompare(b.platform_label),
+      );
+      return { key: k, rows: members };
+    });
+  }, [rows]);
+
+  // Sorting orders GROUPS: additive metrics by the person's sum across
+  // platforms, followers/ER by their best platform, date by the latest post —
+  // so a multi-platform KOL holds one position instead of three.
+  const sortedGroups = useMemo(() => {
+    const value = (g: { rows: ReportRecordDerived[] }): string | number => {
+      const first = g.rows[0];
+      if (!first) return '';
+      if (sortKey === 'category' || sortKey === 'username') return first[sortKey];
+      if (sortKey === 'posted') return g.rows.reduce((m, r) => (r.posted > m ? r.posted : m), '');
+      if (sortKey === 'followers' || sortKey === 'er')
+        return Math.max(...g.rows.map((r) => Number(r[sortKey]) || 0));
+      return g.rows.reduce((s, r) => s + (Number(r[sortKey]) || 0), 0);
+    };
+    return [...groups].sort((a, b) => {
+      const x = value(a);
+      const y = value(b);
       if (typeof x === 'string' || typeof y === 'string') {
         // localeCompare so Thai category/KOL names order correctly.
         return ascending ? String(x).localeCompare(String(y)) : String(y).localeCompare(String(x));
       }
       return ascending ? Number(x) - Number(y) : Number(y) - Number(x);
     });
-  }, [rows, sortKey, ascending]);
+  }, [groups, sortKey, ascending]);
 
   function toggleSort(key: SortKey) {
     if (key === sortKey) setAscending((a) => !a);
@@ -204,7 +243,7 @@ export function PostsTable({
           </tr>
         </thead>
         <tbody>
-          {sorted.length === 0 && (
+          {sortedGroups.length === 0 && (
             <tr>
               <td
                 colSpan={columns.length + 1 + (showMoney ? 3 : 0)}
@@ -214,100 +253,141 @@ export function PostsTable({
               </td>
             </tr>
           )}
-          {sorted.map((row) => (
-            <tr
-              key={`${row.username}-${row.platform}-${row.url}`}
-              className="border-b border-border hover:bg-black/5"
-            >
-              {showMoney &&
-                (() => {
-                  const c = commercial?.[row.username.toLowerCase()];
-                  return (
-                    <>
-                      <td className="whitespace-nowrap py-2 pr-3 text-right tabular-nums">
-                        {c?.cost_thb != null ? baht(c.cost_thb) : ''}
-                      </td>
-                      <td className="whitespace-nowrap py-2 pr-3 text-right tabular-nums">
-                        {c?.boost_thb != null ? baht(c.boost_thb) : ''}
-                      </td>
-                    </>
-                  );
-                })()}
-              <td className="py-2 pr-3">
-                <span className="chip" style={{ background: colors.colorOf(row.category) }}>
-                  {row.category}
-                </span>
-              </td>
-              <td className="pr-3 font-medium">
-                <span className="inline-flex items-center gap-2">
-                  <CachedImage
-                    src={row.avatar}
-                    className="size-10 flex-none rounded-full bg-slate-200 object-cover"
-                  />
-                  {row.profile_url ? (
-                    // The channel page, straight from the planner's file. Rows
-                    // without one aren't links — no guessed URLs.
-                    <a
-                      href={row.profile_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hover:underline"
-                    >
-                      @{row.username} ↗
-                    </a>
-                  ) : (
-                    <>@{row.username}</>
-                  )}{' '}
-                  <PlatformBadge platform={row.platform} label={row.platform_label} />
-                </span>
-              </td>
-              {/* Tier under the count it derives from — no extra column. Absent
-                  (not "KOC") when followers are unknown; see tierOf(). */}
-              <td className="pr-3 text-right">
-                {fmt(row.followers)}
-                {(() => {
-                  const tier = tierOf(row.followers);
-                  return tier ? (
-                    <span
-                      className={`ml-1.5 rounded px-1.5 py-0.5 text-[10px] font-semibold ${tier.chip}`}
-                    >
-                      {tier.label}
-                    </span>
-                  ) : null;
-                })()}
-              </td>
-              {!hideMetrics && (
-                <>
-                  <td className="pr-3 text-right font-semibold">{fmtFull(row.views)}</td>
-                  <td className="pr-3 text-right">
-                    {row.likesHidden ? (
-                      <span
-                        className="text-xs text-muted-foreground"
-                        title="Instagram ซ่อนยอดไลก์ของโพสต์นี้ (ครีเอเตอร์เปิด hide like count)"
-                      >
-                        Hide
+          {sortedGroups.map((g) =>
+            g.rows.map((row, i) => {
+              const span = g.rows.length;
+              const grouped = span > 1;
+              const first = i === 0;
+              const last = i === span - 1;
+              // The one-per-person cells read from the whole group: the top
+              // platform's avatar, the first profile link the planner supplied.
+              const avatar = g.rows.find((r) => r.avatar)?.avatar ?? '';
+              const profileUrl = g.rows.find((r) => r.profile_url)?.profile_url ?? '';
+              return (
+                <tr
+                  key={`${row.username}-${row.platform}-${row.url}`}
+                  className={cn(
+                    'hover:bg-black/5',
+                    // Lighter line between a person's own platforms, full line
+                    // between people — the block reads as one KOL.
+                    last ? 'border-b border-border' : 'border-b border-border/40',
+                  )}
+                >
+                  {showMoney &&
+                    first &&
+                    (() => {
+                      const c = commercial?.[row.username.toLowerCase()];
+                      return (
+                        <>
+                          <td
+                            rowSpan={span}
+                            className="whitespace-nowrap py-2 pr-3 text-right tabular-nums"
+                          >
+                            {c?.cost_thb != null ? baht(c.cost_thb) : ''}
+                          </td>
+                          <td
+                            rowSpan={span}
+                            className="whitespace-nowrap py-2 pr-3 text-right tabular-nums"
+                          >
+                            {c?.boost_thb != null ? baht(c.boost_thb) : ''}
+                          </td>
+                        </>
+                      );
+                    })()}
+                  {first && (
+                    <td rowSpan={span} className="py-2 pr-3">
+                      <span className="chip" style={{ background: colors.colorOf(row.category) }}>
+                        {row.category}
                       </span>
-                    ) : (
-                      fmtFull(row.likes)
+                    </td>
+                  )}
+                  {first && (
+                    <td rowSpan={span} className="pr-3 font-medium">
+                      <span className="inline-flex items-center gap-2">
+                        <CachedImage
+                          src={avatar}
+                          className="size-10 flex-none rounded-full bg-slate-200 object-cover"
+                        />
+                        {profileUrl ? (
+                          // The channel page, straight from the planner's file.
+                          // Rows without one aren't links — no guessed URLs.
+                          <a
+                            href={profileUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:underline"
+                          >
+                            @{row.username} ↗
+                          </a>
+                        ) : (
+                          <>@{row.username}</>
+                        )}{' '}
+                        {/* Single-platform KOLs keep the badge by the name;
+                            grouped ones carry it per stat line instead. */}
+                        {!grouped && (
+                          <PlatformBadge platform={row.platform} label={row.platform_label} />
+                        )}
+                      </span>
+                    </td>
+                  )}
+                  {/* Tier under the count it derives from — no extra column. Absent
+                      (not "KOC") when followers are unknown; see tierOf(). */}
+                  <td className="whitespace-nowrap pr-3 text-right">
+                    {grouped && (
+                      <span className="mr-1.5">
+                        <PlatformBadge platform={row.platform} label={row.platform_label} />
+                      </span>
+                    )}
+                    {fmt(row.followers)}
+                    {(() => {
+                      const tier = tierOf(row.followers);
+                      return tier ? (
+                        <span
+                          className={`ml-1.5 rounded px-1.5 py-0.5 text-[10px] font-semibold ${tier.chip}`}
+                        >
+                          {tier.label}
+                        </span>
+                      ) : null;
+                    })()}
+                  </td>
+                  {!hideMetrics && (
+                    <>
+                      <td className="pr-3 text-right font-semibold">{fmtFull(row.views)}</td>
+                      <td className="pr-3 text-right">
+                        {row.likesHidden ? (
+                          <span
+                            className="text-xs text-muted-foreground"
+                            title="Instagram ซ่อนยอดไลก์ของโพสต์นี้ (ครีเอเตอร์เปิด hide like count)"
+                          >
+                            Hide
+                          </span>
+                        ) : (
+                          fmtFull(row.likes)
+                        )}
+                      </td>
+                      <td className="pr-3 text-right">{fmtFull(row.comments)}</td>
+                      <td className="pr-3 text-right">{fmtFull(row.shares)}</td>
+                      <td className="pr-3 text-right">{fmtFull(row.saves)}</td>
+                      <td className="pr-3 text-right">{erText(row)}</td>
+                    </>
+                  )}
+                  <td className="pr-3 text-muted-foreground">{row.posted || ''}</td>
+                  {showMoney && first && (
+                    <td rowSpan={span} className="pr-3 text-xs">
+                      {kpiCell(row.username)}
+                    </td>
+                  )}
+                  <td>
+                    {row.url && (
+                      <a href={row.url} target="_blank" rel="noopener noreferrer">
+                        เปิด ↗
+                      </a>
                     )}
                   </td>
-                  <td className="pr-3 text-right">{fmtFull(row.comments)}</td>
-                  <td className="pr-3 text-right">{fmtFull(row.shares)}</td>
-                  <td className="pr-3 text-right">{fmtFull(row.saves)}</td>
-                  <td className="pr-3 text-right">{erText(row)}</td>
-                </>
-              )}
-              <td className="pr-3 text-muted-foreground">{row.posted || ''}</td>
-              {showMoney && <td className="pr-3 text-xs">{kpiCell(row.username)}</td>}
-              <td>
-                {row.url && (
-                  <a href={row.url} target="_blank" rel="noopener noreferrer">
-                    เปิด ↗
-                  </a>
-                )}
-              </td>
-            </tr>
-          ))}
+                </tr>
+              );
+            }),
+          )}
         </tbody>
       </table>
     </div>
