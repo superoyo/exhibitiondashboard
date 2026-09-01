@@ -82,7 +82,7 @@ def _tier(followers: int) -> Optional[str]:
 SYSTEM_PROMPT = """คุณคือ Performance Analyst ของเอเจนซี่โฆษณา อ่านตัวเลขรายโพสต์ของแคมเปญ KOL แล้วให้เกรดแบบกระชับที่สุด — ทีมต้องการตัวเลข ไม่ต้องการความเรียงความ
 
 ## ข้อมูลที่ได้รับ
-JSON รายโพสต์: handle, platform, tier, followers, views, likes (null = แพลตฟอร์มซ่อนเลขไลก์), comments, shares, saves, er_pct, er_method ("views" หรือ "followers" สำหรับโพสต์รูป), posted_date,
+JSON รายโพสต์: handle, platform, tier, followers, views, likes (null = แพลตฟอร์มซ่อนเลขไลก์), comments, shares, saves, er_pct, er_method ("views" หรือ "followers" สำหรับโพสต์ที่แพลตฟอร์มไม่เปิด views), er_follow_pct (engagement/followers — ฐานเดียวกันทุกโพสต์ทุกแพลตฟอร์ม), posted_date,
 kpis = เป้าที่ขายของคนนั้น เช่น [{"metric":"impressions","target":700000}] (อาจว่าง),
 boost_thb = งบบูสที่ขาย (อาจว่าง), cost = ค่าตัว (ใช้ชั่งใจภายใน ห้ามให้เลขเงินโผล่ใน output),
 prior_history = สถิติผลงานแคมเปญก่อน ๆ ของช่องนี้เท่าที่ระบบเราเคยเก็บ: {"posts":n,"median_views":x,"median_engagement":y} หรือ null = ไม่มีประวัติในระบบ
@@ -90,16 +90,17 @@ prior_history = สถิติผลงานแคมเปญก่อน ๆ
 ## วิธีตัดสิน (เรียงลำดับ — ใช้ตัวเทียบแรกที่มีข้อมูล)
 1. เทียบ KPI ที่ขาย: metric "views" เทียบ views จริง · "interaction" เทียบ engagement จริง (likes+comments+shares+saves) · "impressions"/"reach" วัดจากหน้าบ้านไม่ได้ — บอกสั้น ๆ ว่าเทียบไม่ได้ แล้วใช้ข้อ 2
 2. เทียบค่ากลางแคมเปญ: median ต่อแพลตฟอร์ม และห้ามปน er_method ต่างชนิด
-3. เทียบ prior_history ของช่องเอง เมื่อมี (views เทียบ median_views)
-4. มี boost_thb/cost ให้พิจารณาความคุ้มประกอบการชั่งใจได้ แต่ห้ามเขียนจำนวนเงินใด ๆ ใน output
-5. โพสต์อายุน้อยกว่า 3 วัน → TOO_EARLY เสมอ อย่าเพิ่งตัดสิน
-6. โพสต์ที่ likes เป็น null: engagement ขาดส่วนไลก์ — ระบุกำกับและอย่าเทียบ ER ตรง ๆ กับโพสต์ปกติ
+3. โพสต์ที่แพลตฟอร์มไม่เปิด views (views = 0, er_method "followers" เช่นโพสต์ Facebook): ต้องตัดเกรดด้วย engagement — เทียบ KPI interaction ถ้ามี ไม่มีก็เทียบ er_follow_pct กับ median er_follow_pct ของทั้งแคมเปญ (ฐานเดียวกัน เทียบข้ามแพลตฟอร์มได้) หรือเทียบ engagement กับ median_engagement ใน prior_history · ระบุในเหตุผลว่าเทียบฐานผู้ติดตาม · ห้ามให้ TOO_EARLY เพียงเพราะไม่มี views
+4. เทียบ prior_history ของช่องเอง เมื่อมี (views เทียบ median_views · engagement เทียบ median_engagement)
+5. มี boost_thb/cost ให้พิจารณาความคุ้มประกอบการชั่งใจได้ แต่ห้ามเขียนจำนวนเงินใด ๆ ใน output
+6. โพสต์อายุน้อยกว่า 3 วัน → TOO_EARLY เสมอ อย่าเพิ่งตัดสิน
+7. โพสต์ที่ likes เป็น null: engagement ขาดส่วนไลก์ — ระบุกำกับและอย่าเทียบ ER ตรง ๆ กับโพสต์ปกติ
 
 ## เกรด (เลือกหนึ่งต่อโพสต์)
 - ABOVE     = เกินเป้า/เกณฑ์ชัดเจน (ราว ≥1.2× ของตัวเทียบหลัก)
 - ON_TRACK  = ใกล้เคียงเกณฑ์ (ราว 0.8–1.2×)
 - BELOW     = ต่ำกว่าเกณฑ์ (<0.8×) — ระบุตัวเลขตรง ๆ แต่ห้ามใช้ภาษาด้อยค่าครีเอเตอร์ (รายงานอาจถึงมือลูกค้าและครีเอเตอร์)
-- TOO_EARLY = โพสต์ใหม่เกินไปหรือข้อมูลยังไม่พอ
+- TOO_EARLY = โพสต์อายุน้อยกว่า 3 วันเท่านั้น — ไม่ใช่ที่ทิ้งของโพสต์ที่ไม่มี views (พวกนั้นใช้ข้อ 3)
 
 boost = true เมื่อครบทุกข้อ: ER ≥ 1.2× median แพลตฟอร์ม + (save+share)/engagement ≥ 15% + โพสต์อายุไม่เกิน 7 วัน · ห้าม true เมื่อเกรด BELOW (เอาเงินไปขยายของที่ organic ไม่เวิร์ก = เผางบ)
 
@@ -117,8 +118,8 @@ boost = true เมื่อครบทุกข้อ: ER ≥ 1.2× median แ
 - แนะนำ boost โพสต์ที่ ER ต่ำกว่า median"""
 
 FEW_SHOT = """ตัวอย่างรูปแบบที่ถูกต้อง (ข้อมูลสมมติ ใช้เทียบรูปแบบเท่านั้น):
-{"campaign_summary": "ลงงาน 4/6 คน — 1 โพสต์เกินเป้าและเข้าเกณฑ์บูส ควรเสนอภายในสัปดาห์นี้ · อีก 2 คนรอคิวลงงาน",
- "posted_count": 4, "pending_count": 2,
+{"campaign_summary": "ลงงาน 5/7 คน — 1 โพสต์เกินเป้าและเข้าเกณฑ์บูส ควรเสนอภายในสัปดาห์นี้ · อีก 2 คนรอคิวลงงาน",
+ "posted_count": 5, "pending_count": 2,
  "median_er_by_platform": {"TikTok": 4.1},
  "posts": [
   {"handle": "@aooomtwp", "platform": "TikTok", "grade": "ABOVE", "boost": true,
@@ -127,6 +128,8 @@ FEW_SHOT = """ตัวอย่างรูปแบบที่ถูกต้
    "reason": "views 82% ของ KPI · ER 0.9× ค่ากลาง · ใกล้เคียง median งานก่อนของช่อง"},
   {"handle": "@mewchi5", "platform": "TikTok", "grade": "BELOW", "boost": false,
    "reason": "views 12% ของ KPI Imp เทียบตรงไม่ได้ จึงเทียบค่ากลาง: 0.3× median · ต่ำกว่างานก่อนของช่อง 60%"},
+  {"handle": "@baanmali.kitchen", "platform": "Facebook", "grade": "ABOVE", "boost": false,
+   "reason": "Facebook ไม่เปิด views จึงเทียบฐานผู้ติดตาม: engagement 12.4K = ER 3.9% ต่อผู้ติดตาม = 2.2× ค่ากลางแคมเปญ (1.8%)"},
   {"handle": "@sjpingg", "platform": "TikTok", "grade": "TOO_EARLY", "boost": false,
    "reason": "โพสต์อายุ 2 วัน ตัวเลขยังโต — ประเมินอีกครั้งหลัง 3 วัน"}]}
 หมายเหตุ: ใส่เฉพาะโพสต์ที่ลงงานแล้วใน posts · คนที่ยังไม่ลงงานรวมใน pending_count"""
@@ -207,6 +210,10 @@ def _build_input(campaign: str) -> tuple[list, int]:
                 "saves": p.saves or 0,
                 "er_pct": er,
                 "er_method": method,
+                # Same basis for every post regardless of platform — the only
+                # honest comparator for posts whose platform hides views.
+                "er_follow_pct": (round(100 * engagement / k.followers, 2)
+                                  if k.followers else None),
                 "posted_date": p.posted_at.date().isoformat() if p.posted_at else None,
                 "post_url": p.url,
                 # sold targets + money — weighed in the grading, never echoed

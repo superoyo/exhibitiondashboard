@@ -60,6 +60,8 @@ with eng.begin() as c:
         "views, likes, comments, shares, saves, posted_at) values "
         "('dm','vidkol','tiktok','dm_t_1','https://www.tiktok.com/@vidkol/video/1',"
         " 63700,79,1,1,1,'2026-08-02'), "
+        "('dm','vidkol','facebook','dm_f_1','https://www.facebook.com/vidkol/posts/7',"
+        " 0,15000,300,1500,0,'2026-08-02'), "
         "('old','vidkol','tiktok','old_t_1','https://www.tiktok.com/@vidkol/video/9',"
         " 40000,300,10,5,20,'2026-05-01'), "
         "('old','vidkol','tiktok','old_t_2','https://www.tiktok.com/@vidkol/video/8',"
@@ -109,13 +111,24 @@ check(captured.get("model") == "claude-opus-5", f"model: {captured.get('model')}
 check("ABOVE" in captured["prompt"] and "TOO_EARLY" in captured["prompt"],
       "v2 grading prompt in use")
 rows = json.loads(captured["prompt"].split("ข้อมูลรายโพสต์:\n", 1)[1])
-vrow = next(r for r in rows if r["handle"] == "@vidkol")
+vrow = next(r for r in rows if r["handle"] == "@vidkol" and r["platform"] == "TikTok")
 check(vrow["kpis"] == [{"metric": "views", "target": 100000}],
       f"sold KPI reaches the model: {vrow['kpis']}")
 check(vrow["boost_thb"] == 5000.0, "boost budget reaches the model")
 check(vrow["prior_history"] == {"posts": 2, "median_views": 50000,
                                 "median_engagement": 447},
       f"channel history = medians of OUR past campaigns: {vrow['prior_history']}")
+
+# Facebook post with no view count → graded on the engagement basis, never
+# dumped into TOO_EARLY (Kirei Kirei feedback, 2026-09-01).
+frow = next(r for r in rows if r["platform"] == "Facebook")
+check(frow["views"] == 0 and frow["er_method"] == "followers"
+      and frow["er_pct"] == 11.2,
+      f"no-views post gets follower-based ER: {frow['er_pct']}/{frow['er_method']}")
+check(frow["er_follow_pct"] == 11.2 and vrow["er_follow_pct"] == 0.05,
+      "er_follow_pct on EVERY post — same-basis comparator across platforms")
+check("ห้ามให้ TOO_EARLY เพียงเพราะไม่มี views" in captured["prompt"],
+      "prompt forbids parking no-views posts in TOO_EARLY")
 
 print("\n-- storage, billing, auth --")
 r = cl.get("/api/report/advisor?campaign=dm", headers=H)
