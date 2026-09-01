@@ -226,22 +226,18 @@ export interface CommentExportResponse {
 
 // ---- Performance advisor ----------------------------------------------------
 
-/** One verdict per posted KOL, produced by the team's analyst prompt. */
-export type AdvisorVerdict = 'BOOST_NOW' | 'REBOOK' | 'SOLID' | 'WATCH' | 'PENDING';
+/** Grade anchored to the sold target — spec v2 (2026-08-27), replacing the
+ *  verdict/talking-point shape the team found too verbose. */
+export type AdvisorGrade = 'ABOVE' | 'ON_TRACK' | 'BELOW' | 'TOO_EARLY';
 
-export interface AdvisorKol {
+export interface AdvisorPost {
   handle: string;
-  category: string;
-  tier: string;
   platform: string;
-  verdict: AdvisorVerdict;
-  /** Numbers straight from the data — never invented. */
-  evidence: string;
-  /** Client-safe sentence the AE can say verbatim. */
-  ae_talking_point: string;
-  /** Internal only — may contain CPV/CPE derived from selling prices. */
-  internal_note: string;
-  confidence: string;
+  grade: AdvisorGrade;
+  /** Passes the boost gate (ER ≥1.2× median, save+share ≥15%, ≤7 days). */
+  boost: boolean;
+  /** ONE line of numbers — no prose, no money figures. */
+  reason: string;
 }
 
 export interface AdvisorResult {
@@ -249,7 +245,8 @@ export interface AdvisorResult {
   posted_count: number;
   pending_count: number;
   median_er_by_platform: Record<string, number>;
-  kols: AdvisorKol[];
+  /** Absent on results stored by the v1 spec — the panel asks for a re-run. */
+  posts?: AdvisorPost[];
 }
 
 /** `GET /api/report/advisor` — the STORED analysis; running is a separate press. */
