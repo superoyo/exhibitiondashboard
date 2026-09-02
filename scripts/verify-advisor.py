@@ -83,6 +83,40 @@ CANNED = {"campaign_summary": "ทดสอบ", "posted_count": 1, "pending_cou
                      "reason": "views 63.7K = 64% ของ KPI 100K"}]}
 import app.tiein as tiein_mod  # noqa: E402
 
+# ---- fake the channel-page scrapes (ฟอร์มช่อง) ------------------------------
+# vidkol posted on TikTok + Facebook. TikTok returns 3 clips, one of which is
+# the tracked campaign post (dm_t_1) and must be EXCLUDED from the baseline;
+# the organic two give median views 20000, engagement [230, 430] -> 330.
+import app.channel_form as chform_mod  # noqa: E402
+
+chform_calls = {"tiktok": 0, "fb": 0}
+
+
+def fake_channel_tiktok(usernames, per=10, **kw):
+    chform_calls["tiktok"] += 1
+    items = [
+        {"input": "vidkol", "id": "dm_t_1", "playCount": 999999,
+         "diggCount": 9, "commentCount": 9, "shareCount": 9, "collectCount": 9,
+         "webVideoUrl": "https://www.tiktok.com/@vidkol/video/1"},
+        {"input": "vidkol", "id": "org_1", "playCount": 30000, "diggCount": 400,
+         "commentCount": 10, "shareCount": 15, "collectCount": 5,
+         "webVideoUrl": "https://www.tiktok.com/@vidkol/video/501"},
+        {"input": "vidkol", "id": "org_2", "playCount": 10000, "diggCount": 200,
+         "commentCount": 10, "shareCount": 10, "collectCount": 10,
+         "webVideoUrl": "https://www.tiktok.com/@vidkol/video/502"},
+    ]
+    return items, {"cost_usd": 0.037}
+
+
+def fake_channel_fb(page_url, per=10, **kw):
+    chform_calls["fb"] += 1
+    assert page_url == "https://www.facebook.com/vidkol", page_url
+    return [], {"cost_usd": 0.001}
+
+
+chform_mod.run_scrape_channel_tiktok = fake_channel_tiktok
+chform_mod.run_scrape_channel_fb = fake_channel_fb
+
 
 def fake_claude(content, max_tokens=1500, model=None, with_usage=False):
     captured["prompt"] = content[0]["text"]
@@ -123,6 +157,16 @@ check(vrow["prior_history"] == {"posts": 2, "median_views": 50000,
                                 "median_engagement": 447},
       f"channel history = medians of OUR past campaigns: {vrow['prior_history']}")
 
+# ฟอร์มช่อง (channel form): fetched as step 0 of the run — one TikTok batch,
+# one FB page — with OUR tracked campaign clip excluded from the sample.
+check(chform_calls == {"tiktok": 1, "fb": 1},
+      f"channel pages fetched once per platform: {chform_calls}")
+check(vrow["channel_recent"] == {"posts": 2, "median_views": 20000,
+                                 "median_engagement": 330, "median_er_pct": 1.87},
+      f"channel form reaches the model, campaign clip excluded: {vrow['channel_recent']}")
+check("เทียบฟอร์มช่องตัวเอง" in captured["prompt"],
+      "prompt ranks the channel's own form as a comparator")
+
 # Facebook post with no view count → graded on the engagement basis, never
 # dumped into TOO_EARLY (Kirei Kirei feedback, 2026-09-01).
 frow = next(r for r in rows if r["platform"] == "Facebook")
@@ -144,6 +188,9 @@ r = cl.get("/api/report/data", params={"campaign": "dm"})
 adv = (r.json().get("cost_by_kind") or {}).get("advisor") or {}
 check(adv.get("total") == 0.115 and adv.get("count") == 1,
       f"cost from real usage (8K in + 3K out on Opus = $0.115): {adv}")
+cf = (r.json().get("cost_by_kind") or {}).get("chform") or {}
+check(cf.get("total") == 0.038 and cf.get("count") == 1,
+      f"channel-form Apify spend on its own cost line: {cf}")
 recs_json = json.dumps(r.json()["records"])
 check("30000" not in recs_json and '"cost' not in recs_json
       and '"boost' not in recs_json and '"kpis"' not in recs_json,
@@ -167,6 +214,12 @@ check(r.status_code == 200
 check(cl.get("/api/view/WRONGTOKEN00/advisor").status_code == 404
       and cl.get("/api/view/WRONGTOKEN00/commercial").status_code == 404,
       "wrong token → 404, nothing served")
+
+print("\n-- channel-form cache --")
+out2 = run_advisor("dm")
+check(out2.get("status") == "success"
+      and chform_calls == {"tiktok": 1, "fb": 1},
+      f"second run within 30 days scrapes NOTHING (cache): {chform_calls}")
 
 from app.db import engine as app_engine  # noqa: E402
 app_engine.dispose()

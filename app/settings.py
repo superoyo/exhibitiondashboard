@@ -89,6 +89,9 @@ COST_KINDS = {
     # AI spend (Anthropic), unlike the four Apify lines above — billed from the
     # response's actual token usage. The only AI cost the table tracks so far.
     "advisor": "Performance Analysis (ค่า AI)",
+    # Step 0 of the same button: scraping each posted channel's latest ~10
+    # posts for its natural-form baseline (30-day cache, so often $0).
+    "chform": "ดึงฟอร์มช่อง (ขั้นแรกของ Performance Analysis)",
 }
 
 

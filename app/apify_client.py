@@ -259,6 +259,69 @@ def run_scrape_fb_pages(
                     tolerate_failure=tolerate_failure)
 
 
+# ---- Channel form ("ฟอร์มช่อง") — latest N posts from the channel page ------
+# Used by app/channel_form.py to build per-channel baselines. Deliberately no
+# date filter on TikTok: the date-filter add-on costs extra per clip, and
+# "latest N" already says what we mean.
+
+def run_scrape_channel_tiktok(
+    usernames: List[str], per: int = 10, *, poll_interval: float = 8.0,
+    timeout_s: float = 480.0, tolerate_failure: bool = True,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Latest `per` videos of each TikTok profile (batched — one run fee)."""
+    payload = {
+        "profiles": list(usernames),
+        "resultsPerPage": per,
+        "profileScrapeSections": ["videos"],
+        "profileSorting": "latest",
+        "excludePinnedPosts": False,
+        "shouldDownloadVideos": False,
+        "shouldDownloadCovers": False,
+        "shouldDownloadSubtitles": False,
+        "shouldDownloadSlideshowImages": False,
+        "shouldDownloadAvatars": False,
+    }
+    return _execute(payload, poll_interval=poll_interval, timeout_s=timeout_s,
+                    tolerate_failure=tolerate_failure)
+
+
+def run_scrape_channel_ig(
+    profile_urls: List[str], per: int = 10, *, poll_interval: float = 8.0,
+    timeout_s: float = 480.0, tolerate_failure: bool = True,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Latest `per` posts of each Instagram profile (batched)."""
+    payload = {"directUrls": list(profile_urls), "resultsType": "posts",
+               "resultsLimit": per, "addParentData": False}
+    return _execute(payload, actor_id=config.IG_ACTOR_ID,
+                    poll_interval=poll_interval, timeout_s=timeout_s,
+                    tolerate_failure=tolerate_failure)
+
+
+def run_scrape_channel_yt(
+    channel_url: str, per: int = 10, *, poll_interval: float = 8.0,
+    timeout_s: float = 480.0, tolerate_failure: bool = True,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Latest `per` videos of ONE YouTube channel — per channel, so the item
+    →channel attribution never depends on the actor's name fields."""
+    payload = {"startUrls": [{"url": channel_url}], "maxResults": per,
+               "maxResultsShorts": per, "downloadSubtitles": False,
+               "sortVideosBy": "NEWEST"}
+    return _execute(payload, actor_id=config.YT_ACTOR_ID,
+                    poll_interval=poll_interval, timeout_s=timeout_s,
+                    tolerate_failure=tolerate_failure)
+
+
+def run_scrape_channel_fb(
+    page_url: str, per: int = 10, *, poll_interval: float = 8.0,
+    timeout_s: float = 480.0, tolerate_failure: bool = True,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Latest `per` posts of ONE Facebook page (same per-channel reasoning)."""
+    payload = {"startUrls": [{"url": page_url}], "resultsLimit": per}
+    return _execute(payload, actor_id=config.FB_ACTOR_ID,
+                    poll_interval=poll_interval, timeout_s=timeout_s,
+                    tolerate_failure=tolerate_failure)
+
+
 def run_scrape_x(
     post_urls: List[str], *, poll_interval: float = 8.0, timeout_s: float = 300.0,
     tolerate_failure: bool = False,

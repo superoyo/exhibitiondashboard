@@ -85,16 +85,18 @@ SYSTEM_PROMPT = """คุณคือ Performance Analyst ของเอเจ�
 JSON รายโพสต์: handle, platform, tier, followers, views, likes (null = แพลตฟอร์มซ่อนเลขไลก์), comments, shares, saves, er_pct, er_method ("views" หรือ "followers" สำหรับโพสต์ที่แพลตฟอร์มไม่เปิด views), er_follow_pct (engagement/followers — ฐานเดียวกันทุกโพสต์ทุกแพลตฟอร์ม), posted_date,
 kpis = เป้าที่ขายของคนนั้น เช่น [{"metric":"impressions","target":700000}] (อาจว่าง),
 boost_thb = งบบูสที่ขาย (อาจว่าง), cost = ค่าตัว (ใช้ชั่งใจภายใน ห้ามให้เลขเงินโผล่ใน output),
-prior_history = สถิติผลงานแคมเปญก่อน ๆ ของช่องนี้เท่าที่ระบบเราเคยเก็บ: {"posts":n,"median_views":x,"median_engagement":y} หรือ null = ไม่มีประวัติในระบบ
+channel_recent = ฟอร์มธรรมชาติของช่องบนแพลตฟอร์มนั้น: median จากคลิปล่าสุด ~10 คลิปบนหน้าช่องจริง (ไม่รวมคลิปงานของเรา): {"posts":n,"median_views":x,"median_engagement":y,"median_er_pct":z|null} หรือ null = ระบบดึงหน้าช่องไม่ได้,
+prior_history = สถิติงานจ้างแคมเปญก่อน ๆ ของช่องนี้เท่าที่ระบบเราเคยเก็บ: {"posts":n,"median_views":x,"median_engagement":y} หรือ null = ไม่มีประวัติในระบบ
 
 ## วิธีตัดสิน (เรียงลำดับ — ใช้ตัวเทียบแรกที่มีข้อมูล)
 1. เทียบ KPI ที่ขาย: metric "views" เทียบ views จริง · "interaction" เทียบ engagement จริง (likes+comments+shares+saves) · "impressions"/"reach" วัดจากหน้าบ้านไม่ได้ — บอกสั้น ๆ ว่าเทียบไม่ได้ แล้วใช้ข้อ 2
 2. เทียบค่ากลางแคมเปญ: median ต่อแพลตฟอร์ม และห้ามปน er_method ต่างชนิด
 3. โพสต์ที่แพลตฟอร์มไม่เปิด views (views = 0, er_method "followers" เช่นโพสต์ Facebook): ต้องตัดเกรดด้วย engagement — เทียบ KPI interaction ถ้ามี ไม่มีก็เทียบ er_follow_pct กับ median er_follow_pct ของทั้งแคมเปญ (ฐานเดียวกัน เทียบข้ามแพลตฟอร์มได้) หรือเทียบ engagement กับ median_engagement ใน prior_history · ระบุในเหตุผลว่าเทียบฐานผู้ติดตาม · ห้ามให้ TOO_EARLY เพียงเพราะไม่มี views
-4. เทียบ prior_history ของช่องเอง เมื่อมี (views เทียบ median_views · engagement เทียบ median_engagement)
-5. มี boost_thb/cost ให้พิจารณาความคุ้มประกอบการชั่งใจได้ แต่ห้ามเขียนจำนวนเงินใด ๆ ใน output
-6. โพสต์อายุน้อยกว่า 3 วัน → TOO_EARLY เสมอ อย่าเพิ่งตัดสิน
-7. โพสต์ที่ likes เป็น null: engagement ขาดส่วนไลก์ — ระบุกำกับและอย่าเทียบ ER ตรง ๆ กับโพสต์ปกติ
+4. เทียบฟอร์มช่องตัวเอง: channel_recent เมื่อมี — views เทียบ median_views · ER เทียบ median_er_pct · นี่คือคำตอบของ "เทียบคลิปอื่นของช่องแล้วเป็นไง" และควรเสริมในเหตุผลเสมอเมื่อมีข้อมูล (เช่น "1.4× ฟอร์มช่อง")
+5. เทียบ prior_history (งานจ้างเก่าในระบบเรา) เมื่อไม่มี channel_recent (views เทียบ median_views · engagement เทียบ median_engagement)
+6. มี boost_thb/cost ให้พิจารณาความคุ้มประกอบการชั่งใจได้ แต่ห้ามเขียนจำนวนเงินใด ๆ ใน output
+7. โพสต์อายุน้อยกว่า 3 วัน → TOO_EARLY เสมอ อย่าเพิ่งตัดสิน
+8. โพสต์ที่ likes เป็น null: engagement ขาดส่วนไลก์ — ระบุกำกับและอย่าเทียบ ER ตรง ๆ กับโพสต์ปกติ
 
 ## เกรด (เลือกหนึ่งต่อโพสต์)
 - ABOVE     = เกินเป้า/เกณฑ์ชัดเจน (ราว ≥1.2× ของตัวเทียบหลัก)
@@ -123,7 +125,7 @@ FEW_SHOT = """ตัวอย่างรูปแบบที่ถูกต้
  "median_er_by_platform": {"TikTok": 4.1},
  "posts": [
   {"handle": "@aooomtwp", "platform": "TikTok", "grade": "ABOVE", "boost": true,
-   "reason": "views 173K = 173% ของ KPI 100K · ER 6.5% = 1.6× ค่ากลาง · save+share 21% ของ engagement"},
+   "reason": "views 173K = 173% ของ KPI 100K · ER 6.5% = 1.6× ค่ากลาง · 1.8× ฟอร์มช่อง (median 95K) · save+share 21%"},
   {"handle": "@teenny.10", "platform": "TikTok", "grade": "ON_TRACK", "boost": false,
    "reason": "views 82% ของ KPI · ER 0.9× ค่ากลาง · ใกล้เคียง median งานก่อนของช่อง"},
   {"handle": "@mewchi5", "platform": "TikTok", "grade": "BELOW", "boost": false,
@@ -182,6 +184,11 @@ def _build_input(campaign: str) -> tuple[list, int]:
                     "median_engagement": int(statistics.median(eng)),
                 }
 
+        # ฟอร์มช่อง: the channel's own recent organic posts, per platform —
+        # cached by app/channel_form.py; run_advisor refreshes stale ones first.
+        from app.channel_form import baselines_for
+        channel = baselines_for(list(roster))
+
         rows = []
         posted_users = set()
         for p in posts:
@@ -220,6 +227,8 @@ def _build_input(campaign: str) -> tuple[list, int]:
                 "kpis": json.loads(k.kpi_json) if k.kpi_json else [],
                 "boost_thb": float(k.boost_thb) if k.boost_thb is not None else None,
                 "cost": float(k.cost_thb) if k.cost_thb is not None else None,
+                "channel_recent": channel.get(
+                    (p.username.lower(), (p.platform or "").lower())),
                 "prior_history": history.get(p.username.lower()),
             })
         pending = len([u for u in roster if u not in posted_users])
@@ -237,6 +246,19 @@ def run_advisor(campaign: str) -> dict:
               started_at=dt.datetime.now(config.TZ).isoformat(), finished_at=None,
               posts=0, total=0, cost_usd=None)
     try:
+        # Step 0 — ฟอร์มช่อง: refresh stale channel baselines (30-day cache,
+        # fixed 10-clip cap per channel, posted KOLs only). Best-effort: the
+        # grading must still run when a channel page can't be read.
+        try:
+            from app.channel_form import ensure_baselines
+            cf = ensure_baselines(campaign, st)
+            if cf.get("cost"):
+                from app.settings import add_cost
+                add_cost(campaign, cf["cost"], kind="chform")
+        except Exception as exc:  # noqa: BLE001
+            log.warning("channel form skipped for %s: %s", campaign, exc)
+
+        st.update(message="กำลังรวบรวมตัวเลขของแคมเปญ…")
         rows, pending = _build_input(campaign)
         posted = [r for r in rows if r["views"] or r["post_url"]]
         if not posted:

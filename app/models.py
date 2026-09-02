@@ -15,6 +15,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     LargeBinary,
@@ -87,6 +88,30 @@ class ReportKol(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     __table_args__ = (UniqueConstraint("campaign", "username", name="uq_report_kols_campaign_username"),)
+
+
+class ChannelBaseline(Base):
+    """A channel's natural form: medians over its latest ~10 posts, scraped
+    from the channel page itself (not our campaign links) and cached here for
+    30 days. Shared across campaigns — the channel is the same channel — and
+    keyed per platform because a KOL's TikTok and Facebook are different
+    audiences. Written by app/channel_form.py as a step of the Performance
+    Analysis run; the KOL's own campaign posts are excluded from the sample so
+    a sponsored post never inflates its own baseline.
+    """
+    __tablename__ = "channel_baselines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    platform: Mapped[str] = mapped_column(String(16), nullable=False)
+    fetched_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    sample_count: Mapped[int] = mapped_column(Integer, default=0)
+    median_views: Mapped[int] = mapped_column(BigInteger, default=0)
+    median_engagement: Mapped[int] = mapped_column(BigInteger, default=0)
+    # engagement/views per clip; null when the platform hides views (FB posts).
+    median_er_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    __table_args__ = (UniqueConstraint("username", "platform",
+                                       name="uq_channel_baselines_user_platform"),)
 
 
 class ReportGroupKpi(Base):

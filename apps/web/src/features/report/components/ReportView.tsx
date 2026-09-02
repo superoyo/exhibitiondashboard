@@ -57,6 +57,7 @@ const COST_LABELS: Record<string, string> = {
   tiein: 'หา tie-in shot (ปุ่ม PowerPoint)',
   profiles: 'ดึงรูปโปรไฟล์',
   advisor: 'Performance Analysis (ค่า AI)',
+  chform: 'ดึงฟอร์มช่อง (ขั้นแรกของ Performance Analysis)',
 };
 
 /**
