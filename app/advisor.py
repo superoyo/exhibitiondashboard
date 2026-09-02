@@ -82,20 +82,23 @@ def _tier(followers: int) -> Optional[str]:
 SYSTEM_PROMPT = """คุณคือ Performance Analyst ของเอเจนซี่โฆษณา อ่านตัวเลขรายโพสต์ของแคมเปญ KOL แล้วให้คะแนน 1–10 ต่อโพสต์แบบกระชับที่สุด — ทีมต้องการตัวเลข ไม่ต้องการความเรียงความ
 
 ## ข้อมูลที่ได้รับ
-JSON รายโพสต์: handle, platform, tier, followers, views, likes (null = แพลตฟอร์มซ่อนเลขไลก์), comments, shares, saves, er_pct, er_method ("views" หรือ "followers" สำหรับโพสต์ที่แพลตฟอร์มไม่เปิด views), er_follow_pct (engagement/followers — ฐานเดียวกันทุกโพสต์ทุกแพลตฟอร์ม), posted_date,
+JSON รายคน (1 entry = KOL 1 คน): handle, category, tier, followers,
 kpis = เป้าที่ขายของคนนั้น เช่น [{"metric":"impressions","target":700000}] (อาจว่าง — เป้าเป็นรายคน ไม่ใช่รายโพสต์),
 person_total_views / person_total_engagement = ยอดรวมทุกโพสต์ของคนนั้นในแคมเปญนี้ (คำนวณให้แล้ว — ใช้คู่กับ kpis),
 boost_thb = งบบูสที่ขาย (อาจว่าง), cost = ค่าตัว (ใช้ชั่งใจภายใน ห้ามพิมพ์ก้อนเงินเต็มใน output),
 cpm_sold_thb = เงินบูส ÷ KPI views × 1000 (CPM ที่ขาย) · cpm_actual_thb = เงินบูส ÷ ยอดวิวรวมทุกโพสต์ของคนนั้น × 1000 (CPM ที่ได้จริง) — คำนวณให้แล้ว null = ข้อมูลไม่ครบ,
-channel_recent = ฟอร์มช่องจากคลิปล่าสุด ~10 คลิปบนหน้าช่องจริง (ไม่รวมคลิปงานของเรา) หรือ null · prior_history = สถิติงานจ้างเก่าของช่องนี้ในระบบเรา หรือ null — ทั้งคู่เป็นตัวเทียบสำรองเท่านั้น (ดูข้อ 4)
+prior_history = สถิติงานจ้างเก่าของช่องนี้ในระบบเรา หรือ null,
+posts = โพสต์ของคนนั้นทีละช่อง: [{platform, views, likes (null = แพลตฟอร์มซ่อนเลขไลก์), comments, shares, saves, er_pct, er_method ("views" หรือ "followers" สำหรับโพสต์ที่แพลตฟอร์มไม่เปิด views), er_follow_pct (engagement/followers — ฐานเดียวกันทุกโพสต์ทุกแพลตฟอร์ม), posted_date, channel_recent (ฟอร์มช่องจากคลิปล่าสุด ~10 คลิปบนหน้าช่องจริง ไม่รวมคลิปงานของเรา หรือ null)}]
+channel_recent/prior_history เป็นตัวเทียบสำรองเท่านั้น (ดูข้อ 4)
 
 ## วิธีตัดสิน (เรียงลำดับ)
-1. หลักคือ Performance เทียบ KPI ที่ขาย — และ KPI เป็นรายคน: metric "views" เทียบ person_total_views · "interaction" เทียบ person_total_engagement · ห้ามเอาโพสต์เดียวไปหารเป้าทั้งก้อนของคนที่ลงหลายแพลตฟอร์ม (คนลง 3 ช่องแล้วเอาโพสต์ IG โพสต์เดียวเทียบเป้าทั้งหมด = คะแนนต่ำทั้งที่รวมแล้วถึงเป้า) · ทุกโพสต์ของคนเดียวกันจึงได้คะแนนฐานเดียวกันจาก KPI แล้วค่อยปรับ ±1 รายโพสต์จากคุณภาพของโพสต์นั้นเอง (ER เทียบค่ากลางแพลตฟอร์มตัวเอง · save+share · CPM) · เมื่อวัดกับ KPI ได้แล้ว ให้จบที่ KPI — ห้ามเอา channel_recent/prior_history มาถ่วงคะแนนต่อ (มติทีม: เราไม่รู้ว่าคลิปอื่นของช่องตัวไหนมีบูส ตัวแปรไม่เท่ากัน เทียบกันไม่ได้)
+0. ให้ 1 entry ใน posts ของ output ต่อ KOL 1 คนเสมอ — ห้ามแยกรายแพลตฟอร์ม (มติทีม: คนเดียวคะแนนดีช่องหนึ่งแย่อีกช่องมันแปลกและซ้ำซ้อน) · ช่อง platform ให้เขียนทุกช่องที่ลงคั่นด้วย " + " เช่น "TikTok + Instagram" · ใน reason สรุปยอดหลักรายช่องสั้น ๆ ให้เห็นว่าช่องไหนแบก
+1. หลักคือ Performance เทียบ KPI ที่ขาย — และ KPI เป็นรายคน: metric "views" เทียบ person_total_views · "interaction" เทียบ person_total_engagement · ห้ามเอาโพสต์เดียวไปหารเป้าทั้งก้อน (คนลง 3 ช่องแล้วเอาโพสต์ IG โพสต์เดียวเทียบเป้าทั้งหมด = คะแนนต่ำทั้งที่รวมแล้วถึงเป้า) · คุณภาพรายโพสต์ (ER เทียบค่ากลางแพลตฟอร์มตัวเอง · save+share · CPM) ใช้ปรับ ±1 · เมื่อวัดกับ KPI ได้แล้ว ให้จบที่ KPI — ห้ามเอา channel_recent/prior_history มาถ่วงคะแนนต่อ (มติทีม: เราไม่รู้ว่าคลิปอื่นของช่องตัวไหนมีบูส ตัวแปรไม่เท่ากัน เทียบกันไม่ได้)
 2. "impressions"/"reach" วัดจากหน้าบ้านไม่ได้ — บอกสั้น ๆ แล้วใช้ค่ากลางแคมเปญแทน · คนไม่มี KPI ก็ใช้ค่ากลางแคมเปญ (median ต่อแพลตฟอร์ม ห้ามปน er_method ต่างชนิด — เทียบกันเองในแคมเปญยุติธรรม เพราะทุกโพสต์เป็นงานจ้างเงื่อนไขเดียวกัน)
 3. โพสต์ที่แพลตฟอร์มไม่เปิด views (views = 0 เช่น Facebook): ตัดสินด้วย ER — เทียบ KPI interaction ถ้ามี ไม่มีก็เทียบ er_follow_pct กับ median er_follow_pct ของทั้งแคมเปญ · ระบุว่าเทียบฐานผู้ติดตาม · ห้ามงดให้คะแนนเพียงเพราะไม่มี views
 4. channel_recent/prior_history ใช้เฉพาะเมื่อไม่มีทั้ง KPI และค่ากลางให้เทียบ (เช่น โพสต์เดียวบนแพลตฟอร์มเดียว) และต้องหมายเหตุว่าเป็นการเทียบหยาบ
 5. CPM: เมื่อ cpm_sold_thb และ cpm_actual_thb มีค่า ให้เทียบเสมอและใส่ในเหตุผล — cpm_actual ต่ำกว่า cpm_sold = คุ้มกว่าที่ขาย (+) แพงกว่ามาก = ติดลบ (−) · เลข CPM เป็นเลขเงินที่อนุญาตให้พิมพ์ได้
-6. โพสต์อายุน้อยกว่า 3 วัน → score เป็น null + เหตุผล "รอประเมิน" เสมอ อย่าเพิ่งตัดสิน (ใช้กับกรณีนี้เท่านั้น)
+6. ทุกโพสต์ของคนนั้นอายุน้อยกว่า 3 วัน → score เป็น null + เหตุผล "รอประเมิน" เสมอ อย่าเพิ่งตัดสิน (ใช้กับกรณีนี้เท่านั้น) · ถ้าบางช่องครบอายุแล้ว ให้คะแนนจากช่องที่ครบ และระบุช่องที่ยังใหม่
 7. โพสต์ที่ likes เป็น null: engagement ขาดส่วนไลก์ — ระบุกำกับและอย่าเทียบ ER ตรง ๆ กับโพสต์ปกติ
 
 ## คะแนน (เต็ม 10 — จำนวนเต็มเท่านั้น)
@@ -120,24 +123,22 @@ boost = true เมื่อครบทุกข้อ: ER ≥ 1.2× median แ
 - ก้อนเงินเต็ม (ค่าตัว/งบบูสเป็นบาท) โผล่ใน output — พิมพ์ได้เฉพาะเลข CPM
 - แนะนำ boost โพสต์ที่ ER ต่ำกว่า median"""
 
-FEW_SHOT = """ตัวอย่างรูปแบบที่ถูกต้อง (ข้อมูลสมมติ ใช้เทียบรูปแบบเท่านั้น — สังเกต @nudaeng ลง 2 ช่อง: KPI วัดจากยอดรวม ทั้งสองโพสต์ได้คะแนนใกล้กัน ต่างกันแค่คุณภาพรายโพสต์):
-{"campaign_summary": "ลงงาน 6/8 คน — คะแนนเฉลี่ย 7.2 มี 1 โพสต์เข้าเกณฑ์บูส ควรเสนอภายในสัปดาห์นี้ · อีก 2 คนรอคิวลงงาน",
- "posted_count": 6, "pending_count": 2,
+FEW_SHOT = """ตัวอย่างรูปแบบที่ถูกต้อง (ข้อมูลสมมติ ใช้เทียบรูปแบบเท่านั้น — สังเกต @nudaeng ลง 2 ช่อง: entry เดียว คะแนนเดียว platform เขียนรวม reason แจกแจงรายช่อง):
+{"campaign_summary": "ลงงาน 5/7 คน — คะแนนเฉลี่ย 7.4 มี 1 คนเข้าเกณฑ์บูส ควรเสนอภายในสัปดาห์นี้ · อีก 2 คนรอคิวลงงาน",
+ "posted_count": 5, "pending_count": 2,
  "median_er_by_platform": {"TikTok": 4.1, "Instagram": 2.0},
  "posts": [
   {"handle": "@aooomtwp", "platform": "TikTok", "score": 10, "boost": true,
    "reason": "คิดจาก: views 173K = 173% ของ KPI 100K · CPM จริง 46 ถูกกว่าที่ขาย 80 · save+share 21% ของ engagement"},
-  {"handle": "@nudaeng", "platform": "TikTok", "score": 8, "boost": false,
-   "reason": "คิดจาก: views รวม 2 ช่อง 350K = 117% ของ KPI 300K · โพสต์นี้ ER 5.3% = 1.3× ค่ากลาง TikTok"},
-  {"handle": "@nudaeng", "platform": "Instagram", "score": 7, "boost": false,
-   "reason": "คิดจาก: KPI วัดจากยอดรวม 2 ช่อง (117% — ถึงเป้า) · โพสต์ IG นี้ views 60K · ER 1.9% ≈ ค่ากลาง IG"},
+  {"handle": "@nudaeng", "platform": "TikTok + Instagram", "score": 8, "boost": false,
+   "reason": "คิดจาก: views รวม 350K = 117% ของ KPI 300K (TikTok 290K แบกหลัก · IG 60K) · ER TikTok 1.3× ค่ากลาง · IG ≈ ค่ากลาง"},
   {"handle": "@mewchi5", "platform": "TikTok", "score": 3, "boost": false,
    "reason": "คิดจาก: KPI เป็น Imp วัดหน้าบ้านไม่ได้ จึงเทียบค่ากลางแคมเปญ: views 0.45× median"},
   {"handle": "@baanmali.kitchen", "platform": "Facebook", "score": 9, "boost": false,
    "reason": "คิดจาก: Facebook ไม่เปิด views จึงใช้ ER ฐานผู้ติดตาม 3.9% = 2.2× ค่ากลางแคมเปญ (1.8%)"},
   {"handle": "@sjpingg", "platform": "TikTok", "score": null, "boost": false,
    "reason": "คิดจาก: โพสต์อายุ 2 วัน ตัวเลขยังโต — รอประเมินหลัง 3 วัน"}]}
-หมายเหตุ: ใส่เฉพาะโพสต์ที่ลงงานแล้วใน posts · คนที่ยังไม่ลงงานรวมใน pending_count"""
+หมายเหตุ: 1 entry ต่อ 1 คนเท่านั้น · ใส่เฉพาะคนที่ลงงานแล้ว · คนที่ยังไม่ลงงานรวมใน pending_count"""
 
 
 # ---------------------------------------------------------------------------
@@ -205,21 +206,15 @@ def _build_input(campaign: str) -> tuple[list, int]:
             tot_views[u] = tot_views.get(u, 0) + (p.views or 0)
             tot_eng[u] = tot_eng.get(u, 0) + e
 
-        rows = []
+        # One entry per PERSON with their posts nested — the team ruled that
+        # one KOL split into per-platform verdicts reads as noise ("โพสต์ช่องนึง
+        # คะแนนดี อีก platform แย่ มันแปลก", 2026-09-02). Money, KPI and score
+        # are all per person; the platforms are detail lines inside.
+        people: dict[str, dict] = {}
         posted_users = set()
         for p in posts:
-            k = roster[p.username.lower()]
-            kpis = json.loads(k.kpi_json) if k.kpi_json else []
-            boost = float(k.boost_thb) if k.boost_thb is not None else None
-            # CPM per the team's chosen base (2026-09-02): boost money only,
-            # against the person's TOTAL views — boost is per person, like the
-            # KPI. Precomputed so the model compares, never does arithmetic.
-            kpi_views = next((x.get("target") for x in kpis
-                              if x.get("metric") == "views" and x.get("target")), None)
-            person_views = tot_views.get(p.username.lower(), 0)
-            cpm_sold = round(boost / kpi_views * 1000, 2) if boost and kpi_views else None
-            cpm_actual = (round(boost / person_views * 1000, 2)
-                          if boost and person_views else None)
+            u = p.username.lower()
+            k = roster[u]
             likes = None if (p.likes or 0) < 0 else (p.likes or 0)
             engagement = ((likes or 0) + (p.comments or 0)
                           + (p.shares or 0) + (p.saves or 0))
@@ -230,13 +225,40 @@ def _build_input(campaign: str) -> tuple[list, int]:
             else:
                 er, method = None, None
             if p.views or p.url:
-                posted_users.add(p.username.lower())
-            rows.append({
-                "category": k.subgroup or k.content_group,
-                "handle": f"@{k.username}",
+                posted_users.add(u)
+
+            person = people.get(u)
+            if person is None:
+                kpis = json.loads(k.kpi_json) if k.kpi_json else []
+                boost = float(k.boost_thb) if k.boost_thb is not None else None
+                # CPM per the team's chosen base (2026-09-02): boost money
+                # only, against the person's TOTAL views — boost is per
+                # person, like the KPI. Precomputed so the model compares,
+                # never does arithmetic.
+                kpi_views = next((x.get("target") for x in kpis
+                                  if x.get("metric") == "views" and x.get("target")), None)
+                person_views = tot_views.get(u, 0)
+                person = people[u] = {
+                    "category": k.subgroup or k.content_group,
+                    "handle": f"@{k.username}",
+                    "followers": k.followers or 0,
+                    "tier": _tier(k.followers or 0),
+                    # sold targets + money — weighed in the scoring; only the
+                    # CPM figures may be echoed, never the raw sums
+                    "kpis": kpis,
+                    "person_total_views": person_views,
+                    "person_total_engagement": tot_eng.get(u, 0),
+                    "boost_thb": boost,
+                    "cost": float(k.cost_thb) if k.cost_thb is not None else None,
+                    "cpm_sold_thb": (round(boost / kpi_views * 1000, 2)
+                                     if boost and kpi_views else None),
+                    "cpm_actual_thb": (round(boost / person_views * 1000, 2)
+                                       if boost and person_views else None),
+                    "prior_history": history.get(u),
+                    "posts": [],
+                }
+            person["posts"].append({
                 "platform": _PLAT_LABEL.get(p.platform or "", p.platform or ""),
-                "followers": k.followers or 0,
-                "tier": _tier(k.followers or 0),
                 "views": p.views or 0,
                 "likes": likes,           # null = Instagram hid the count
                 "comments": p.comments or 0,
@@ -250,21 +272,10 @@ def _build_input(campaign: str) -> tuple[list, int]:
                                   if k.followers else None),
                 "posted_date": p.posted_at.date().isoformat() if p.posted_at else None,
                 "post_url": p.url,
-                # sold targets + money — weighed in the scoring; only the CPM
-                # figures may be echoed in the output, never the raw sums
-                "kpis": kpis,
-                "person_total_views": person_views,
-                "person_total_engagement": tot_eng.get(p.username.lower(), 0),
-                "boost_thb": boost,
-                "cost": float(k.cost_thb) if k.cost_thb is not None else None,
-                "cpm_sold_thb": cpm_sold,
-                "cpm_actual_thb": cpm_actual,
-                "channel_recent": channel.get(
-                    (p.username.lower(), (p.platform or "").lower())),
-                "prior_history": history.get(p.username.lower()),
+                "channel_recent": channel.get((u, (p.platform or "").lower())),
             })
         pending = len([u for u in roster if u not in posted_users])
-        return rows, pending
+        return list(people.values()), pending
 
 
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
@@ -292,21 +303,22 @@ def run_advisor(campaign: str) -> dict:
 
         st.update(message="กำลังรวบรวมตัวเลขของแคมเปญ…")
         rows, pending = _build_input(campaign)
-        posted = [r for r in rows if r["views"] or r["post_url"]]
+        posted = [r for r in rows
+                  if any(pp["views"] or pp["post_url"] for pp in r["posts"])]
         if not posted:
             st.update(status="success",
                       message="ยังไม่มีโพสต์ที่ลงงานแล้วให้วิเคราะห์",
                       finished_at=dt.datetime.now(config.TZ).isoformat())
             return {"status": "skipped"}
 
-        st.update(message=f"กำลังวิเคราะห์ {len(posted)} โพสต์ "
+        st.update(message=f"กำลังวิเคราะห์ {len(posted)} คน "
                           f"(+{pending} คนยังไม่ลงงาน)…")
         from app.tiein import _claude
         today = dt.datetime.now(config.TZ).date().isoformat()
         prompt = (f"{SYSTEM_PROMPT}\n\n{FEW_SHOT}\n\n"
                   f"วันนี้คือ {today} (ใช้คำนวณอายุโพสต์)\n"
                   f"มี KOL ที่ยังไม่ลงงานอีก {pending} คน (นับใน pending_count)\n\n"
-                  f"ข้อมูลรายโพสต์:\n{json.dumps(rows, ensure_ascii=False)}")
+                  f"ข้อมูลรายคน:\n{json.dumps(rows, ensure_ascii=False)}")
         reply, usage = _claude([{"type": "text", "text": prompt}],
                                max_tokens=ADVISOR_MAX_TOKENS, model=ADVISOR_MODEL,
                                with_usage=True)
@@ -337,7 +349,7 @@ def run_advisor(campaign: str) -> dict:
 
         n = len(result.get("posts") or [])
         st.update(status="success",
-                  message=f"ให้คะแนนแล้ว {n} โพสต์ · {pending} คนยังไม่ลงงาน",
+                  message=f"ให้คะแนนแล้ว {n} คน · {pending} คนยังไม่ลงงาน",
                   finished_at=dt.datetime.now(config.TZ).isoformat(), posts=n,
                   cost_usd=cost)
         return {"status": "success", "kols": n}

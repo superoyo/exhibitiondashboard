@@ -84,7 +84,7 @@ auth_mod.validate_token = lambda tok: tok == "t"
 captured: dict = {}
 CANNED = {"campaign_summary": "ทดสอบ", "posted_count": 2, "pending_count": 1,
           "median_er_by_platform": {"TikTok": 0.13},
-          "posts": [{"handle": "@vidkol", "platform": "TikTok",
+          "posts": [{"handle": "@vidkol", "platform": "TikTok + Facebook",
                      "score": 5, "boost": False,
                      "reason": "คิดจาก: views 63.7K = 64% ของ KPI 100K · CPM จริง 78.49 แพงกว่าที่ขาย 50"}]}
 import app.tiein as tiein_mod  # noqa: E402
@@ -157,18 +157,19 @@ check("คะแนน 1–10" in captured["prompt"] and '"score": 1-10' in capt
       "v3 scoring prompt in use")
 check("ห้ามเอา channel_recent/prior_history มาถ่วงคะแนนต่อ" in captured["prompt"],
       "KPI settles it — channel comparisons forbidden past the KPI (team rule)")
-rows = json.loads(captured["prompt"].split("ข้อมูลรายโพสต์:\n", 1)[1])
-vrow = next(r for r in rows if r["handle"] == "@vidkol" and r["platform"] == "TikTok")
+rows = json.loads(captured["prompt"].split("ข้อมูลรายคน:\n", 1)[1])
+vrow = next(r for r in rows if r["handle"] == "@vidkol")
+check(len(vrow["posts"]) == 2 and "ห้ามแยกรายแพลตฟอร์ม" in captured["prompt"]
+      and '"TikTok + Instagram"' in captured["prompt"],
+      "one entry per PERSON — platforms nest inside, prompt + few-shot agree")
 check(vrow["kpis"] == [{"metric": "views", "target": 100000}],
       f"sold KPI reaches the model: {vrow['kpis']}")
 check(vrow["boost_thb"] == 5000.0, "boost budget reaches the model")
-# KPI is per person → both of vidkol's rows (TikTok + FB) carry the same
-# person totals: views 63700+0, engagement 82 + 16800.
-frow0 = next(r for r in rows if r["handle"] == "@vidkol" and r["platform"] == "Facebook")
+# KPI is per person → the entry carries the person totals across platforms:
+# views 63700+0, engagement 82 + 16800.
 check(vrow["person_total_views"] == 63700
-      and vrow["person_total_engagement"] == 16882
-      and frow0["person_total_views"] == 63700,
-      f"person totals ride on EVERY row of that person: {vrow['person_total_views']}"
+      and vrow["person_total_engagement"] == 16882,
+      f"person totals on the entry: {vrow['person_total_views']}"
       f"/{vrow['person_total_engagement']}")
 check("ห้ามเอาโพสต์เดียวไปหารเป้าทั้งก้อน" in captured["prompt"],
       "prompt forbids judging one post against the whole personal KPI")
@@ -186,20 +187,23 @@ check(vrow["prior_history"] == {"posts": 2, "median_views": 50000,
 # has no KPI → one TikTok batch, with OUR tracked clip excluded.
 check(chform_calls == {"tiktok": 1, "fb": 0},
       f"channel pages bought only where the KPI can't settle it: {chform_calls}")
-check(vrow["channel_recent"] is None,
+check(all(pp["channel_recent"] is None for pp in vrow["posts"]),
       "KPI carrier gets no channel_recent — nothing was fetched for them")
 orow = next(r for r in rows if r["handle"] == "@orgkol")
-check(orow["channel_recent"] == {"posts": 2, "median_views": 20000,
-                                 "median_engagement": 330, "median_er_pct": 1.87},
-      f"no-KPI KOL gets the channel form, campaign clip excluded: {orow['channel_recent']}")
+check(orow["posts"][0]["channel_recent"] == {"posts": 2, "median_views": 20000,
+                                             "median_engagement": 330,
+                                             "median_er_pct": 1.87},
+      f"no-KPI KOL gets the channel form, campaign clip excluded: "
+      f"{orow['posts'][0]['channel_recent']}")
 
 # Facebook post with no view count → graded on the engagement basis, never
 # dumped into TOO_EARLY (Kirei Kirei feedback, 2026-09-01).
-frow = next(r for r in rows if r["platform"] == "Facebook")
-check(frow["views"] == 0 and frow["er_method"] == "followers"
-      and frow["er_pct"] == 11.2,
-      f"no-views post gets follower-based ER: {frow['er_pct']}/{frow['er_method']}")
-check(frow["er_follow_pct"] == 11.2 and vrow["er_follow_pct"] == 0.05,
+vtt = next(pp for pp in vrow["posts"] if pp["platform"] == "TikTok")
+vfb = next(pp for pp in vrow["posts"] if pp["platform"] == "Facebook")
+check(vfb["views"] == 0 and vfb["er_method"] == "followers"
+      and vfb["er_pct"] == 11.2,
+      f"no-views post gets follower-based ER: {vfb['er_pct']}/{vfb['er_method']}")
+check(vfb["er_follow_pct"] == 11.2 and vtt["er_follow_pct"] == 0.05,
       "er_follow_pct on EVERY post — same-basis comparator across platforms")
 check("ห้ามงดให้คะแนนเพียงเพราะไม่มี views" in captured["prompt"],
       "prompt forbids withholding a score just because views are hidden")

@@ -229,6 +229,8 @@ export interface CommentExportResponse {
 
 export interface AdvisorPost {
   handle: string;
+  /** ONE entry per KOL (2026-09-02): a multi-platform person shows all their
+   *  channels here as a combined label, e.g. "TikTok + Instagram". */
   platform: string;
   /** Score out of 10, anchored to the sold KPI — spec v3 (2026-09-02),
    *  replacing the 4-grade labels at the team's request. `null` means the
