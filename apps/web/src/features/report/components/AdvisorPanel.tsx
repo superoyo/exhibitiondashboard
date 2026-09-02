@@ -1,7 +1,8 @@
 import type { AdvisorGrade, AdvisorPost } from '@kol/shared';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { getAdvisor, getViewAdvisor } from '@/features/report/api/reportApi';
@@ -16,6 +17,8 @@ import { getAdvisor, getViewAdvisor } from '@/features/report/api/reportApi';
  * analysis input weighs selling prices. On a /v/ link the stored result is
  * read through the token endpoint; RUNNING an analysis stays logged-in.
  */
+
+const PAGE_SIZE = 15;
 
 const GRADE: Record<AdvisorGrade, { label: string; chip: string; order: number }> = {
   ABOVE: { label: '🟢 เกินเป้า', chip: 'bg-emerald-100 text-emerald-900', order: 0 },
@@ -92,6 +95,43 @@ export function AdvisorPanel({
     acc[p.grade] = (acc[p.grade] ?? 0) + 1;
     return acc;
   }, {});
+  const boostCount = posts.filter((p) => p.boost).length;
+
+  // Big campaigns produce 40+ graded lines — filter by grade and page by 15,
+  // the same reading pattern as the comment panel (team ask, 2026-09-02).
+  // Everything is already client-side, so both are plain state.
+  const [gradeFilter, setGradeFilter] = useState<'' | 'BOOST' | AdvisorGrade>('');
+  const [offset, setOffset] = useState(0);
+  // A new campaign or a fresh run starts back at "everything, page 1".
+  useEffect(() => {
+    setGradeFilter('');
+    setOffset(0);
+  }, [campaign, data?.generated_at]);
+
+  const filtered =
+    gradeFilter === ''
+      ? posts
+      : gradeFilter === 'BOOST'
+        ? posts.filter((p) => p.boost)
+        : posts.filter((p) => p.grade === gradeFilter);
+  const pageRows = filtered.slice(offset, offset + PAGE_SIZE);
+  const from = filtered.length === 0 ? 0 : offset + 1;
+  const to = Math.min(offset + PAGE_SIZE, filtered.length);
+
+  function pick(key: '' | 'BOOST' | AdvisorGrade) {
+    setGradeFilter(key);
+    setOffset(0);
+  }
+
+  const chips: { key: '' | 'BOOST' | AdvisorGrade; label: string; count: number }[] = [
+    { key: '', label: 'ทั้งหมด', count: posts.length },
+    ...(['ABOVE', 'ON_TRACK', 'BELOW', 'TOO_EARLY'] as const).map((gr) => ({
+      key: gr,
+      label: GRADE[gr].label,
+      count: counts[gr] ?? 0,
+    })),
+    { key: 'BOOST' as const, label: '🚀 น่าบูส', count: boostCount },
+  ];
 
   // A client can't run an analysis, so a card full of "press the button"
   // would only advertise a control they don't have — show the panel to them
@@ -135,19 +175,68 @@ export function AdvisorPanel({
                 </span>
               ) : null}
               {' · '}ลงงานแล้ว {result.posted_count} · รอลงงาน {result.pending_count}
-              {(['ABOVE', 'ON_TRACK', 'BELOW', 'TOO_EARLY'] as const)
-                .filter((gr) => counts[gr])
-                .map((gr) => ` · ${GRADE[gr].label} ${counts[gr]}`)
-                .join('')}
             </p>
             <p className="mb-2 rounded-lg border border-brand-400 bg-brand-200/40 p-2 text-sm">
               {result.campaign_summary}
             </p>
-            <div>
-              {posts.map((p) => (
-                <PostLine key={p.handle + p.platform + p.reason.slice(0, 12)} post={p} />
+
+            {/* Grade chips — the per-grade counts live here now instead of the
+                meta line. A 0-count chip stays clickable, like the comment
+                panel: an empty group is itself an answer. */}
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {chips.map((c) => (
+                <button
+                  key={c.key || 'all'}
+                  type="button"
+                  onClick={() => pick(c.key)}
+                  className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                    gradeFilter === c.key
+                      ? 'border-transparent bg-slate-800 text-white'
+                      : 'hover:bg-muted'
+                  }`}
+                >
+                  {c.label} <span className="tabular-nums opacity-70">{c.count}</span>
+                </button>
               ))}
             </div>
+
+            {filtered.length === 0 ? (
+              <div className="py-4 text-center text-sm text-muted-foreground">
+                ไม่มีโพสต์ในกลุ่มนี้
+              </div>
+            ) : (
+              <div>
+                {pageRows.map((p) => (
+                  <PostLine key={p.handle + p.platform + p.reason.slice(0, 12)} post={p} />
+                ))}
+              </div>
+            )}
+
+            {filtered.length > PAGE_SIZE ? (
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <span className="text-xs text-muted-foreground">
+                  {from}–{to} จาก {filtered.length}
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={offset === 0}
+                    onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+                  >
+                    ← ก่อนหน้า
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={to >= filtered.length}
+                    onClick={() => setOffset(offset + PAGE_SIZE)}
+                  >
+                    ถัดไป →
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </>
         ) : null}
       </CardContent>
