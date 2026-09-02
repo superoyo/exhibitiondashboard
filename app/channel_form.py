@@ -24,6 +24,7 @@ are skipped, never guessed.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import logging
 import re
 import statistics
@@ -100,6 +101,16 @@ def _targets(campaign: str) -> tuple[dict, set]:
             if (u, plat) in fresh:
                 continue
             k = roster[u]
+            # Spec v3 (team, 2026-09-02): when a measurable KPI exists the
+            # score STOPS at the KPI — comparing against the channel's other
+            # posts is unfair because nobody knows which of those were
+            # boosted. The baseline would go unused, so don't pay for it.
+            try:
+                kpis = json.loads(k.kpi_json) if k.kpi_json else []
+            except ValueError:
+                kpis = []
+            if any(x.get("metric") in ("views", "interaction") for x in kpis):
+                continue
             links = kol_links(k)
             profile = next((ln["url"] for ln in links
                             if ln.get("platform") == plat and ln.get("url")

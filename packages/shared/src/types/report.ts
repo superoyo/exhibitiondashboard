@@ -227,17 +227,18 @@ export interface CommentExportResponse {
 
 // ---- Performance advisor ----------------------------------------------------
 
-/** Grade anchored to the sold target — spec v2 (2026-08-27), replacing the
- *  verdict/talking-point shape the team found too verbose. */
-export type AdvisorGrade = 'ABOVE' | 'ON_TRACK' | 'BELOW' | 'TOO_EARLY';
-
 export interface AdvisorPost {
   handle: string;
   platform: string;
-  grade: AdvisorGrade;
+  /** Score out of 10, anchored to the sold KPI — spec v3 (2026-09-02),
+   *  replacing the 4-grade labels at the team's request. `null` means the
+   *  post is under 3 days old and not judged yet ("รอประเมิน"). Absent on
+   *  results stored by spec v2 — the panel then asks for a re-run. */
+  score: number | null;
   /** Passes the boost gate (ER ≥1.2× median, save+share ≥15%, ≤7 days). */
   boost: boolean;
-  /** ONE line of numbers — no prose, no money figures. */
+  /** ONE "คิดจาก: …" line naming the factors — CPM figures allowed, raw
+   *  price/boost sums never. */
   reason: string;
 }
 
@@ -246,7 +247,8 @@ export interface AdvisorResult {
   posted_count: number;
   pending_count: number;
   median_er_by_platform: Record<string, number>;
-  /** Absent on results stored by the v1 spec — the panel asks for a re-run. */
+  /** Absent on results stored by the v1 spec — the panel asks for a re-run.
+   *  (v2-format entries exist too: their posts carry `grade`, no `score`.) */
   posts?: AdvisorPost[];
 }
 

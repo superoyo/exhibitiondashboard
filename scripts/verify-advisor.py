@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Advisor end-to-end on a throwaway local Postgres (spec v2: grades).
+"""Advisor end-to-end on a throwaway local Postgres (spec v3: score /10).
 
 LOCAL-ONLY dev check (needs the embedded pgserver, like scripts/dev_db.py):
 
     .venv/bin/python scripts/verify-advisor.py
 
-Covers: the v2 grading prompt and input assembly (sold KPIs, boost budget,
-channel history medians from our own past campaigns, hidden-likes null), the
+Covers: the v3 scoring prompt and input assembly (sold KPIs, boost budget,
+CPM from boost money, channel form, job-history medians, hidden-likes), the
 run billing itself from the response's actual token usage into the advisor
 cost line, storage + auth (401 without a session), and the leak checks
 (no selling price on any open surface).
@@ -53,8 +53,12 @@ with eng.begin() as c:
         "insert into report_kols (username, display, content_group, campaign, "
         "followers, active, sort_order, cost_thb, boost_thb, kpi_json, links_json) "
         "values ('vidkol','Vid','Influ','dm',150000,true,0,30000,5000,:k,:v), "
-        "('waitkol','Wait','Influ','dm',9000,true,1,NULL,NULL,NULL,NULL)"),
-        {"k": json.dumps([{"metric": "views", "target": 100000}]), "v": VID_LINKS})
+        "('orgkol','Org','Influ','dm',50000,true,1,NULL,NULL,NULL,:v2), "
+        "('waitkol','Wait','Influ','dm',9000,true,2,NULL,NULL,NULL,NULL)"),
+        {"k": json.dumps([{"metric": "views", "target": 100000}]), "v": VID_LINKS,
+         "v2": json.dumps([{"platform": "tiktok",
+                            "url": "https://www.tiktok.com/@orgkol/video/9",
+                            "handle": "orgkol"}])})
     c.execute(sa.text(
         "insert into report_group_kpis (campaign, group_name, kpi_json) "
         "values ('dm','Influ',:g)"),
@@ -66,6 +70,8 @@ with eng.begin() as c:
         " 63700,79,1,1,1,'2026-08-02'), "
         "('dm','vidkol','facebook','dm_f_1','https://www.facebook.com/vidkol/posts/7',"
         " 0,15000,300,1500,0,'2026-08-02'), "
+        "('dm','orgkol','tiktok','dm_t_9','https://www.tiktok.com/@orgkol/video/9',"
+        " 8000,90,5,3,2,'2026-08-20'), "
         "('old','vidkol','tiktok','old_t_1','https://www.tiktok.com/@vidkol/video/9',"
         " 40000,300,10,5,20,'2026-05-01'), "
         "('old','vidkol','tiktok','old_t_2','https://www.tiktok.com/@vidkol/video/8',"
@@ -76,17 +82,18 @@ import app.auth as auth_mod  # noqa: E402
 auth_mod.validate_token = lambda tok: tok == "t"
 
 captured: dict = {}
-CANNED = {"campaign_summary": "ทดสอบ", "posted_count": 1, "pending_count": 1,
+CANNED = {"campaign_summary": "ทดสอบ", "posted_count": 2, "pending_count": 1,
           "median_er_by_platform": {"TikTok": 0.13},
           "posts": [{"handle": "@vidkol", "platform": "TikTok",
-                     "grade": "ON_TRACK", "boost": False,
-                     "reason": "views 63.7K = 64% ของ KPI 100K"}]}
+                     "score": 5, "boost": False,
+                     "reason": "คิดจาก: views 63.7K = 64% ของ KPI 100K · CPM จริง 78.49 แพงกว่าที่ขาย 50"}]}
 import app.tiein as tiein_mod  # noqa: E402
 
 # ---- fake the channel-page scrapes (ฟอร์มช่อง) ------------------------------
-# vidkol posted on TikTok + Facebook. TikTok returns 3 clips, one of which is
-# the tracked campaign post (dm_t_1) and must be EXCLUDED from the baseline;
-# the organic two give median views 20000, engagement [230, 430] -> 330.
+# Spec v3: a measurable KPI means the score stops at the KPI, so vidkol
+# (views-KPI, posted TikTok+FB) must NOT be fetched at all. orgkol has no KPI
+# → fetched; one returned clip is the tracked campaign post (dm_t_9) and must
+# be EXCLUDED; the organic two give median views 20000, engagement 330.
 import app.channel_form as chform_mod  # noqa: E402
 
 chform_calls = {"tiktok": 0, "fb": 0}
@@ -94,23 +101,23 @@ chform_calls = {"tiktok": 0, "fb": 0}
 
 def fake_channel_tiktok(usernames, per=10, **kw):
     chform_calls["tiktok"] += 1
+    assert list(usernames) == ["orgkol"], usernames
     items = [
-        {"input": "vidkol", "id": "dm_t_1", "playCount": 999999,
+        {"input": "orgkol", "id": "dm_t_9", "playCount": 999999,
          "diggCount": 9, "commentCount": 9, "shareCount": 9, "collectCount": 9,
-         "webVideoUrl": "https://www.tiktok.com/@vidkol/video/1"},
-        {"input": "vidkol", "id": "org_1", "playCount": 30000, "diggCount": 400,
+         "webVideoUrl": "https://www.tiktok.com/@orgkol/video/9"},
+        {"input": "orgkol", "id": "org_1", "playCount": 30000, "diggCount": 400,
          "commentCount": 10, "shareCount": 15, "collectCount": 5,
-         "webVideoUrl": "https://www.tiktok.com/@vidkol/video/501"},
-        {"input": "vidkol", "id": "org_2", "playCount": 10000, "diggCount": 200,
+         "webVideoUrl": "https://www.tiktok.com/@orgkol/video/501"},
+        {"input": "orgkol", "id": "org_2", "playCount": 10000, "diggCount": 200,
          "commentCount": 10, "shareCount": 10, "collectCount": 10,
-         "webVideoUrl": "https://www.tiktok.com/@vidkol/video/502"},
+         "webVideoUrl": "https://www.tiktok.com/@orgkol/video/502"},
     ]
     return items, {"cost_usd": 0.037}
 
 
 def fake_channel_fb(page_url, per=10, **kw):
     chform_calls["fb"] += 1
-    assert page_url == "https://www.facebook.com/vidkol", page_url
     return [], {"cost_usd": 0.001}
 
 
@@ -142,30 +149,37 @@ def check(cond, msg):
         fails.append(msg)
 
 
-print("-- advisor run (spec v2: grades) --")
+print("-- advisor run (spec v3: score /10) --")
 out = run_advisor("dm")
 check(out.get("status") == "success", f"run: {out}")
 check(captured.get("model") == "claude-opus-5", f"model: {captured.get('model')}")
-check("ABOVE" in captured["prompt"] and "TOO_EARLY" in captured["prompt"],
-      "v2 grading prompt in use")
+check("คะแนน 1–10" in captured["prompt"] and '"score": 1-10' in captured["prompt"],
+      "v3 scoring prompt in use")
+check("ห้ามเอา channel_recent/prior_history มาถ่วงคะแนนต่อ" in captured["prompt"],
+      "KPI settles it — channel comparisons forbidden past the KPI (team rule)")
 rows = json.loads(captured["prompt"].split("ข้อมูลรายโพสต์:\n", 1)[1])
 vrow = next(r for r in rows if r["handle"] == "@vidkol" and r["platform"] == "TikTok")
 check(vrow["kpis"] == [{"metric": "views", "target": 100000}],
       f"sold KPI reaches the model: {vrow['kpis']}")
 check(vrow["boost_thb"] == 5000.0, "boost budget reaches the model")
+check(vrow["cpm_sold_thb"] == 50.0 and vrow["cpm_actual_thb"] == 78.49,
+      f"CPM precomputed from boost money (team choice): "
+      f"{vrow['cpm_sold_thb']}/{vrow['cpm_actual_thb']}")
 check(vrow["prior_history"] == {"posts": 2, "median_views": 50000,
                                 "median_engagement": 447},
       f"channel history = medians of OUR past campaigns: {vrow['prior_history']}")
 
-# ฟอร์มช่อง (channel form): fetched as step 0 of the run — one TikTok batch,
-# one FB page — with OUR tracked campaign clip excluded from the sample.
-check(chform_calls == {"tiktok": 1, "fb": 1},
-      f"channel pages fetched once per platform: {chform_calls}")
-check(vrow["channel_recent"] == {"posts": 2, "median_views": 20000,
+# ฟอร์มช่อง (channel form): vidkol has a measurable KPI → the score stops at
+# the KPI, so no channel page is bought for them (TikTok OR Facebook). orgkol
+# has no KPI → one TikTok batch, with OUR tracked clip excluded.
+check(chform_calls == {"tiktok": 1, "fb": 0},
+      f"channel pages bought only where the KPI can't settle it: {chform_calls}")
+check(vrow["channel_recent"] is None,
+      "KPI carrier gets no channel_recent — nothing was fetched for them")
+orow = next(r for r in rows if r["handle"] == "@orgkol")
+check(orow["channel_recent"] == {"posts": 2, "median_views": 20000,
                                  "median_engagement": 330, "median_er_pct": 1.87},
-      f"channel form reaches the model, campaign clip excluded: {vrow['channel_recent']}")
-check("เทียบฟอร์มช่องตัวเอง" in captured["prompt"],
-      "prompt ranks the channel's own form as a comparator")
+      f"no-KPI KOL gets the channel form, campaign clip excluded: {orow['channel_recent']}")
 
 # Facebook post with no view count → graded on the engagement basis, never
 # dumped into TOO_EARLY (Kirei Kirei feedback, 2026-09-01).
@@ -175,21 +189,21 @@ check(frow["views"] == 0 and frow["er_method"] == "followers"
       f"no-views post gets follower-based ER: {frow['er_pct']}/{frow['er_method']}")
 check(frow["er_follow_pct"] == 11.2 and vrow["er_follow_pct"] == 0.05,
       "er_follow_pct on EVERY post — same-basis comparator across platforms")
-check("ห้ามให้ TOO_EARLY เพียงเพราะไม่มี views" in captured["prompt"],
-      "prompt forbids parking no-views posts in TOO_EARLY")
+check("ห้ามงดให้คะแนนเพียงเพราะไม่มี views" in captured["prompt"],
+      "prompt forbids withholding a score just because views are hidden")
 
 print("\n-- storage, billing, auth --")
 r = cl.get("/api/report/advisor?campaign=dm", headers=H)
 j = r.json()
 check(r.status_code == 200 and j["is_set"]
-      and j["result"]["posts"][0]["grade"] == "ON_TRACK",
-      f"stored v2 result served: {r.text[:90]}")
+      and j["result"]["posts"][0]["score"] == 5,
+      f"stored v3 result served: {r.text[:90]}")
 r = cl.get("/api/report/data", params={"campaign": "dm"})
 adv = (r.json().get("cost_by_kind") or {}).get("advisor") or {}
 check(adv.get("total") == 0.115 and adv.get("count") == 1,
       f"cost from real usage (8K in + 3K out on Opus = $0.115): {adv}")
 cf = (r.json().get("cost_by_kind") or {}).get("chform") or {}
-check(cf.get("total") == 0.038 and cf.get("count") == 1,
+check(cf.get("total") == 0.037 and cf.get("count") == 1,
       f"channel-form Apify spend on its own cost line: {cf}")
 recs_json = json.dumps(r.json()["records"])
 check("30000" not in recs_json and '"cost' not in recs_json
@@ -201,7 +215,7 @@ check(cl.get("/api/report/advisor?campaign=dm").status_code == 401,
 # The client LINK shows the full commercial picture + the stored analysis
 # (team decision 2026-09-01) — token-addressed, no session needed.
 r = cl.get("/api/view/Tok111222333/advisor")
-check(r.status_code == 200 and r.json()["result"]["posts"][0]["grade"] == "ON_TRACK",
+check(r.status_code == 200 and r.json()["result"]["posts"][0]["score"] == 5,
       "client link reads the stored analysis by token")
 r = cl.get("/api/view/Tok111222333/commercial")
 j = r.json()
@@ -218,7 +232,7 @@ check(cl.get("/api/view/WRONGTOKEN00/advisor").status_code == 404
 print("\n-- channel-form cache --")
 out2 = run_advisor("dm")
 check(out2.get("status") == "success"
-      and chform_calls == {"tiktok": 1, "fb": 1},
+      and chform_calls == {"tiktok": 1, "fb": 0},
       f"second run within 30 days scrapes NOTHING (cache): {chform_calls}")
 
 from app.db import engine as app_engine  # noqa: E402
