@@ -162,8 +162,20 @@ vrow = next(r for r in rows if r["handle"] == "@vidkol" and r["platform"] == "Ti
 check(vrow["kpis"] == [{"metric": "views", "target": 100000}],
       f"sold KPI reaches the model: {vrow['kpis']}")
 check(vrow["boost_thb"] == 5000.0, "boost budget reaches the model")
+# KPI is per person → both of vidkol's rows (TikTok + FB) carry the same
+# person totals: views 63700+0, engagement 82 + 16800.
+frow0 = next(r for r in rows if r["handle"] == "@vidkol" and r["platform"] == "Facebook")
+check(vrow["person_total_views"] == 63700
+      and vrow["person_total_engagement"] == 16882
+      and frow0["person_total_views"] == 63700,
+      f"person totals ride on EVERY row of that person: {vrow['person_total_views']}"
+      f"/{vrow['person_total_engagement']}")
+check("ห้ามเอาโพสต์เดียวไปหารเป้าทั้งก้อน" in captured["prompt"],
+      "prompt forbids judging one post against the whole personal KPI")
+check("(ฐาน" not in captured["prompt"],
+      "no internal score jargon left for the model to copy (ฐาน X confused the team)")
 check(vrow["cpm_sold_thb"] == 50.0 and vrow["cpm_actual_thb"] == 78.49,
-      f"CPM precomputed from boost money (team choice): "
+      f"CPM from boost money over the person's TOTAL views: "
       f"{vrow['cpm_sold_thb']}/{vrow['cpm_actual_thb']}")
 check(vrow["prior_history"] == {"posts": 2, "median_views": 50000,
                                 "median_engagement": 447},

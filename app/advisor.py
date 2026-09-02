@@ -83,13 +83,14 @@ SYSTEM_PROMPT = """คุณคือ Performance Analyst ของเอเจ�
 
 ## ข้อมูลที่ได้รับ
 JSON รายโพสต์: handle, platform, tier, followers, views, likes (null = แพลตฟอร์มซ่อนเลขไลก์), comments, shares, saves, er_pct, er_method ("views" หรือ "followers" สำหรับโพสต์ที่แพลตฟอร์มไม่เปิด views), er_follow_pct (engagement/followers — ฐานเดียวกันทุกโพสต์ทุกแพลตฟอร์ม), posted_date,
-kpis = เป้าที่ขายของคนนั้น เช่น [{"metric":"impressions","target":700000}] (อาจว่าง),
+kpis = เป้าที่ขายของคนนั้น เช่น [{"metric":"impressions","target":700000}] (อาจว่าง — เป้าเป็นรายคน ไม่ใช่รายโพสต์),
+person_total_views / person_total_engagement = ยอดรวมทุกโพสต์ของคนนั้นในแคมเปญนี้ (คำนวณให้แล้ว — ใช้คู่กับ kpis),
 boost_thb = งบบูสที่ขาย (อาจว่าง), cost = ค่าตัว (ใช้ชั่งใจภายใน ห้ามพิมพ์ก้อนเงินเต็มใน output),
-cpm_sold_thb = เงินบูส ÷ KPI views × 1000 (CPM ที่ขาย) · cpm_actual_thb = เงินบูส ÷ views จริง × 1000 (CPM ที่ได้จริง) — คำนวณให้แล้ว null = ข้อมูลไม่ครบ,
+cpm_sold_thb = เงินบูส ÷ KPI views × 1000 (CPM ที่ขาย) · cpm_actual_thb = เงินบูส ÷ ยอดวิวรวมทุกโพสต์ของคนนั้น × 1000 (CPM ที่ได้จริง) — คำนวณให้แล้ว null = ข้อมูลไม่ครบ,
 channel_recent = ฟอร์มช่องจากคลิปล่าสุด ~10 คลิปบนหน้าช่องจริง (ไม่รวมคลิปงานของเรา) หรือ null · prior_history = สถิติงานจ้างเก่าของช่องนี้ในระบบเรา หรือ null — ทั้งคู่เป็นตัวเทียบสำรองเท่านั้น (ดูข้อ 4)
 
 ## วิธีตัดสิน (เรียงลำดับ)
-1. หลักคือ Performance หน้าโพสต์เทียบ KPI ที่ขาย: metric "views" เทียบ views จริง · "interaction" เทียบ engagement จริง (likes+comments+shares+saves) · เมื่อวัดกับ KPI ได้แล้ว ให้จบที่ KPI — ห้ามเอา channel_recent/prior_history มาถ่วงคะแนนต่อ (มติทีม: เราไม่รู้ว่าคลิปอื่นของช่องตัวไหนมีบูส ตัวแปรไม่เท่ากัน เทียบกันไม่ได้)
+1. หลักคือ Performance เทียบ KPI ที่ขาย — และ KPI เป็นรายคน: metric "views" เทียบ person_total_views · "interaction" เทียบ person_total_engagement · ห้ามเอาโพสต์เดียวไปหารเป้าทั้งก้อนของคนที่ลงหลายแพลตฟอร์ม (คนลง 3 ช่องแล้วเอาโพสต์ IG โพสต์เดียวเทียบเป้าทั้งหมด = คะแนนต่ำทั้งที่รวมแล้วถึงเป้า) · ทุกโพสต์ของคนเดียวกันจึงได้คะแนนฐานเดียวกันจาก KPI แล้วค่อยปรับ ±1 รายโพสต์จากคุณภาพของโพสต์นั้นเอง (ER เทียบค่ากลางแพลตฟอร์มตัวเอง · save+share · CPM) · เมื่อวัดกับ KPI ได้แล้ว ให้จบที่ KPI — ห้ามเอา channel_recent/prior_history มาถ่วงคะแนนต่อ (มติทีม: เราไม่รู้ว่าคลิปอื่นของช่องตัวไหนมีบูส ตัวแปรไม่เท่ากัน เทียบกันไม่ได้)
 2. "impressions"/"reach" วัดจากหน้าบ้านไม่ได้ — บอกสั้น ๆ แล้วใช้ค่ากลางแคมเปญแทน · คนไม่มี KPI ก็ใช้ค่ากลางแคมเปญ (median ต่อแพลตฟอร์ม ห้ามปน er_method ต่างชนิด — เทียบกันเองในแคมเปญยุติธรรม เพราะทุกโพสต์เป็นงานจ้างเงื่อนไขเดียวกัน)
 3. โพสต์ที่แพลตฟอร์มไม่เปิด views (views = 0 เช่น Facebook): ตัดสินด้วย ER — เทียบ KPI interaction ถ้ามี ไม่มีก็เทียบ er_follow_pct กับ median er_follow_pct ของทั้งแคมเปญ · ระบุว่าเทียบฐานผู้ติดตาม · ห้ามงดให้คะแนนเพียงเพราะไม่มี views
 4. channel_recent/prior_history ใช้เฉพาะเมื่อไม่มีทั้ง KPI และค่ากลางให้เทียบ (เช่น โพสต์เดียวบนแพลตฟอร์มเดียว) และต้องหมายเหตุว่าเป็นการเทียบหยาบ
@@ -102,6 +103,7 @@ channel_recent = ฟอร์มช่องจากคลิปล่าสุ
 10: R ≥ 1.5 · 9: 1.3–1.5 · 8: 1.15–1.3 · 7: 1.0–1.15 · 6: 0.85–1.0 · 5: 0.7–0.85 · 4: 0.55–0.7 · 3: 0.4–0.55 · 2: 0.25–0.4 · 1: < 0.25
 แล้วปรับได้ไม่เกิน ±1: คุณภาพ engagement เด่น (ER สูงกว่าค่ากลางชัด หรือ save+share ≥ 15%) +1 · CPM จริงถูกกว่าที่ขายชัดเจน +1 · ER ต่ำผิดปกติหรือ CPM แพงกว่าที่ขายมาก −1 · รวมแล้วไม่ต่ำกว่า 1 ไม่เกิน 10
 คะแนนต่ำ: ระบุตัวเลขตรง ๆ แต่ห้ามใช้ภาษาด้อยค่าครีเอเตอร์ (รายงานถึงมือลูกค้าและครีเอเตอร์ได้)
+ตารางนี้เป็นวิธีคิดภายในเท่านั้น — ห้ามโชว์กลไกใน reason: ห้ามมีคำว่า ฐาน/base และห้ามเขียนเลขบวกลบคะแนน ทีมอ่านแล้วงง ให้เล่าเฉพาะตัวเลขผลงานจริง
 
 boost = true เมื่อครบทุกข้อ: ER ≥ 1.2× median แพลตฟอร์ม + (save+share)/engagement ≥ 15% + โพสต์อายุไม่เกิน 7 วัน · ห้าม true เมื่อ score ≤ 5 (เอาเงินไปขยายของที่ organic ไม่เวิร์ก = เผางบ)
 
@@ -118,19 +120,21 @@ boost = true เมื่อครบทุกข้อ: ER ≥ 1.2× median แ
 - ก้อนเงินเต็ม (ค่าตัว/งบบูสเป็นบาท) โผล่ใน output — พิมพ์ได้เฉพาะเลข CPM
 - แนะนำ boost โพสต์ที่ ER ต่ำกว่า median"""
 
-FEW_SHOT = """ตัวอย่างรูปแบบที่ถูกต้อง (ข้อมูลสมมติ ใช้เทียบรูปแบบเท่านั้น):
-{"campaign_summary": "ลงงาน 5/7 คน — คะแนนเฉลี่ย 6.5 มี 1 โพสต์เข้าเกณฑ์บูส ควรเสนอภายในสัปดาห์นี้ · อีก 2 คนรอคิวลงงาน",
- "posted_count": 5, "pending_count": 2,
- "median_er_by_platform": {"TikTok": 4.1},
+FEW_SHOT = """ตัวอย่างรูปแบบที่ถูกต้อง (ข้อมูลสมมติ ใช้เทียบรูปแบบเท่านั้น — สังเกต @nudaeng ลง 2 ช่อง: KPI วัดจากยอดรวม ทั้งสองโพสต์ได้คะแนนใกล้กัน ต่างกันแค่คุณภาพรายโพสต์):
+{"campaign_summary": "ลงงาน 6/8 คน — คะแนนเฉลี่ย 7.2 มี 1 โพสต์เข้าเกณฑ์บูส ควรเสนอภายในสัปดาห์นี้ · อีก 2 คนรอคิวลงงาน",
+ "posted_count": 6, "pending_count": 2,
+ "median_er_by_platform": {"TikTok": 4.1, "Instagram": 2.0},
  "posts": [
   {"handle": "@aooomtwp", "platform": "TikTok", "score": 10, "boost": true,
-   "reason": "คิดจาก: views 173K = 173% ของ KPI 100K (ฐาน 9) · CPM จริง 46 ถูกกว่าที่ขาย 80 · save+share 21% (+1)"},
-  {"handle": "@teenny.10", "platform": "TikTok", "score": 5, "boost": false,
-   "reason": "คิดจาก: views 82% ของ KPI (ฐาน 6) · CPM จริง 130 แพงกว่าที่ขาย 95 (−1) · ER 0.9× ค่ากลาง"},
+   "reason": "คิดจาก: views 173K = 173% ของ KPI 100K · CPM จริง 46 ถูกกว่าที่ขาย 80 · save+share 21% ของ engagement"},
+  {"handle": "@nudaeng", "platform": "TikTok", "score": 8, "boost": false,
+   "reason": "คิดจาก: views รวม 2 ช่อง 350K = 117% ของ KPI 300K · โพสต์นี้ ER 5.3% = 1.3× ค่ากลาง TikTok"},
+  {"handle": "@nudaeng", "platform": "Instagram", "score": 7, "boost": false,
+   "reason": "คิดจาก: KPI วัดจากยอดรวม 2 ช่อง (117% — ถึงเป้า) · โพสต์ IG นี้ views 60K · ER 1.9% ≈ ค่ากลาง IG"},
   {"handle": "@mewchi5", "platform": "TikTok", "score": 3, "boost": false,
-   "reason": "คิดจาก: KPI เป็น Imp วัดหน้าบ้านไม่ได้ จึงเทียบค่ากลางแคมเปญ: views 0.45× median (ฐาน 3)"},
+   "reason": "คิดจาก: KPI เป็น Imp วัดหน้าบ้านไม่ได้ จึงเทียบค่ากลางแคมเปญ: views 0.45× median"},
   {"handle": "@baanmali.kitchen", "platform": "Facebook", "score": 9, "boost": false,
-   "reason": "คิดจาก: Facebook ไม่เปิด views จึงใช้ ER ฐานผู้ติดตาม 3.9% = 2.2× ค่ากลางแคมเปญ (1.8%) (ฐาน 10 ปรับ −1 เพราะไลก์กระจุกโพสต์เดียว)"},
+   "reason": "คิดจาก: Facebook ไม่เปิด views จึงใช้ ER ฐานผู้ติดตาม 3.9% = 2.2× ค่ากลางแคมเปญ (1.8%)"},
   {"handle": "@sjpingg", "platform": "TikTok", "score": null, "boost": false,
    "reason": "คิดจาก: โพสต์อายุ 2 วัน ตัวเลขยังโต — รอประเมินหลัง 3 วัน"}]}
 หมายเหตุ: ใส่เฉพาะโพสต์ที่ลงงานแล้วใน posts · คนที่ยังไม่ลงงานรวมใน pending_count"""
@@ -188,18 +192,34 @@ def _build_input(campaign: str) -> tuple[list, int]:
         from app.channel_form import baselines_for
         channel = baselines_for(list(roster))
 
+        # KPIs are sold per PERSON, so a multi-platform KOL must be measured
+        # on the SUM of their posts — scoring a single IG post against the
+        # whole target made great numbers look like failures (parnratchy,
+        # Shokubutsu Original, 2026-09-02). Same rule the posts table uses.
+        tot_views: dict = {}
+        tot_eng: dict = {}
+        for p in posts:
+            u = p.username.lower()
+            e = (max(0, p.likes or 0) + (p.comments or 0)
+                 + (p.shares or 0) + (p.saves or 0))
+            tot_views[u] = tot_views.get(u, 0) + (p.views or 0)
+            tot_eng[u] = tot_eng.get(u, 0) + e
+
         rows = []
         posted_users = set()
         for p in posts:
             k = roster[p.username.lower()]
             kpis = json.loads(k.kpi_json) if k.kpi_json else []
             boost = float(k.boost_thb) if k.boost_thb is not None else None
-            # CPM per the team's chosen base (2026-09-02): boost money only.
-            # Precomputed here so the model compares, never does arithmetic.
+            # CPM per the team's chosen base (2026-09-02): boost money only,
+            # against the person's TOTAL views — boost is per person, like the
+            # KPI. Precomputed so the model compares, never does arithmetic.
             kpi_views = next((x.get("target") for x in kpis
                               if x.get("metric") == "views" and x.get("target")), None)
+            person_views = tot_views.get(p.username.lower(), 0)
             cpm_sold = round(boost / kpi_views * 1000, 2) if boost and kpi_views else None
-            cpm_actual = round(boost / p.views * 1000, 2) if boost and p.views else None
+            cpm_actual = (round(boost / person_views * 1000, 2)
+                          if boost and person_views else None)
             likes = None if (p.likes or 0) < 0 else (p.likes or 0)
             engagement = ((likes or 0) + (p.comments or 0)
                           + (p.shares or 0) + (p.saves or 0))
@@ -233,6 +253,8 @@ def _build_input(campaign: str) -> tuple[list, int]:
                 # sold targets + money — weighed in the scoring; only the CPM
                 # figures may be echoed in the output, never the raw sums
                 "kpis": kpis,
+                "person_total_views": person_views,
+                "person_total_engagement": tot_eng.get(p.username.lower(), 0),
                 "boost_thb": boost,
                 "cost": float(k.cost_thb) if k.cost_thb is not None else None,
                 "cpm_sold_thb": cpm_sold,
