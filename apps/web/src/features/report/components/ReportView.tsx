@@ -20,11 +20,14 @@ import {
   sumBy,
 } from '@/features/report/lib/metrics';
 import {
+  getAdvisor,
   getAdvisorStatus,
+  getViewAdvisor,
   getViewCommercial,
   runAdvisor,
   startCommentRefresh,
 } from '@/features/report/api/reportApi';
+import type { ScoreByUser } from './PostsTable';
 import {
   useCommentStatus,
   useComments,
@@ -193,6 +196,27 @@ export function ReportView({
     return map;
   }, [viewToken, viewCommercial.data, roster.data]);
   const groupKpiData = (viewToken ? viewCommercial.data?.group_kpis : groupKpis.data) ?? {};
+  // Stored advisor scores, folded into the posts table so the team reads the
+  // score next to the stats (2026-09-04). Same query key as AdvisorPanel —
+  // react-query serves both from one fetch.
+  const advisorStored = useQuery({
+    queryKey: ['report', 'advisor', campaign, viewToken],
+    queryFn: () => (viewToken ? getViewAdvisor(viewToken) : getAdvisor(campaign)),
+    enabled: !influencerView && Boolean(campaign),
+  });
+  const advisorScores = useMemo(() => {
+    const result = advisorStored.data?.is_set ? advisorStored.data.result : undefined;
+    const map: ScoreByUser = {};
+    for (const p of result?.posts ?? []) {
+      if (p.score === undefined) return {}; // v1/v2-format result — re-run first
+      map[p.handle.replace(/^@/, '').toLowerCase()] = {
+        score: p.score,
+        boost: p.boost,
+        reason: p.reason,
+      };
+    }
+    return map;
+  }, [advisorStored.data]);
   // Columns appear only when at least one KOL actually carries a value —
   // a campaign without planner data keeps its familiar table.
   const hasCommercial = !influencerView && Object.keys(commercial).length > 0;
@@ -588,6 +612,7 @@ export function ReportView({
                   rows={rows}
                   colors={colors}
                   commercial={hasCommercial ? commercial : undefined}
+                  scores={Object.keys(advisorScores).length ? advisorScores : undefined}
                 />
               </CardContent>
             </Card>

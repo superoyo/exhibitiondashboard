@@ -100,11 +100,26 @@ export function KpiLine({
 /** "12,500" → "12.5K"-style money, but exact — the team quotes these numbers. */
 const baht = (n: number) => `฿${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
+/** One KOL's stored Performance Analysis score, keyed by lowercase username —
+ *  shown as a chip under the name so the team reads score and stats together
+ *  instead of scrolling between the table and the panel (2026-09-04). */
+export interface ScoreByUser {
+  [username: string]: { score: number | null; boost: boolean; reason: string };
+}
+
+function scoreChipClass(score: number | null): string {
+  if (typeof score !== 'number') return 'bg-slate-100 text-slate-600';
+  if (score >= 8) return 'bg-emerald-100 text-emerald-900';
+  if (score >= 5) return 'bg-amber-100 text-amber-900';
+  return 'bg-orange-100 text-orange-900';
+}
+
 export function PostsTable({
   rows,
   colors,
   hideMetrics = false,
   commercial,
+  scores,
 }: {
   rows: ReportRecordDerived[];
   colors: CategoryColors;
@@ -115,6 +130,8 @@ export function PostsTable({
   hideMetrics?: boolean;
   /** Present only on the logged-in team view. */
   commercial?: CommercialByUser;
+  /** Stored advisor scores — absent on the influencer list and before a run. */
+  scores?: ScoreByUser;
 }) {
   // Sorting by views is meaningless when the column is hidden.
   const [sortKey, setSortKey] = useState<SortKey>(hideMetrics ? 'category' : 'views');
@@ -308,25 +325,56 @@ export function PostsTable({
                           src={avatar}
                           className="size-10 flex-none rounded-full bg-slate-200 object-cover"
                         />
-                        {profileUrl ? (
-                          // The channel page, straight from the planner's file.
-                          // Rows without one aren't links — no guessed URLs.
-                          <a
-                            href={profileUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="hover:underline"
-                          >
-                            @{row.username} ↗
-                          </a>
-                        ) : (
-                          <>@{row.username}</>
-                        )}{' '}
-                        {/* Single-platform KOLs keep the badge by the name;
-                            grouped ones carry it per stat line instead. */}
-                        {!grouped && (
-                          <PlatformBadge platform={row.platform} label={row.platform_label} />
-                        )}
+                        <span className="inline-flex flex-col gap-0.5">
+                          <span>
+                            {profileUrl ? (
+                              // The channel page, straight from the planner's
+                              // file. Rows without one aren't links — no
+                              // guessed URLs.
+                              <a
+                                href={profileUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="hover:underline"
+                              >
+                                @{row.username} ↗
+                              </a>
+                            ) : (
+                              <>@{row.username}</>
+                            )}{' '}
+                            {/* Single-platform KOLs keep the badge by the
+                                name; grouped ones carry it per stat line.
+                                The badge IS the post link when one exists. */}
+                            {!grouped && (
+                              <PlatformBadge
+                                platform={row.platform}
+                                label={row.platform_label}
+                                href={row.url || undefined}
+                              />
+                            )}
+                          </span>
+                          {(() => {
+                            const s = scores?.[row.username.toLowerCase()];
+                            if (!s) return null;
+                            return (
+                              <span
+                                className="inline-flex items-center gap-1 font-normal"
+                                title={s.reason}
+                              >
+                                <span
+                                  className={`rounded px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${scoreChipClass(s.score)}`}
+                                >
+                                  📈 {typeof s.score === 'number' ? `${s.score}/10` : 'รอประเมิน'}
+                                </span>
+                                {s.boost ? (
+                                  <span className="rounded bg-fuchsia-100 px-1.5 py-0.5 text-[11px] font-bold text-fuchsia-900">
+                                    🚀
+                                  </span>
+                                ) : null}
+                              </span>
+                            );
+                          })()}
+                        </span>
                       </span>
                     </td>
                   )}
@@ -335,7 +383,11 @@ export function PostsTable({
                   <td className="whitespace-nowrap pr-3 text-right">
                     {grouped && (
                       <span className="mr-1.5">
-                        <PlatformBadge platform={row.platform} label={row.platform_label} />
+                        <PlatformBadge
+                          platform={row.platform}
+                          label={row.platform_label}
+                          href={row.url || undefined}
+                        />
                       </span>
                     )}
                     {fmt(row.followers)}
@@ -379,7 +431,12 @@ export function PostsTable({
                   )}
                   <td>
                     {row.url && (
-                      <a href={row.url} target="_blank" rel="noopener noreferrer">
+                      <a
+                        href={row.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-block whitespace-nowrap rounded-full border border-border px-2.5 py-1 text-xs font-semibold no-underline hover:bg-muted"
+                      >
                         เปิด ↗
                       </a>
                     )}
