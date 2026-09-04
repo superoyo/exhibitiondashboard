@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import type { Campaign } from '@kol/shared';
@@ -15,9 +15,9 @@ import { toast } from '@/stores/toastStore';
 import { CampaignCard } from '@/features/campaigns/components/CampaignCard';
 import { CampaignFormDialog } from '@/features/campaigns/components/CampaignFormDialog';
 import {
+  HOME_PAGE_SIZE,
+  useAllCampaigns,
   useArchiveCampaign,
-  useLatestCampaigns,
-  useSearchableCampaigns,
 } from '@/features/campaigns/hooks/useCampaigns';
 
 const HOME_TABS = [
@@ -46,15 +46,22 @@ export default function HomePage() {
   const query = useDebounce(search).trim().toLowerCase();
   const searching = query.length > 0;
 
-  const latest = useLatestCampaigns();
-  // Only fetches once the user actually types — same lazy behaviour as the
-  // legacy page's SEARCH_CACHE.
-  const searchable = useSearchableCampaigns(searching);
+  const latest = useAllCampaigns();
 
   const results = useMemo(() => {
-    if (!searching) return latest.data ?? [];
-    return (searchable.data ?? []).filter((c) => matches(c, query));
-  }, [searching, query, latest.data, searchable.data]);
+    const all = latest.data ?? [];
+    return searching ? all.filter((c) => matches(c, query)) : all;
+  }, [searching, query, latest.data]);
+
+  // 15 cards per page — older campaigns used to fall off the grid entirely
+  // once the team had more than one page's worth of reports.
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(results.length / HOME_PAGE_SIZE));
+  const shown = results.slice(page * HOME_PAGE_SIZE, (page + 1) * HOME_PAGE_SIZE);
+  // Typing a search jumps back to its first page of matches.
+  useEffect(() => {
+    setPage(0);
+  }, [query]);
 
   const archive = useArchiveCampaign();
   const [archivingKey, setArchivingKey] = useState<string | null>(null);
@@ -86,9 +93,8 @@ export default function HomePage() {
 
   const searchHint = (() => {
     if (!searching) return '';
-    if (searchable.isLoading) return 'กำลังค้นหา…';
-    if (searchable.isError) return `ค้นหาไม่สำเร็จ: ${apiErrorMessage(searchable.error)}`;
-    return `พบ ${results.length} แคมเปญ จากทั้งหมด ${searchable.data?.length ?? 0}`;
+    if (latest.isLoading) return 'กำลังค้นหา…';
+    return `พบ ${results.length} แคมเปญ จากทั้งหมด ${latest.data?.length ?? 0}`;
   })();
 
   return (
@@ -147,7 +153,7 @@ export default function HomePage() {
             )}
           </Card>
         ) : (
-          results.map((campaign) => (
+          shown.map((campaign) => (
             <CampaignCard
               key={campaign.key}
               campaign={campaign}
@@ -158,6 +164,32 @@ export default function HomePage() {
           ))
         )}
       </div>
+
+      {results.length > HOME_PAGE_SIZE ? (
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <span className="text-xs text-muted-foreground">
+            หน้า {page + 1} จาก {pageCount} · ทั้งหมด {results.length} แคมเปญ
+          </span>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page === 0}
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+            >
+              ← ก่อนหน้า
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page + 1 >= pageCount}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              ถัดไป →
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       <CampaignFormDialog
         open={dialogOpen}

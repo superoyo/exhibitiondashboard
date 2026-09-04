@@ -11,25 +11,18 @@ import {
 } from '@/features/campaigns/api/campaignsApi';
 
 /**
- * The home grid shows the 15 newest campaigns. Search needs the full set, so it
- * is a SECOND query that only runs once the user actually types — the legacy
- * page did the same thing with a lazily-filled `SEARCH_CACHE`.
+ * The home grid pages through EVERY campaign, 15 cards a page — it used to
+ * show only the 15 newest, and once the team passed that many reports the
+ * older ones simply vanished unless you knew to search (2026-09-02). One
+ * query holds the whole list (campaign meta is tiny — name/emoji/counts);
+ * paging and search both slice it client-side.
  */
-export const HOME_LIMIT = 15;
-export const SEARCH_LIMIT = 100;
+export const HOME_PAGE_SIZE = 15;
 
-export function useLatestCampaigns() {
+export function useAllCampaigns() {
   return useQuery({
     queryKey: queryKeys.campaigns.list(false),
-    queryFn: () => listCampaigns(HOME_LIMIT),
-  });
-}
-
-export function useSearchableCampaigns(enabled: boolean) {
-  return useQuery({
-    queryKey: ['campaigns', 'list', 'searchable'] as const,
-    queryFn: () => listCampaigns(SEARCH_LIMIT),
-    enabled,
+    queryFn: () => listCampaigns(500),
   });
 }
 

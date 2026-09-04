@@ -321,13 +321,15 @@ const parse = (wb) => parseWorkbook(XLSX, wb);
     // Macro: own KPI per row, boost merged across the two rows (rows 1-2)
     ['macro1', 'https://www.tiktok.com/@macro1/video/7300000000000000041', '55,500', '20,000', '800K Reach'],
     ['macro2', 'https://www.tiktok.com/@macro2/video/7300000000000000042', '47,100', '', '800K Reach'],
-    // Micro package: per-row cost, KPI merged across the whole group (rows 3-5)
-    ['micro1', 'https://www.tiktok.com/@micro1/video/7300000000000000043', '24,500', '', '7M Imp'],
-    ['micro2', 'https://www.tiktok.com/@micro2/video/7300000000000000044', '24,500', '', ''],
-    ['micro3', 'https://www.tiktok.com/@micro3/video/7300000000000000045', '24,500', '', ''],
+    // Micro package: cost AND KPI merged across the whole group (rows 3-5) —
+    // the Pao Win Wash shape: one pack budget, one pack target.
+    ['micro1', 'https://www.tiktok.com/@micro1/video/7300000000000000043', '245,000', '', '7M Imp'],
+    ['micro2', 'https://www.tiktok.com/@micro2/video/7300000000000000044', '', '', ''],
+    ['micro3', 'https://www.tiktok.com/@micro3/video/7300000000000000045', '', '', ''],
   ]);
   ws['!merges'] = [
     { s: { r: 1, c: 3 }, e: { r: 2, c: 3 } }, // boost D2:D3 (vertical)
+    { s: { r: 3, c: 2 }, e: { r: 5, c: 2 } }, // cost C4:C6 (vertical, whole pack)
     { s: { r: 3, c: 4 }, e: { r: 5, c: 4 } }, // KPI E4:E6 (vertical, whole group)
   ];
   // groups via section headers are absent here — single sheet, no group column,
@@ -336,7 +338,18 @@ const parse = (wb) => parseWorkbook(XLSX, wb);
 
   const parsed = parse(wb);
   const got = Object.fromEntries(parsed.kols.map((k) => [k.username, k]));
-  assert.equal(got.macro2.boost_thb, 20000, 'merged boost reaches the second row');
+  // Merged money is the range's TOTAL, split evenly — ฿245,000 over a
+  // 10-person pack is not ฿245,000 per head (Pao Win Wash, 2026-09-02).
+  assert.equal(got.macro1.boost_thb, 10000, 'merged boost splits: 20,000 over 2 = 10,000');
+  assert.equal(got.macro2.boost_thb, 10000, 'merged boost splits on every row');
+  assert.equal(got.macro1.cost_thb, 55500, 'per-row cost stays personal');
+  for (const u of ['micro1', 'micro2', 'micro3']) {
+    assert.equal(
+      got[u].cost_thb,
+      81666.67,
+      `${u} gets the pack cost divided: ${got[u].cost_thb}`,
+    );
+  }
   assert.deepEqual(
     got.macro1.kpis,
     [{ metric: 'reach', target: 800000 }],
@@ -351,7 +364,7 @@ const parse = (wb) => parseWorkbook(XLSX, wb);
       `${u} gets the divided share: ${JSON.stringify(got[u].kpis)}`,
     );
   }
-  console.log('✅ vertical merges spread; shared KPI split per person');
+  console.log('✅ vertical merges spread; shared KPI and shared money split per person');
 }
 
 // ---- a REAL merged title row must still not become the header ---------------

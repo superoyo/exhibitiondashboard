@@ -1225,7 +1225,7 @@ class CampaignPatch(BaseModel):
 
 
 @router.get("/campaigns")
-def list_campaigns(limit: int = Query(15, ge=1, le=100),
+def list_campaigns(limit: int = Query(15, ge=1, le=500),
                    include_inactive: bool = Query(False),
                    session: Session = Depends(db_dependency)):
     """Latest N campaigns (default 15) — home page grid. Attaches roster_count

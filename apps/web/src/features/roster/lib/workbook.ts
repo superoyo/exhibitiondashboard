@@ -306,6 +306,13 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
   // as each person's own target — collected here, divided once the sheet's
   // member count is known.
   const shared: Record<string, { kpis: KolKpi[]; kolIdx: number[] }> = {};
+  // Money merged down rows is the same deal: ฿245,000 boost merged over a
+  // 10-person package is the PACK's budget, not ฿245,000 per head (Pao Win
+  // Wash, 2026-09-02) — and a fee merged across a channel's EP1–EP3 rows is
+  // one hire, not three. Cost and boost tracked separately because their
+  // merges can span different row ranges in the same sheet.
+  const sharedCost: Record<string, { amount: number; kolIdx: number[] }> = {};
+  const sharedBoost: Record<string, { amount: number; kolIdx: number[] }> = {};
   const debug: string[] = [];
   const skipped: string[] = [];
   const sheetNames = visibleSheetNames(wb);
@@ -457,8 +464,24 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
       // Commercial columns, when the sheet has them. KPI cells are joined into
       // one string first, so "หน่วย: Views" + "จำนวน: 100,000" in two columns
       // parses the same as "100,000 Views" in one.
-      const cost = cCost >= 0 ? parseAmount(text(row[cCost])) : null;
-      const boost = cBoost >= 0 ? parseAmount(text(row[cBoost])) : null;
+      let cost = cCost >= 0 ? parseAmount(text(row[cCost])) : null;
+      let boost = cBoost >= 0 ? parseAmount(text(row[cBoost])) : null;
+      // A money cell merged down 2+ rows is a TOTAL shared by those rows —
+      // park it in the pool and split after the loop, like the KPIs below.
+      const costMergeId = cCost >= 0 ? mergeSpans[`${i}:${cCost}`] : undefined;
+      const boostMergeId = cBoost >= 0 ? mergeSpans[`${i}:${cBoost}`] : undefined;
+      let costKey: string | null = null;
+      let boostKey: string | null = null;
+      if (costMergeId && cost != null) {
+        costKey = `${sheetName}|${costMergeId}`;
+        sharedCost[costKey] ??= { amount: cost, kolIdx: [] };
+        cost = null;
+      }
+      if (boostMergeId && boost != null) {
+        boostKey = `${sheetName}|${boostMergeId}`;
+        sharedBoost[boostKey] ??= { amount: boost, kolIdx: [] };
+        boost = null;
+      }
       // A KPI cell merged down 2+ rows is a TOTAL shared by those rows.
       const mergeId = kpiCols.map((i2) => mergeSpans[`${i}:${i2}`]).find(Boolean);
       const kpiText = kpiCols.length ? kpiCols.map((i2) => text(row[i2])).join(' ') : '';
@@ -493,6 +516,8 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
       });
       const pool = sharedKey ? shared[sharedKey] : undefined;
       if (pool) pool.kolIdx.push(kols.length - 1);
+      if (costKey) sharedCost[costKey]?.kolIdx.push(kols.length - 1);
+      if (boostKey) sharedBoost[boostKey]?.kolIdx.push(kols.length - 1);
     }
   }
 
@@ -511,6 +536,24 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
       if (k && !(k.kpis ?? []).length) k.kpis = each;
     }
   }
+
+  // Same even split for merged money — by the people actually imported from
+  // the merge's rows, mirroring the KPI rule above.
+  const splitMoney = (
+    pools: Record<string, { amount: number; kolIdx: number[] }>,
+    field: 'cost_thb' | 'boost_thb',
+  ) => {
+    for (const { amount, kolIdx } of Object.values(pools)) {
+      if (!kolIdx.length) continue;
+      const each = Math.round((amount / kolIdx.length) * 100) / 100;
+      for (const idx of kolIdx) {
+        const k = kols[idx];
+        if (k && k[field] == null) k[field] = each;
+      }
+    }
+  };
+  splitMoney(sharedCost, 'cost_thb');
+  splitMoney(sharedBoost, 'boost_thb');
 
   return { kols, debug: debug.join('  ·  '), skipped };
 }
