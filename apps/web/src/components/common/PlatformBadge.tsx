@@ -1,3 +1,15 @@
+import type { LucideIcon } from 'lucide-react';
+import {
+  Facebook,
+  Globe,
+  Instagram,
+  Link as LinkIcon,
+  MessageCircle,
+  Music2,
+  X as XIcon,
+  Youtube,
+} from 'lucide-react';
+
 import { platformMeta } from '@/lib/platforms';
 import { cn } from '@/lib/utils';
 
@@ -39,6 +51,65 @@ export function PlatformBadge({
   return (
     <span className={cn('chip whitespace-nowrap', className)} style={{ background: meta.color }}>
       {label || meta.label}
+    </span>
+  );
+}
+
+const PLATFORM_ICONS: Record<string, LucideIcon> = {
+  tiktok: Music2,
+  facebook: Facebook,
+  instagram: Instagram,
+  youtube: Youtube,
+  x: XIcon,
+  line: MessageCircle,
+  website: Globe,
+  other: LinkIcon,
+};
+
+/**
+ * Compact round brand icon — the posts table swapped its text pills for these
+ * when wide campaigns pushed the columns off-screen (team ask, 2026-09-07).
+ * With `href` the icon IS the post link (and replaces the old far-right
+ * "เปิด ↗" column); without one it renders muted — "ยังไม่มีลิงก์โพสต์".
+ */
+export function PlatformIcon({
+  platform,
+  label,
+  href,
+}: {
+  platform: string;
+  label?: string;
+  /** Post URL — when present the icon opens the post in a new tab. */
+  href?: string;
+}) {
+  const meta = platformMeta(platform);
+  const Icon = PLATFORM_ICONS[platform || 'other'] ?? LinkIcon;
+  const name = label || meta.label;
+  const body = (
+    <span
+      className="inline-flex size-6 flex-none items-center justify-center rounded-full text-white"
+      style={{ background: meta.color }}
+    >
+      <Icon aria-hidden="true" className="size-3.5" strokeWidth={2.5} />
+    </span>
+  );
+  if (href) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={`${name} — เปิดโพสต์ในแท็บใหม่`}
+        aria-label={`เปิดโพสต์ ${name}`}
+        className="inline-flex rounded-full align-middle transition hover:scale-110 hover:ring-2 hover:ring-black/25"
+      >
+        {body}
+      </a>
+    );
+  }
+  return (
+    <span title={`${name} — ยังไม่มีลิงก์โพสต์`} className="inline-flex align-middle opacity-40">
+      {body}
     </span>
   );
 }

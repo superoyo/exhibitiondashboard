@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import type { KolKpi, ReportRecordDerived } from '@kol/shared';
 
 import { CachedImage } from '@/components/common/CachedImage';
-import { PlatformBadge } from '@/components/common/PlatformBadge';
+import { PlatformIcon } from '@/components/common/PlatformBadge';
 import { fmt, fmtFull } from '@/lib/format';
 import type { CategoryColors } from '@/lib/colors';
 import { cn } from '@/lib/utils';
@@ -256,14 +256,13 @@ export function PostsTable({
               </th>
             ))}
             {showMoney && <th className="whitespace-nowrap py-2 pr-3 font-normal">KPI ที่ขาย</th>}
-            <th className="py-2 font-normal">ลิงก์</th>
           </tr>
         </thead>
         <tbody>
           {sortedGroups.length === 0 && (
             <tr>
               <td
-                colSpan={columns.length + 1 + (showMoney ? 3 : 0)}
+                colSpan={columns.length + (showMoney ? 3 : 0)}
                 className="py-3 text-muted-foreground"
               >
                 — ไม่มี (ทุกคนมี link แล้ว) —
@@ -342,11 +341,13 @@ export function PostsTable({
                             ) : (
                               <>@{row.username}</>
                             )}{' '}
-                            {/* Single-platform KOLs keep the badge by the
+                            {/* Single-platform KOLs keep the icon by the
                                 name; grouped ones carry it per stat line.
-                                The badge IS the post link when one exists. */}
+                                The icon IS the post link when one exists —
+                                the separate ลิงก์ column was cut as
+                                redundant (team, 2026-09-07). */}
                             {!grouped && (
-                              <PlatformBadge
+                              <PlatformIcon
                                 platform={row.platform}
                                 label={row.platform_label}
                                 href={row.url || undefined}
@@ -383,7 +384,7 @@ export function PostsTable({
                   <td className="whitespace-nowrap pr-3 text-right">
                     {grouped && (
                       <span className="mr-1.5">
-                        <PlatformBadge
+                        <PlatformIcon
                           platform={row.platform}
                           label={row.platform_label}
                           href={row.url || undefined}
@@ -429,18 +430,6 @@ export function PostsTable({
                       {kpiCell(row.username)}
                     </td>
                   )}
-                  <td>
-                    {row.url && (
-                      <a
-                        href={row.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-block whitespace-nowrap rounded-full border border-border px-2.5 py-1 text-xs font-semibold no-underline hover:bg-muted"
-                      >
-                        เปิด ↗
-                      </a>
-                    )}
-                  </td>
                 </tr>
               );
             }),
