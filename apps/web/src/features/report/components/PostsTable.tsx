@@ -328,50 +328,45 @@ export function PostsTable({
                   {first && (
                     <td rowSpan={span} className="pr-3 font-medium">
                       <span className="inline-flex items-center gap-2">
+                        {/* Advisor score LEADS the cell, before the avatar
+                            (team, 2026-09-07 — stacked under the name it
+                            looked messy). A fixed-width slot even when this
+                            KOL has no score yet, so avatars stay aligned. */}
+                        {scores
+                          ? (() => {
+                              const s = scores[row.username.toLowerCase()];
+                              if (!s)
+                                return <span aria-hidden="true" className="min-w-11 flex-none" />;
+                              return (
+                                <span
+                                  title={s.reason}
+                                  className={`inline-flex min-w-11 flex-none items-center justify-center gap-0.5 rounded px-1 py-0.5 text-[11px] font-bold tabular-nums ${scoreChipClass(s.score)}`}
+                                >
+                                  {typeof s.score === 'number' ? `${s.score}/10` : 'รอ'}
+                                  {s.boost ? '🚀' : ''}
+                                </span>
+                              );
+                            })()
+                          : null}
                         <CachedImage
                           src={avatar}
                           className="size-10 flex-none rounded-full bg-slate-200 object-cover"
                         />
-                        <span className="inline-flex flex-col gap-0.5">
-                          <span>
-                            {profileUrl ? (
-                              // The channel page, straight from the planner's
-                              // file. Rows without one aren't links — no
-                              // guessed URLs.
-                              <a
-                                href={profileUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="hover:underline"
-                              >
-                                @{row.username} ↗
-                              </a>
-                            ) : (
-                              <>@{row.username}</>
-                            )}
-                          </span>
-                          {(() => {
-                            const s = scores?.[row.username.toLowerCase()];
-                            if (!s) return null;
-                            return (
-                              <span
-                                className="inline-flex items-center gap-1 font-normal"
-                                title={s.reason}
-                              >
-                                <span
-                                  className={`rounded px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${scoreChipClass(s.score)}`}
-                                >
-                                  📈 {typeof s.score === 'number' ? `${s.score}/10` : 'รอประเมิน'}
-                                </span>
-                                {s.boost ? (
-                                  <span className="rounded bg-fuchsia-100 px-1.5 py-0.5 text-[11px] font-bold text-fuchsia-900">
-                                    🚀
-                                  </span>
-                                ) : null}
-                              </span>
-                            );
-                          })()}
-                        </span>
+                        {profileUrl ? (
+                          // The channel page, straight from the planner's
+                          // file. Rows without one aren't links — no
+                          // guessed URLs.
+                          <a
+                            href={profileUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:underline"
+                          >
+                            @{row.username} ↗
+                          </a>
+                        ) : (
+                          <>@{row.username}</>
+                        )}
                       </span>
                     </td>
                   )}
