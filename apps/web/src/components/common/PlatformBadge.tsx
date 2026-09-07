@@ -101,9 +101,16 @@ export function PlatformIcon({
         rel="noopener noreferrer"
         title={`${name} — เปิดโพสต์ในแท็บใหม่`}
         aria-label={`เปิดโพสต์ ${name}`}
-        className="inline-flex rounded-full align-middle transition hover:scale-110 hover:ring-2 hover:ring-black/25"
+        className="relative inline-flex rounded-full align-middle transition hover:scale-110 hover:ring-2 hover:ring-black/25"
       >
         {body}
+        {/* Corner ↗ so a glance says "this opens the post" (team ask). */}
+        <span
+          aria-hidden="true"
+          className="absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full border border-border bg-white text-[9px] font-bold leading-none text-slate-700 shadow-sm"
+        >
+          ↗
+        </span>
       </a>
     );
   }

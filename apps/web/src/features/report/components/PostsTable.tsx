@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import type { KolKpi, ReportRecordDerived } from '@kol/shared';
 
 import { CachedImage } from '@/components/common/CachedImage';
@@ -242,18 +242,27 @@ export function PostsTable({
               </>
             )}
             {columns.map((col) => (
-              <th
-                key={col.key}
-                onClick={() => toggleSort(col.key)}
-                aria-sort={sortKey === col.key ? (ascending ? 'ascending' : 'descending') : 'none'}
-                className={cn(
-                  'cursor-pointer select-none whitespace-nowrap py-2 pr-3 font-normal',
-                  col.align === 'right' && 'text-right',
+              <Fragment key={col.key}>
+                {/* Platform icons live in their own slim column so every row's
+                    icon lines up vertically — parked next to the name they
+                    drifted with the name's length (team, 2026-09-07). */}
+                {col.key === 'followers' && (
+                  <th aria-label="ช่องทาง / ลิงก์โพสต์" className="py-2 pr-2 font-normal" />
                 )}
-              >
-                {col.label}
-                {sortKey === col.key && (ascending ? ' ▲' : ' ▼')}
-              </th>
+                <th
+                  onClick={() => toggleSort(col.key)}
+                  aria-sort={
+                    sortKey === col.key ? (ascending ? 'ascending' : 'descending') : 'none'
+                  }
+                  className={cn(
+                    'cursor-pointer select-none whitespace-nowrap py-2 pr-3 font-normal',
+                    col.align === 'right' && 'text-right',
+                  )}
+                >
+                  {col.label}
+                  {sortKey === col.key && (ascending ? ' ▲' : ' ▼')}
+                </th>
+              </Fragment>
             ))}
             {showMoney && <th className="whitespace-nowrap py-2 pr-3 font-normal">KPI ที่ขาย</th>}
           </tr>
@@ -262,7 +271,7 @@ export function PostsTable({
           {sortedGroups.length === 0 && (
             <tr>
               <td
-                colSpan={columns.length + (showMoney ? 3 : 0)}
+                colSpan={columns.length + 1 + (showMoney ? 3 : 0)}
                 className="py-3 text-muted-foreground"
               >
                 — ไม่มี (ทุกคนมี link แล้ว) —
@@ -272,7 +281,6 @@ export function PostsTable({
           {sortedGroups.map((g) =>
             g.rows.map((row, i) => {
               const span = g.rows.length;
-              const grouped = span > 1;
               const first = i === 0;
               const last = i === span - 1;
               // The one-per-person cells read from the whole group: the top
@@ -340,18 +348,6 @@ export function PostsTable({
                               </a>
                             ) : (
                               <>@{row.username}</>
-                            )}{' '}
-                            {/* Single-platform KOLs keep the icon by the
-                                name; grouped ones carry it per stat line.
-                                The icon IS the post link when one exists —
-                                the separate ลิงก์ column was cut as
-                                redundant (team, 2026-09-07). */}
-                            {!grouped && (
-                              <PlatformIcon
-                                platform={row.platform}
-                                label={row.platform_label}
-                                href={row.url || undefined}
-                              />
                             )}
                           </span>
                           {(() => {
@@ -379,18 +375,20 @@ export function PostsTable({
                       </span>
                     </td>
                   )}
+                  {/* Every stat line's platform icon in its own slim column,
+                      so the icons align vertically no matter the name length
+                      or row grouping (team, 2026-09-07). The icon IS the post
+                      link when one exists — the ลิงก์ column was cut for it. */}
+                  <td className="py-1.5 pr-2">
+                    <PlatformIcon
+                      platform={row.platform}
+                      label={row.platform_label}
+                      href={row.url || undefined}
+                    />
+                  </td>
                   {/* Tier under the count it derives from — no extra column. Absent
                       (not "KOC") when followers are unknown; see tierOf(). */}
                   <td className="whitespace-nowrap pr-3 text-right">
-                    {grouped && (
-                      <span className="mr-1.5">
-                        <PlatformIcon
-                          platform={row.platform}
-                          label={row.platform_label}
-                          href={row.url || undefined}
-                        />
-                      </span>
-                    )}
                     {fmt(row.followers)}
                     {(() => {
                       const tier = tierOf(row.followers);
