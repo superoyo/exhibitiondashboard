@@ -1,7 +1,7 @@
 import type { CommentCategory, CommentPreviewItem, CommentSummary } from '@kol/shared';
 import { useMemo, useState } from 'react';
 
-import { getCommentExport } from '@/features/report/api/reportApi';
+import { getCommentExport, getViewCommentExport } from '@/features/report/api/reportApi';
 import { downloadCommentsExcel } from '@/features/report/lib/commentExcel';
 import { useCommentList } from '@/features/report/hooks/useReport';
 import { Button } from '@/components/ui/button';
@@ -155,7 +155,16 @@ function PreviewCard({ item }: { item: CommentPreviewItem }) {
 
 /** Fetches every comment and hands it to SheetJS. Own component so its pending
  *  state does not re-render the list beside it. */
-function ExportButton({ campaign, campaignName }: { campaign: string; campaignName: string }) {
+function ExportButton({
+  campaign,
+  campaignName,
+  viewToken = '',
+}: {
+  campaign: string;
+  campaignName: string;
+  /** Set on /v/ links: fetch through the token endpoint (no session). */
+  viewToken?: string;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -163,7 +172,7 @@ function ExportButton({ campaign, campaignName }: { campaign: string; campaignNa
     setBusy(true);
     setError('');
     try {
-      const data = await getCommentExport(campaign);
+      const data = await (viewToken ? getViewCommentExport(viewToken) : getCommentExport(campaign));
       if (!data.rows.length) {
         setError('ยังไม่มีคอมเมนต์ให้ export');
         return;
@@ -198,14 +207,12 @@ function CommentList({
   campaign,
   campaignName,
   data,
-  client,
   viewToken,
 }: {
   campaign: string;
   campaignName: string;
   data: CommentSummary;
   /** Client layout — hides the export button (see CommentPanel). */
-  client: boolean;
   viewToken: string;
 }) {
   const [category, setCategory] = useState<'' | CommentCategory>('');
@@ -254,10 +261,9 @@ function CommentList({
           </div>
           {/* Next to the comments it exports, but note the scope difference:
               this file holds EVERY comment, not the product-related page above.
-              Internal only — the raw dump includes spam and off-topic chatter,
-              and the client layout (real link or ?view=1 preview) never shows
-              controls the client cannot have. */}
-          {client ? null : <ExportButton campaign={campaign} campaignName={campaignName} />}
+              On the client link too since 2026-09-11 (team ask) — a /v/ link
+              fetches it through the token endpoint. */}
+          <ExportButton campaign={campaign} campaignName={campaignName} viewToken={viewToken} />
         </div>
 
         <div className="mb-3 flex flex-wrap gap-1.5">
@@ -451,7 +457,6 @@ export function CommentPanel({
         campaign={campaign}
         campaignName={campaignName}
         data={data}
-        client={client}
         viewToken={viewToken}
       />
     </div>

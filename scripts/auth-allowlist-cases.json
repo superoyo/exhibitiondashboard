@@ -152,6 +152,12 @@
     },
     {
       "method": "GET",
+      "path": "/api/view/sometoken/comments/export",
+      "needsAuth": false,
+      "why": "client link exports the same comment spreadsheet the team gets (team ask 2026-09-11); token-addressed like every /view read"
+    },
+    {
+      "method": "GET",
       "path": "/api/view/sometoken/commercial",
       "needsAuth": false,
       "why": "client link shows sold KPI/price/boost (team decision 2026-09-01); token-addressed so campaign-key endpoints stay clean of money"

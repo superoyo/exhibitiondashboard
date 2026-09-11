@@ -882,6 +882,17 @@ def view_comments_list(view_token: str, category: str = "", offset: int = 0,
                          max(0, offset), limit)
 
 
+@router.get("/view/{view_token}/comments/export")
+def view_comments_export(view_token: str):
+    """The full Excel export for a client link — same rows the team gets.
+
+    Was internal-only; the team asked for the button on the view page too
+    (2026-09-11), consistent with the 2026-09-01 decision that the client
+    link carries the full picture. Token-addressed like every /view read."""
+    from app.comments import export_rows
+    return export_rows(_view_campaign(view_token))
+
+
 @router.get("/view/{view_token}/commercial")
 def view_commercial(view_token: str, session: Session = Depends(db_dependency)):
     """Per-KOL sold KPI / price / boost + group KPIs, for a client link.

@@ -101,14 +101,20 @@ export async function getViewCommentList(
  * Every stored comment, for the Excel export. Not a react-query hook: it runs
  * once when the button is pressed, and caching a few thousand rows the page
  * never renders would cost memory for nothing.
- *
- * There is deliberately no client-link equivalent — a raw dump of every comment,
- * spam included, is an internal tool.
  */
 export async function getCommentExport(campaign: string): Promise<CommentExportResponse> {
   const { data } = await api.get<CommentExportResponse>('/report/comments/export', {
     params: { campaign },
   });
+  return data;
+}
+
+/** The same export for a /v/ client link (token-addressed, no session) —
+ *  added 2026-09-11 when the team put the Export button on the view page. */
+export async function getViewCommentExport(viewToken: string): Promise<CommentExportResponse> {
+  const { data } = await api.get<CommentExportResponse>(
+    `/view/${encodeURIComponent(viewToken)}/comments/export`,
+  );
   return data;
 }
 

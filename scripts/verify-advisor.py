@@ -245,6 +245,15 @@ check(cl.get("/api/view/WRONGTOKEN00/advisor").status_code == 404
       and cl.get("/api/view/WRONGTOKEN00/commercial").status_code == 404,
       "wrong token → 404, nothing served")
 
+# Comment Excel export on the client link (team ask 2026-09-11) — token read
+# works sessionless, the campaign-key read stays behind login, bad token 404s.
+r = cl.get("/api/view/Tok111222333/comments/export")
+check(r.status_code == 200 and set(r.json()) >= {"total", "truncated", "rows"},
+      f"client link exports the comment spreadsheet: {r.status_code}")
+check(cl.get("/api/report/comments/export", params={"campaign": "dm"}).status_code == 401
+      and cl.get("/api/view/WRONGTOKEN00/comments/export").status_code == 404,
+      "export by campaign key still needs login; wrong token → 404")
+
 print("\n-- channel-form cache --")
 out2 = run_advisor("dm")
 check(out2.get("status") == "success"
