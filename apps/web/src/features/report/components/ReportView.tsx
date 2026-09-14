@@ -11,7 +11,7 @@ import { routes } from '@/config/routes';
 import { apiErrorMessage } from '@/lib/axios';
 import { buildCategoryColors } from '@/lib/colors';
 import { getCampaign } from '@/features/campaigns/api/campaignsApi';
-import { downloadReportCsv } from '@/features/report/lib/csv';
+import { downloadReportExcel } from '@/features/report/lib/reportExcel';
 import {
   computeTotals,
   derive,
@@ -571,9 +571,9 @@ export function ReportView({
                     variant="outline"
                     size="sm"
                     className="rounded-full"
-                    onClick={() => downloadReportCsv(rows, campaignName)}
+                    onClick={() => void downloadReportExcel(rows, campaignName)}
                   >
-                    ⬇ ดาวน์โหลด CSV
+                    ⬇ ดาวน์โหลด Excel
                   </Button>
                 </div>
                 {/* Group-total KPIs ("7M Imp across Micro Package") — a target
