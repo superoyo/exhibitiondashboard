@@ -51,10 +51,11 @@ with eng.begin() as c:
         "('dm','Dutch Mill','🥛',true,'Tok111222333'), ('old','Old','📊',true,NULL)"))
     c.execute(sa.text(
         "insert into report_kols (username, display, content_group, campaign, "
-        "followers, active, sort_order, cost_thb, boost_thb, kpi_json, links_json) "
-        "values ('vidkol','Vid','Influ','dm',150000,true,0,30000,5000,:k,:v), "
-        "('orgkol','Org','Influ','dm',50000,true,1,NULL,NULL,NULL,:v2), "
-        "('waitkol','Wait','Influ','dm',9000,true,2,NULL,NULL,NULL,NULL)"),
+        "followers, active, sort_order, cost_thb, boost_thb, cost_note, "
+        "kpi_json, links_json) "
+        "values ('vidkol','Vid','Influ','dm',150000,true,0,30000,5000,NULL,:k,:v), "
+        "('orgkol','Org','Influ','dm',50000,true,1,NULL,NULL,NULL,NULL,:v2), "
+        "('waitkol','Wait','Influ','dm',9000,true,2,NULL,NULL,'Quota',NULL,NULL)"),
         {"k": json.dumps([{"metric": "views", "target": 100000}]), "v": VID_LINKS,
          "v2": json.dumps([{"platform": "tiktok",
                             "url": "https://www.tiktok.com/@orgkol/video/9",
@@ -237,10 +238,12 @@ r = cl.get("/api/view/Tok111222333/commercial")
 j = r.json()
 check(r.status_code == 200
       and j["kols"]["vidkol"] == {"cost_thb": 30000.0, "boost_thb": 5000.0,
+                                  "cost_note": None, "boost_note": None,
                                   "kpis": [{"metric": "views", "target": 100000}]}
-      and "waitkol" not in j["kols"]
+      and j["kols"]["waitkol"]["cost_note"] == "Quota"
+      and j["kols"]["waitkol"]["cost_thb"] is None
       and j["group_kpis"] == {"Influ": [{"metric": "views", "target": 500000}]},
-      f"client link reads KPI/price/boost + group KPIs by token: {r.text[:120]}")
+      f"client link reads KPI/price/boost + Quota/Package notes by token: {r.text[:120]}")
 check(cl.get("/api/view/WRONGTOKEN00/advisor").status_code == 404
       and cl.get("/api/view/WRONGTOKEN00/commercial").status_code == 404,
       "wrong token → 404, nothing served")

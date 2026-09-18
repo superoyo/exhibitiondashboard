@@ -269,7 +269,17 @@ export interface AdvisorState {
  * the client link shows the full commercial picture.
  */
 export interface ViewCommercialResponse {
-  kols: Record<string, { cost_thb: number | null; boost_thb: number | null; kpis: KolKpi[] }>;
+  kols: Record<
+    string,
+    {
+      cost_thb: number | null;
+      boost_thb: number | null;
+      /** "Quota"/"Package" money cells — a word shown where the amount would be. */
+      cost_note?: string | null;
+      boost_note?: string | null;
+      kpis: KolKpi[];
+    }
+  >;
   group_kpis: Record<string, KolKpi[]>;
 }
 

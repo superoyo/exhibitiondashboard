@@ -79,6 +79,12 @@ class ReportKol(Base):
     # client links get forwarded to KOLs, who must never read their resale price.
     cost_thb: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2), nullable=True)
     boost_thb: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2), nullable=True)
+    # When the planner's money cell holds a WORD instead of a number — "Quota"
+    # (client spends a pre-bought posting quota, no new charge) or "Package"
+    # (sold as a bundle, no per-head price) — the word is kept here and shown
+    # verbatim where the amount would be (team, 2026-09-18).
+    cost_note: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    boost_note: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     # JSON list of {"metric","target"} — a LIST because one KOL can be sold on
     # two KPIs at once (Views AND Engagement). Group-total KPIs live in
     # ReportGroupKpi, not here.

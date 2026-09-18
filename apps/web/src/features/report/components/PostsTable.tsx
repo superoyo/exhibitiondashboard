@@ -46,8 +46,24 @@ export interface CommercialByUser {
   [username: string]: {
     cost_thb?: number | null;
     boost_thb?: number | null;
+    /** "Quota"/"Package" — the word the sheet wrote where the amount goes. */
+    cost_note?: string | null;
+    boost_note?: string | null;
     kpis?: KolKpi[];
   };
+}
+
+/** A money cell: the amount, or the sheet's word ("Quota"/"Package") when no
+ *  amount was sold — the team reads the word, not a blank. */
+function MoneyCell({ amount, note }: { amount?: number | null; note?: string | null }) {
+  if (amount != null) return <>{baht(amount)}</>;
+  if (note)
+    return (
+      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">
+        {note}
+      </span>
+    );
+  return null;
 }
 
 export const KPI_LABEL: Record<string, string> = {
@@ -307,13 +323,13 @@ export function PostsTable({
                             rowSpan={span}
                             className="whitespace-nowrap py-2 pr-3 text-right tabular-nums"
                           >
-                            {c?.cost_thb != null ? baht(c.cost_thb) : ''}
+                            <MoneyCell amount={c?.cost_thb} note={c?.cost_note} />
                           </td>
                           <td
                             rowSpan={span}
                             className="whitespace-nowrap py-2 pr-3 text-right tabular-nums"
                           >
-                            {c?.boost_thb != null ? baht(c.boost_thb) : ''}
+                            <MoneyCell amount={c?.boost_thb} note={c?.boost_note} />
                           </td>
                         </>
                       );

@@ -367,6 +367,38 @@ const parse = (wb) => parseWorkbook(XLSX, wb);
   console.log('✅ vertical merges spread; shared KPI and shared money split per person');
 }
 
+// ---- "Quota"/"Package" money cells (Pao Win Wash, 2026-09-18) ---------------
+// The sheet writes a WORD where a money figure would be: "Quota" = the client
+// spends a pre-bought posting quota; "Package" = sold as a bundle. The word
+// must import as a note (shown verbatim), never as a silent blank — and a
+// merged "Package" cell must land on every member of the pack.
+{
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([
+    ['username', 'ลิงก์', 'ค่าตัว', 'Boost', 'KPI'],
+    ['quotakol', 'https://www.tiktok.com/@quotakol/video/7300000000000000051', 'Quota', '20,000', '800K Reach'],
+    ['packkol1', 'https://www.tiktok.com/@packkol1/video/7300000000000000052', 'Package', '245,000', '7M Imp'],
+    ['packkol2', 'https://www.tiktok.com/@packkol2/video/7300000000000000053', '', '', ''],
+  ]);
+  ws['!merges'] = [
+    { s: { r: 2, c: 2 }, e: { r: 3, c: 2 } }, // cost C3:C4 = "Package" (text)
+    { s: { r: 2, c: 3 }, e: { r: 3, c: 3 } }, // boost D3:D4 = 245,000 (number)
+  ];
+  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+
+  const parsed = parse(wb);
+  const got = Object.fromEntries(parsed.kols.map((k) => [k.username, k]));
+  assert.equal(got.quotakol.cost_thb, null, 'Quota cell carries no amount');
+  assert.equal(got.quotakol.cost_note, 'Quota', 'Quota kept as the note');
+  assert.equal(got.quotakol.boost_thb, 20000, 'a number beside a Quota stays a number');
+  for (const u of ['packkol1', 'packkol2']) {
+    assert.equal(got[u].cost_note, 'Package', `${u} carries the merged Package note`);
+    assert.equal(got[u].cost_thb, null, `${u} gets no invented pack price`);
+    assert.equal(got[u].boost_thb, 122500, `${u} still splits the merged numeric boost`);
+  }
+  console.log('✅ Quota/Package money cells import as notes, merges included');
+}
+
 // ---- a REAL merged title row must still not become the header ---------------
 {
   const wb = XLSX.utils.book_new();

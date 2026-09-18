@@ -165,6 +165,19 @@ const INDEX_LIKE = /^#?\d{1,4}(\.\d{1,3})?\s*[.)]?$/;
  * that row was taken as the header, every column (Boost Budget, Kpi) went
  * unfound for the whole sheet.
  */
+/**
+ * The word a money cell carries INSTEAD of a number, canonicalised. The two
+ * the sales team actually writes (Pao Win Wash, 2026-09-18): "Quota" — the
+ * client spends a posting quota bought earlier, nothing new is charged — and
+ * "Package" — sold as a bundle with no per-head price. Anything else stays
+ * null: free text in a money column is noise, not a price label.
+ */
+function moneyNote(raw: string): string | null {
+  if (/quota|โควต้า|โควตา/i.test(raw)) return 'Quota';
+  if (/package|แพ็กเกจ|แพ็คเกจ/i.test(raw)) return 'Package';
+  return null;
+}
+
 const HEADER_HINTS = [
   ...COL_USERNAME,
   ...COL_GROUP,
@@ -466,6 +479,14 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
       // parses the same as "100,000 Views" in one.
       let cost = cCost >= 0 ? parseAmount(text(row[cCost])) : null;
       let boost = cBoost >= 0 ? parseAmount(text(row[cBoost])) : null;
+      // A money cell holding a WORD instead of a number: "Quota" (client
+      // spends a pre-bought posting quota) or "Package" (sold as a bundle).
+      // Kept verbatim and shown where the amount would be (team, 2026-09-18).
+      // Only when no amount parsed — "Package 245,000" stays a number. A
+      // merged text cell was already copied down its rows, so a pack-wide
+      // "Package" lands on every member without any splitting.
+      const costNote = cost == null && cCost >= 0 ? moneyNote(text(row[cCost])) : null;
+      const boostNote = boost == null && cBoost >= 0 ? moneyNote(text(row[cBoost])) : null;
       // A money cell merged down 2+ rows is a TOTAL shared by those rows —
       // park it in the pool and split after the loop, like the KPIs below.
       const costMergeId = cCost >= 0 ? mergeSpans[`${i}:${cCost}`] : undefined;
@@ -512,6 +533,8 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
         followers,
         cost_thb: cost,
         boost_thb: boost,
+        cost_note: costNote ?? undefined,
+        boost_note: boostNote ?? undefined,
         kpis,
       });
       const pool = sharedKey ? shared[sharedKey] : undefined;

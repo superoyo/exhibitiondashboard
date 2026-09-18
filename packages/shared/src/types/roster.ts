@@ -54,6 +54,9 @@ export interface RosterKol {
   cost_thb?: number | null;
   boost_thb?: number | null;
   kpis?: KolKpi[];
+  /** "Quota"/"Package" money cells — a word shown where the amount would be. */
+  cost_note?: string | null;
+  boost_note?: string | null;
 }
 
 export interface RosterListResponse {
@@ -104,6 +107,9 @@ export interface BulkKol {
   cost_thb?: number | null;
   boost_thb?: number | null;
   kpis?: KolKpi[];
+  /** "Quota"/"Package" money cells from the sheet. */
+  cost_note?: string;
+  boost_note?: string;
 }
 
 // ---- Group-level KPIs -------------------------------------------------------

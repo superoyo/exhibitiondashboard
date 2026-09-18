@@ -226,6 +226,8 @@ def _serialize(k) -> dict:
     if hasattr(k, "cost_thb"):
         out["cost_thb"] = float(k.cost_thb) if k.cost_thb is not None else None
         out["boost_thb"] = float(k.boost_thb) if k.boost_thb is not None else None
+        out["cost_note"] = k.cost_note
+        out["boost_note"] = k.boost_note
         out["kpis"] = _kpis_of(k)
     return out
 
@@ -350,6 +352,9 @@ class BulkKolIn(BaseModel):
     # From the planner's sheet — see the 0019/0020 migration docstrings.
     cost_thb: Optional[float] = None
     boost_thb: Optional[float] = None
+    # "Quota"/"Package" money cells (0022) — a word where the amount would be.
+    cost_note: Optional[str] = None
+    boost_note: Optional[str] = None
     kpis: Optional[list[dict]] = None  # [{metric, target}]
 
 
@@ -420,6 +425,8 @@ def bulk_replace_report(body: BulkRosterIn, campaign: str = "pao",
             followers=int(k.followers or 0),
             cost_thb=round(k.cost_thb, 2) if k.cost_thb and k.cost_thb > 0 else None,
             boost_thb=round(k.boost_thb, 2) if k.boost_thb and k.boost_thb > 0 else None,
+            cost_note=(k.cost_note or "").strip()[:32] or None,
+            boost_note=(k.boost_note or "").strip()[:32] or None,
             kpi_json=_clean_kpis(k.kpis),
             active=True,
         ))
@@ -908,11 +915,14 @@ def view_commercial(view_token: str, session: Session = Depends(db_dependency)):
     for k in session.scalars(select(ReportKol).where(
             ReportKol.campaign == campaign, ReportKol.active.is_(True))).all():
         kpis = _kpis_of(k)
-        if k.cost_thb is None and k.boost_thb is None and not kpis:
+        if (k.cost_thb is None and k.boost_thb is None and not kpis
+                and not k.cost_note and not k.boost_note):
             continue
         kols[k.username.lower()] = {
             "cost_thb": float(k.cost_thb) if k.cost_thb is not None else None,
             "boost_thb": float(k.boost_thb) if k.boost_thb is not None else None,
+            "cost_note": k.cost_note,
+            "boost_note": k.boost_note,
             "kpis": kpis,
         }
     from app.models import ReportGroupKpi

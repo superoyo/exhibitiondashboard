@@ -185,10 +185,18 @@ export function ReportView({
     if (viewToken) return viewCommercial.data?.kols ?? {};
     const map: CommercialByUser = {};
     for (const k of roster.data ?? []) {
-      if (k.cost_thb != null || k.boost_thb != null || (k.kpis ?? []).length > 0) {
+      if (
+        k.cost_thb != null ||
+        k.boost_thb != null ||
+        (k.kpis ?? []).length > 0 ||
+        k.cost_note ||
+        k.boost_note
+      ) {
         map[k.username.toLowerCase()] = {
           cost_thb: k.cost_thb,
           boost_thb: k.boost_thb,
+          cost_note: k.cost_note,
+          boost_note: k.boost_note,
           kpis: k.kpis ?? [],
         };
       }
