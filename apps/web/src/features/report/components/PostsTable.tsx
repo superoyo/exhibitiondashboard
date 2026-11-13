@@ -368,21 +368,41 @@ export function PostsTable({
                           src={avatar}
                           className="size-10 flex-none rounded-full bg-slate-200 object-cover"
                         />
-                        {profileUrl ? (
-                          // The channel page, straight from the planner's
-                          // file. Rows without one aren't links — no
-                          // guessed URLs.
-                          <a
-                            href={profileUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="hover:underline"
-                          >
-                            @{row.username} ↗
-                          </a>
-                        ) : (
-                          <>@{row.username}</>
-                        )}
+                        {(() => {
+                          // The sheet's own name column leads; the derived
+                          // @handle drops to a small second line when it says
+                          // something different (team, 2026-11-13). Rows whose
+                          // display IS the handle look exactly as before.
+                          const display = (row.nickname ?? '').trim();
+                          const primary = display || `@${row.username}`;
+                          const showHandle =
+                            Boolean(display) &&
+                            display.replace(/^@/, '').toLowerCase() !== row.username.toLowerCase();
+                          return (
+                            <span className="inline-flex min-w-0 flex-col">
+                              {profileUrl ? (
+                                // The channel page, straight from the planner's
+                                // file. Rows without one aren't links — no
+                                // guessed URLs.
+                                <a
+                                  href={profileUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="hover:underline"
+                                >
+                                  {primary} ↗
+                                </a>
+                              ) : (
+                                <span>{primary}</span>
+                              )}
+                              {showHandle ? (
+                                <span className="text-[11px] font-normal text-muted-foreground">
+                                  @{row.username}
+                                </span>
+                              ) : null}
+                            </span>
+                          );
+                        })()}
                       </span>
                     </td>
                   )}
