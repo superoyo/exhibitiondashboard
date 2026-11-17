@@ -38,9 +38,19 @@ export function NavBar({ tabs = [] }: { tabs?: NavTab[] }) {
   );
 }
 
-/** Tabs shown by the settings page. */
-export const SETTINGS_TABS: NavTab[] = [
-  { to: routes.home, label: '← Home', end: true },
+/**
+ * The top-level menu, in one place. Home, KOL List and the settings page each
+ * kept their own copy of this list, so a new page had to be added three times
+ * — and was reachable only from the copies someone remembered to edit.
+ */
+export const MAIN_TABS: NavTab[] = [
+  { to: routes.home, label: 'Home', end: true },
+  { to: routes.promo, label: 'Promotion Page Package' },
   { to: routes.kolList, label: 'KOL List' },
   { to: routes.settings, label: 'Apify Token' },
 ];
+
+/** Tabs shown by the settings page — the main menu with a "← Home" back label. */
+export const SETTINGS_TABS: NavTab[] = MAIN_TABS.map((tab) =>
+  tab.to === routes.home ? { ...tab, label: '← Home' } : tab,
+);

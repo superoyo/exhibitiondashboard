@@ -4,6 +4,7 @@ import { Search } from 'lucide-react';
 import type { Campaign } from '@kol/shared';
 
 import { AppShell } from '@/components/layout/AppShell';
+import { MAIN_TABS } from '@/components/layout/NavBar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -19,14 +20,6 @@ import {
   useAllCampaigns,
   useArchiveCampaign,
 } from '@/features/campaigns/hooks/useCampaigns';
-
-const HOME_TABS = [
-  { to: routes.home, label: 'Home', end: true },
-  // Same three tabs the legacy home page had — without this, /kol-list is only
-  // reachable by typing the URL.
-  { to: routes.kolList, label: 'KOL List' },
-  { to: routes.settings, label: 'Apify Token' },
-];
 
 function matches(campaign: Campaign, query: string): boolean {
   return (
@@ -98,7 +91,7 @@ export default function HomePage() {
   })();
 
   return (
-    <AppShell tabs={HOME_TABS} className="max-w-6xl py-5">
+    <AppShell tabs={MAIN_TABS} className="max-w-6xl py-5">
       <header className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <h1 className="text-2xl font-bold sm:text-3xl">Home</h1>
         <Button onClick={openCreate} className="rounded-[10px] px-4 py-2.5 font-bold">

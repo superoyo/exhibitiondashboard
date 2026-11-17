@@ -209,6 +209,24 @@
       "path": "/v/sometoken",
       "needsAuth": false,
       "why": "not an /api path"
+    },
+    {
+      "method": "GET",
+      "path": "/api/promo/campaigns",
+      "needsAuth": true,
+      "why": "quota overview names clients, brands and who runs each deal"
+    },
+    {
+      "method": "GET",
+      "path": "/api/promo/campaigns/1",
+      "needsAuth": true,
+      "why": "must NOT inherit the single-campaign GET exception of /api/campaigns/<key>"
+    },
+    {
+      "method": "POST",
+      "path": "/api/promo/sync",
+      "needsAuth": true,
+      "why": "makes the server download external files"
     }
   ]
 }

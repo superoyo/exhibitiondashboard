@@ -16,6 +16,8 @@ const InfluencerReportPage = lazy(
   () => import('@/features/report/pages/InfluencerReportPage'),
 );
 const KolListPage = lazy(() => import('@/features/kols/pages/KolListPage'));
+const PromoListPage = lazy(() => import('@/features/promo/pages/PromoListPage'));
+const PromoDetailPage = lazy(() => import('@/features/promo/pages/PromoDetailPage'));
 const NotFoundPage = lazy(() => import('@/app/NotFoundPage'));
 
 function Fallback() {
@@ -62,6 +64,8 @@ export const router = createBrowserRouter([
           { path: routes.home, element: <HomePage /> },
           { path: routes.campaignPattern, element: <CampaignReportPage /> },
           { path: routes.roster, element: <RosterPage /> },
+          { path: routes.promo, element: <PromoListPage /> },
+          { path: routes.promoDetailPattern, element: <PromoDetailPage /> },
           { path: routes.kolList, element: <KolListPage /> },
           { path: routes.tracker, element: <TrackerPage /> },
           { path: routes.settings, element: <TokenPage /> },

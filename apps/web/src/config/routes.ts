@@ -11,6 +11,11 @@ export const routes = {
   kolList: '/kol-list',
   settings: '/token',
 
+  /** Promotion Page Package — quota overview, and one deal's breakdown. */
+  promo: '/promotion-packages',
+  promoDetail: (id: number | string) => `/promotion-packages/${encodeURIComponent(String(id))}`,
+  promoDetailPattern: '/promotion-packages/:promoId',
+
   campaign: (key: string) => `/c/${encodeURIComponent(key)}`,
   campaignPattern: '/c/:campaignKey',
 

@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
+from app.api.promo import router as promo_router
 from app.api.routes import router as api_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -21,6 +22,7 @@ log = logging.getLogger("main")
 
 app = FastAPI(title="KOL TikTok Tracker", version="1.0.0")
 app.include_router(api_router)
+app.include_router(promo_router)
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +108,7 @@ def _seed_on_startup() -> None:
 @app.get("/api/version")
 def version():
     """Build marker — lets us confirm which commit Railway is actually running."""
-    return {"build": "campaign-hub-v132"}
+    return {"build": "campaign-hub-v133"}
 
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -337,6 +339,18 @@ def kols_page():
 @app.get("/kol-list")
 def kol_list_page():
     """KOL directory across all campaigns (page guarded client-side)."""
+    return _serve_shell()
+
+
+@app.get("/promotion-packages")
+def promo_page():
+    """Promotion Page Package — quota overview (page guarded client-side)."""
+    return _serve_shell()
+
+
+@app.get("/promotion-packages/{promo_id}")
+def promo_detail_page(promo_id: str):
+    """One deal's quota breakdown."""
     return _serve_shell()
 
 

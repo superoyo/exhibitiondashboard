@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { AppShell } from '@/components/layout/AppShell';
+import { MAIN_TABS } from '@/components/layout/NavBar';
 import { CachedImage } from '@/components/common/CachedImage';
 import { PlatformBadge } from '@/components/common/PlatformBadge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -95,13 +96,7 @@ export default function KolListPage() {
   }
 
   return (
-    <AppShell
-      tabs={[
-        { to: routes.home, label: 'Home', end: true },
-        { to: routes.kolList, label: 'KOL List' },
-        { to: routes.settings, label: 'Apify Token' },
-      ]}
-    >
+    <AppShell tabs={MAIN_TABS}>
       <header className="mb-4">
         <h1 className="text-xl font-bold sm:text-2xl">👥 KOL List — ทำเนียบ KOL ทุกแคมเปญ</h1>
         <p className="text-sm text-muted-foreground">

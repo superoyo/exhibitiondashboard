@@ -336,3 +336,32 @@ class KolDaily(Base):
     engagement_rate: Mapped[Optional[float]] = mapped_column(Numeric(8, 5), nullable=True)
 
     kol: Mapped["Kol"] = relationship(back_populates="dailies")
+
+
+class PromoCampaign(Base):
+    """One deal on the Promotion Page Package page (/promotion-packages).
+
+    Clients pre-buy posting quotas on Facebook promotion pages and the team
+    member who owns the deal tracks it in their own spreadsheet. A row here is
+    only a POINTER to that sheet plus the last snapshot read from it — the page
+    is a read-only overview, the sheet stays the source of truth and is never
+    written to. `data_json` is what app/promo_sheet.parse_workbook returned
+    (packs → slots); it is replaced wholesale on every sync, which is why the
+    packs and slots have no tables of their own. A failed sync keeps the last
+    good snapshot and records the reason in `sync_error`.
+    """
+    __tablename__ = "promo_campaigns"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # who on the team runs the deal, as they write it ("BAM / Haru / Ploy")
+    team: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    sheet_url: Mapped[str] = mapped_column(Text, nullable=False)
+    data_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    synced_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    sync_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
