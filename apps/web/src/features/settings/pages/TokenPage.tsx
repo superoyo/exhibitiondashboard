@@ -2,10 +2,12 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AppShell } from '@/components/layout/AppShell';
 import { SETTINGS_TABS } from '@/components/layout/NavBar';
 import { AiKeyCard } from '@/features/settings/components/AiKeyCard';
-import { ApifyTokenCard, ApifyTokenForm } from '@/features/settings/components/ApifyTokenCard';
+import { ApifyTokenCard } from '@/features/settings/components/ApifyTokenCard';
 
 /**
- * /token — Apify token + Claude key management.
+ * /token — the two credentials the report runs on (APIFY Token and
+ * ANTHROPIC_API_KEY), one self-contained card each: status, the buttons that
+ * depend on it, and the replace box.
  *
  * The page itself is behind the session guard, and the write endpoints are
  * checked server-side. The notice below is kept from the legacy page because it
@@ -15,9 +17,10 @@ export default function TokenPage() {
   return (
     <AppShell tabs={SETTINGS_TABS} width="narrow">
       <header className="mb-4">
-        <h1 className="text-xl font-bold sm:text-2xl">🔑 Apify Token &amp; สถานะระบบ</h1>
+        <h1 className="text-xl font-bold sm:text-2xl">🔑 Token &amp; API Key ของระบบ</h1>
         <p className="text-sm text-muted-foreground">
-          Token ที่เว็บใช้ดึงข้อมูลจาก TikTok/Facebook · เปลี่ยนได้เมื่อ key หมดอายุ
+          กุญแจ 2 ตัวที่รีพอร์ตต้องใช้ — แต่ละกล่องบอกสถานะ ปุ่มที่ใช้กุญแจนั้น
+          และที่วางกุญแจใหม่เมื่อหมดอายุ
         </p>
       </header>
 
@@ -30,7 +33,6 @@ export default function TokenPage() {
 
       <ApifyTokenCard />
       <AiKeyCard />
-      <ApifyTokenForm />
     </AppShell>
   );
 }

@@ -109,7 +109,8 @@ def _api_error_thai(r) -> str:
                 "Add credits แล้วใช้งานต่อได้ทันที (ไม่ต้องเปลี่ยน key)")
     if r.status_code == 401:
         return ("ANTHROPIC_API_KEY ไม่ถูกต้องหรือถูกยกเลิก — สร้าง key ใหม่ที่ "
-                "console.anthropic.com → API Keys แล้วแก้ค่าใน Railway Variables")
+                "console.anthropic.com → API Keys แล้ววางในช่อง ANTHROPIC_API_KEY "
+                "ของหน้า Token นี้ (มีผลทันที)")
     if r.status_code == 429:
         return "Claude API ติด rate limit ชั่วคราว — รอสักครู่แล้วลองใหม่"
     return f"Claude API HTTP {r.status_code}: {txt[:150]}"

@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { apiErrorMessage } from '@/lib/axios';
 import { aiStateDisplay } from '@/features/settings/lib/aiState';
+import { KeyCardHeader } from './KeyCardHeader';
 import {
   useAiKey,
   useAiStatus,
@@ -15,7 +16,9 @@ import {
 } from '@/features/settings/hooks/useSettings';
 
 /**
- * Claude AI status + key management — powers the PPTX tie-in shot feature.
+ * ANTHROPIC_API_KEY — Claude status + key management. Powers three report
+ * functions (comment classification, tie-in shot picking, the performance
+ * score), which the header lists so a failing button can be traced to its key.
  */
 export function AiKeyCard() {
   const { data: keyInfo } = useAiKey();
@@ -59,9 +62,15 @@ export function AiKeyCard() {
   return (
     <Card className="mb-4">
       <CardContent className="p-4">
-        <div className="mb-1 text-xs text-muted-foreground">
-          🤖 Claude AI — ระบบหา Tie-in shot ใน PowerPoint
-        </div>
+        <KeyCardHeader
+          name="ANTHROPIC_API_KEY"
+          what="— กุญแจของ Claude AI ที่ระบบใช้คิดวิเคราะห์"
+          uses={[
+            '💬 Comment Analysis — ขั้นจัดประเภทคอมเมนต์',
+            '📥 PowerPoint — ขั้นเลือก Tie-in shot จากคลิป',
+            '📈 Performance Analysis — ขั้นให้คะแนน',
+          ]}
+        />
 
         <div className="flex flex-wrap items-center gap-3">
           <div
@@ -93,7 +102,7 @@ export function AiKeyCard() {
 
         <div className="mt-3 border-t border-border pt-3">
           <div className="mb-1 text-xs text-muted-foreground">
-            ใส่/เปลี่ยน Claude API key (เอาจาก{' '}
+            ใส่/เปลี่ยน ANTHROPIC_API_KEY (เอาจาก{' '}
             <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">
               console.anthropic.com → API Keys
             </a>{' '}
