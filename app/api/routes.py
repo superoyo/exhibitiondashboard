@@ -23,9 +23,11 @@ from app.db import db_dependency
 from app.models import Campaign, ImageCache, Kol, ReportKol, ReportPost
 from app.report_refresh import (
     _PLATFORM_LABELS,
+    PostMatcher,
     fetch_profiles,
     is_profile_link,
     kol_links,
+    kol_postings,
     refresh_report,
     state_for,
 )
@@ -229,7 +231,13 @@ def _serialize(k) -> dict:
         out["cost_note"] = k.cost_note
         out["boost_note"] = k.boost_note
         out["kpis"] = _kpis_of(k)
+        # per-posting money/KPI of an account listed on several sheet rows
+        out["postings"] = kol_postings(k)
     return out
+
+
+def _link_key(url: Optional[str]) -> str:
+    return (url or "").split("?")[0].rstrip("/").lower()
 
 
 def _roster_endpoints(model, is_report: bool):
@@ -302,6 +310,13 @@ def _roster_endpoints(model, is_report: bool):
             links = [{"platform": (l.get("platform") or ""), "url": (l.get("url") or "").strip(),
                       "handle": (l.get("handle") or "")}
                      for l in body.links if (l.get("url") or "").strip()]
+            # The edit form sends bare URLs. A link that was already there keeps
+            # the posting it belonged to; without this, saving any edit would
+            # fold a page's separate postings back into one block.
+            slot_of = {_link_key(ln["url"]): ln["slot"] for ln in kol_links(k) if ln.get("slot")}
+            for ln in links:
+                if slot_of.get(_link_key(ln["url"])):
+                    ln["slot"] = slot_of[_link_key(ln["url"])]
             k.links_json = json.dumps(links, ensure_ascii=False) if links else None
             k.url = links[0]["url"] if links else None
         elif is_report and body.url is not None:
@@ -356,6 +371,9 @@ class BulkKolIn(BaseModel):
     cost_note: Optional[str] = None
     boost_note: Optional[str] = None
     kpis: Optional[list[dict]] = None  # [{metric, target}]
+    # What the sheet calls this row's posting ("โพสต์ที่ 7 · Falles") — used
+    # only when the same account is listed on several rows (0024).
+    post_label: Optional[str] = None
 
 
 class BulkGroupKpiIn(BaseModel):
@@ -375,43 +393,64 @@ class BulkRosterIn(BaseModel):
 @router.post("/roster/report/bulk")
 def bulk_replace_report(body: BulkRosterIn, campaign: str = "pao",
                         session: Session = Depends(db_dependency)):
-    """Replace ALL KOLs of one campaign with the given list (dedup by username).
-    Each KOL may carry multiple platform links (links_json). report_posts are
-    left for the next Refresh to re-match."""
-    seen: dict = {}
+    """Replace ALL KOLs of one campaign with the given list.
+
+    One roster row per account. An account listed on several sheet rows — a
+    promotion page bought for several posts — stays one row, but each sheet row
+    becomes a POSTING inside it: its links are tagged with the posting's slot
+    and its label/money/KPI are kept per posting (postings_json), so the report
+    can show every posting as its own block. report_posts are left for the next
+    Refresh to re-match."""
+    grouped: dict = {}
     for k in body.kols:
         u = (k.username or "").strip().lstrip("@").lower()
-        if not u:
-            continue
-        if u in seen:
-            # same account listed on several rows (a page posting more than
-            # once) — merge the links; the first row keeps name/group/order
-            prev = seen[u]
-            prev.links = (prev.links or []) + (k.links or [])
-            if not prev.followers and k.followers:
-                prev.followers = k.followers
-            # commercial fields: first row wins, later rows only fill gaps
-            for f in ("cost_thb", "boost_thb", "kpis"):
-                if not getattr(prev, f) and getattr(k, f):
-                    setattr(prev, f, getattr(k, f))
-        else:
-            seen[u] = k
-    if not seen:
+        if u:
+            grouped.setdefault(u, []).append(k)
+    if not grouped:
         raise HTTPException(400, "ไม่พบรายชื่อ KOL ที่ใช้ได้ในไฟล์/ชีต")
 
+    def amount(v) -> Optional[float]:
+        return round(v, 2) if v and v > 0 else None
+
+    def total(values) -> Optional[float]:
+        got = [v for v in values if v is not None]
+        return round(sum(got), 2) if got else None
+
     session.execute(delete(ReportKol).where(ReportKol.campaign == campaign))
-    for i, (u, k) in enumerate(seen.items()):
-        links, dedup = [], set()
-        for ln in (k.links or []):
-            if not (ln.url and ln.url.strip()):
-                continue
-            url = ln.url.strip()
-            key = ((ln.platform or ""), url.split("?")[0].rstrip("/").lower())
-            if key in dedup:
-                continue
-            dedup.add(key)
-            links.append({"platform": (ln.platform or ""), "url": url,
-                          "handle": (ln.handle or "")})
+    for i, (u, rows) in enumerate(grouped.items()):
+        k = rows[0]  # the first row names the account: display, group, order
+        multi = len(rows) > 1
+        links, dedup, postings = [], set(), []
+        for slot, row in enumerate(rows, 1):
+            for ln in (row.links or []):
+                if not (ln.url and ln.url.strip()):
+                    continue
+                url = ln.url.strip()
+                key = ((ln.platform or ""), _link_key(url))
+                if key in dedup:
+                    continue
+                dedup.add(key)
+                link = {"platform": (ln.platform or ""), "url": url,
+                        "handle": (ln.handle or "")}
+                if multi:
+                    link["slot"] = slot
+                links.append(link)
+            postings.append({
+                "slot": slot,
+                "label": re.sub(r"\s+", " ", row.post_label or "").strip()[:80],
+                "cost_thb": amount(row.cost_thb),
+                "boost_thb": amount(row.boost_thb),
+                "cost_note": (row.cost_note or "").strip()[:32] or None,
+                "boost_note": (row.boost_note or "").strip()[:32] or None,
+                "kpis": json.loads(_clean_kpis(row.kpis) or "[]"),
+            })
+        # Person-level figures are the SUM of the postings: two posts boosted
+        # 10,000 each is 20,000 spent on this page. (They used to be the first
+        # row's alone, which under-reported every repeat posting.)
+        kpi_total: dict = {}
+        for posting in postings:
+            for kpi in posting["kpis"]:
+                kpi_total[kpi["metric"]] = kpi_total.get(kpi["metric"], 0) + kpi["target"]
         primary = (k.url.strip() if k.url else "") or (links[0]["url"] if links else "")
         session.add(ReportKol(
             sort_order=i,  # keep the source file's row order
@@ -422,12 +461,13 @@ def bulk_replace_report(body: BulkRosterIn, campaign: str = "pao",
             campaign=campaign,
             url=primary or None,
             links_json=json.dumps(links, ensure_ascii=False) if links else None,
-            followers=int(k.followers or 0),
-            cost_thb=round(k.cost_thb, 2) if k.cost_thb and k.cost_thb > 0 else None,
-            boost_thb=round(k.boost_thb, 2) if k.boost_thb and k.boost_thb > 0 else None,
-            cost_note=(k.cost_note or "").strip()[:32] or None,
-            boost_note=(k.boost_note or "").strip()[:32] or None,
-            kpi_json=_clean_kpis(k.kpis),
+            followers=next((int(r.followers) for r in rows if r.followers), 0),
+            cost_thb=total(pp["cost_thb"] for pp in postings),
+            boost_thb=total(pp["boost_thb"] for pp in postings),
+            cost_note=next((pp["cost_note"] for pp in postings if pp["cost_note"]), None),
+            boost_note=next((pp["boost_note"] for pp in postings if pp["boost_note"]), None),
+            kpi_json=_clean_kpis([{"metric": m, "target": t} for m, t in kpi_total.items()]),
+            postings_json=json.dumps(postings, ensure_ascii=False) if multi else None,
             active=True,
         ))
     # Group-total KPIs from merged cells — upsert per group.
@@ -450,7 +490,7 @@ def bulk_replace_report(body: BulkRosterIn, campaign: str = "pao",
     if body.sheet_url is not None:
         from app.settings import set_setting
         set_setting(f"sheet_url:{campaign}", body.sheet_url.strip())
-    return {"status": "replaced", "count": len(seen)}
+    return {"status": "replaced", "count": len(grouped)}
 
 
 @router.get("/roster/report/sheet")
@@ -683,16 +723,13 @@ def report_data(campaign: str = "pao", session: Session = Depends(db_dependency)
         .where(ReportKol.active.is_(True), ReportKol.campaign == campaign)
         .order_by(ReportKol.sort_order, ReportKol.id)  # source-file order
     ).all()
-    # best post per (username, platform) so each platform's stats stay separate
-    posts_by: dict = {}
-    for p in session.scalars(select(ReportPost).where(ReportPost.campaign == campaign)).all():
-        key = (p.username.lower(), p.platform or "tiktok")
-        if key not in posts_by or p.views > posts_by[key].views:
-            posts_by[key] = p
+    posts = PostMatcher(campaign, session.scalars(
+        select(ReportPost).where(ReportPost.campaign == campaign)).all())
 
     records = []
     with_data = 0
     for k in roster:
+        user = k.username.lower()
         links = kol_links(k)
         # The KOL's profile page per platform, when the planner's file supplied
         # one — clicking a name should land on the channel, not nowhere. Rows
@@ -706,43 +743,77 @@ def report_data(campaign: str = "pao", session: Session = Depends(db_dependency)
         # (correct badge, zero stats) with the profile reachable via profile_url.
         links = [ln for ln in links
                  if not (ln.get("url") and is_profile_link(ln["platform"], ln["url"]))]
-        if not links and profile_by_plat:
-            links = [{"platform": plat, "url": "", "handle": k.username.lower()}
-                     for plat in profile_by_plat]
-        if not links:
-            # linkless KOL: surface its best existing post on ANY platform, so
-            # legacy/scraped data still shows instead of a permanent zero row
-            cands = [p for (u, _pl), p in posts_by.items() if u == k.username.lower()]
-            best = max(cands, key=lambda p: p.views) if cands else None
-            links = [{"platform": (best.platform if best else "other"),
-                      "url": k.url or "", "handle": k.username.lower()}]
+        on_platform: dict = {}
         for ln in links:
-            plat = ln["platform"]
-            p = posts_by.get((k.username.lower(), plat))
-            if p:
-                with_data += 1
-            records.append({
-                "username": k.username,
-                "nickname": k.display,
-                "platform": plat,
-                "platform_label": _PLATFORM_LABELS.get(plat, plat),
-                "category": k.subgroup or k.content_group,
-                "biggroup": k.content_group,
-                # per-platform audience when the refresh captured it (FB page /
-                # IG profile scrape) — falls back to the KOL-level count
-                "followers": ln.get("followers") or k.followers,
-                "views": p.views if p else 0,
-                "likes": p.likes if p else 0,
-                "comments": p.comments if p else 0,
-                "shares": p.shares if p else 0,
-                "saves": p.saves if p else 0,
-                "posted": (p.posted_at.date().isoformat() if p and p.posted_at else ""),
-                "url": ln["url"] or (p.url if p else "") or "",
-                "profile_url": profile_by_plat.get(plat, ""),
-                "thumb": (p.cover_url if p else "") or "",
-                "avatar": (p.avatar_url if p else "") or k.avatar_url or "",
-                "has_data": bool(p),
-            })
+            on_platform[ln["platform"]] = on_platform.get(ln["platform"], 0) + 1
+
+        # (slot, label, links, post-for-link) per sold posting. An account on
+        # one sheet row — almost every KOL — is a single unlabelled posting.
+        postings = kol_postings(k)
+        blocks = []
+        if postings:
+            known = {pp["slot"] for pp in postings}
+            for pp in postings:
+                mine = [ln for ln in links
+                        if (ln.get("slot") if ln.get("slot") in known else postings[0]["slot"])
+                        == pp["slot"]]
+                if not mine:
+                    # sold but not posted yet: a waiting row, never a borrowed
+                    # post — its stats belong to the page's OTHER postings.
+                    # Badged with the platform the account posts on.
+                    plat = (next(iter(profile_by_plat), "")
+                            or (links[0]["platform"] if links else "other"))
+                    mine = [{"platform": plat, "url": "", "handle": user}]
+                    blocks.append((pp["slot"], pp["label"], mine, lambda ln: None))
+                else:
+                    blocks.append((pp["slot"], pp["label"], mine,
+                                   lambda ln: posts.for_link(user, ln, on_platform[ln["platform"]])))
+        else:
+            if not links and profile_by_plat:
+                links = [{"platform": plat, "url": "", "handle": user}
+                         for plat in profile_by_plat]
+            if not links:
+                # linkless KOL: surface its best existing post on ANY platform, so
+                # legacy/scraped data still shows instead of a permanent zero row
+                best = posts.best_any(user)
+                links = [{"platform": (best.platform if best else "other"),
+                          "url": k.url or "", "handle": user}]
+            blocks.append((1, "", links,
+                           lambda ln: posts.for_link(user, ln, on_platform.get(ln["platform"], 1))))
+
+        for slot, label, block_links, post_of in blocks:
+            for ln in block_links:
+                plat = ln["platform"]
+                p = post_of(ln)
+                if p:
+                    with_data += 1
+                records.append({
+                    "username": k.username,
+                    "nickname": k.display,
+                    "platform": plat,
+                    "platform_label": _PLATFORM_LABELS.get(plat, plat),
+                    "category": k.subgroup or k.content_group,
+                    "biggroup": k.content_group,
+                    # per-platform audience when the refresh captured it (FB page /
+                    # IG profile scrape) — falls back to the KOL-level count
+                    "followers": ln.get("followers") or k.followers,
+                    "views": p.views if p else 0,
+                    "likes": p.likes if p else 0,
+                    "comments": p.comments if p else 0,
+                    "shares": p.shares if p else 0,
+                    "saves": p.saves if p else 0,
+                    "posted": (p.posted_at.date().isoformat() if p and p.posted_at else ""),
+                    "url": ln["url"] or (p.url if p else "") or "",
+                    "profile_url": profile_by_plat.get(plat, ""),
+                    "thumb": (p.cover_url if p else "") or "",
+                    "avatar": (p.avatar_url if p else "") or k.avatar_url or "",
+                    "has_data": bool(p),
+                    # which sold posting of this account the row belongs to —
+                    # 1 of 1 for nearly everyone; see ReportKol.postings_json
+                    "slot": slot,
+                    "slot_label": label,
+                    "slot_count": len(blocks),
+                })
     last = session.scalar(
         select(func.max(ReportPost.scraped_at)).where(ReportPost.campaign == campaign)
     )
@@ -915,8 +986,9 @@ def view_commercial(view_token: str, session: Session = Depends(db_dependency)):
     for k in session.scalars(select(ReportKol).where(
             ReportKol.campaign == campaign, ReportKol.active.is_(True))).all():
         kpis = _kpis_of(k)
+        postings = kol_postings(k)
         if (k.cost_thb is None and k.boost_thb is None and not kpis
-                and not k.cost_note and not k.boost_note):
+                and not k.cost_note and not k.boost_note and not postings):
             continue
         kols[k.username.lower()] = {
             "cost_thb": float(k.cost_thb) if k.cost_thb is not None else None,
@@ -924,6 +996,7 @@ def view_commercial(view_token: str, session: Session = Depends(db_dependency)):
             "cost_note": k.cost_note,
             "boost_note": k.boost_note,
             "kpis": kpis,
+            "postings": postings,
         }
     from app.models import ReportGroupKpi
     groups = {}

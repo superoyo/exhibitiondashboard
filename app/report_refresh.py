@@ -239,6 +239,11 @@ def kol_links(k) -> list:
                 # each platform's own audience size
                 if _to_int(ln.get("followers")):
                     d["followers"] = _to_int(ln.get("followers"))
+                # which sold posting the link belongs to, for an account the
+                # sheet lists on several rows (ReportKol.postings_json). Must
+                # survive here: refresh writes these dicts back to links_json.
+                if _to_int(ln.get("slot")):
+                    d["slot"] = _to_int(ln.get("slot"))
                 out.append(d)
             if out:
                 return out
@@ -248,6 +253,86 @@ def kol_links(k) -> list:
         return [{"platform": platform_of(k.url), "url": k.url,
                  "handle": (handle_from_url(k.url) or k.username).lower()}]
     return []
+
+
+def link_vid(campaign: str, username: str, plat: str, url: Optional[str]) -> str:
+    """report_posts.video_id for one roster link — the key a refresh stores a
+    link's post under, and so the key that finds it again."""
+    vkey = hashlib.md5((username + "|" + (url or "")).encode()).hexdigest()
+    return f"{campaign}_{plat}_{vkey}"[:64]
+
+
+def _url_key(url: Optional[str]) -> str:
+    return (url or "").split("?")[0].split("#")[0].rstrip("/").lower()
+
+
+class PostMatcher:
+    """Find the stored post of each roster LINK.
+
+    The report used to take the best post per (account, platform). That is the
+    right answer for one link per platform and the wrong one as soon as an
+    account has two — a page that posted twice on Facebook showed its better
+    post on both rows and the other post's numbers nowhere. Every link gets its
+    own post here: by the id a refresh stored it under, then by the post's own
+    id, then by URL (a re-import brings back the sheet's spelling of the URL
+    until the next refresh). The old best-of-platform pick remains only where
+    it is unambiguous: the account has exactly one link on that platform.
+    """
+
+    def __init__(self, campaign: str, posts) -> None:
+        self.campaign = campaign
+        self.by_vid: dict = {}
+        self.by_id: dict = {}
+        self.by_url: dict = {}
+        self.best: dict = {}
+        for p in posts:
+            user = (p.username or "").lower()
+            plat = p.platform or "tiktok"
+            self.by_vid[p.video_id] = p
+            pid = post_id_from_url(plat, p.url)
+            if pid:
+                self.by_id.setdefault((user, plat, pid), p)
+            if p.url:
+                self.by_url.setdefault((user, plat, _url_key(p.url)), p)
+            if (user, plat) not in self.best or p.views > self.best[(user, plat)].views:
+                self.best[(user, plat)] = p
+
+    def for_link(self, username: str, link: dict, links_on_platform: int = 1):
+        user = (username or "").lower()
+        plat = link.get("platform") or "other"
+        url = link.get("url") or ""
+        found = self.by_vid.get(link_vid(self.campaign, user, plat, url))
+        if not found:
+            pid = post_id_from_url(plat, url)
+            found = self.by_id.get((user, plat, pid)) if pid else None
+        if not found and url:
+            found = self.by_url.get((user, plat, _url_key(url)))
+        if not found and links_on_platform <= 1:
+            found = self.best.get((user, plat))
+        return found
+
+    def best_any(self, username: str):
+        """Best post on ANY platform — for a roster row with no link at all."""
+        user = (username or "").lower()
+        cands = [p for (u, _plat), p in self.best.items() if u == user]
+        return max(cands, key=lambda p: p.views) if cands else None
+
+
+def kol_postings(k) -> list:
+    """The sold postings of an account listed on several sheet rows, in sheet
+    order — [] for the usual one-row account."""
+    raw = getattr(k, "postings_json", None)
+    if not raw:
+        return []
+    try:
+        out = []
+        for item in json.loads(raw):
+            slot = _to_int(item.get("slot"))
+            if slot:
+                out.append({**item, "slot": slot, "label": str(item.get("label") or "")})
+        return out if len(out) > 1 else []
+    except Exception:  # noqa: BLE001 — malformed json = an ordinary one-row account
+        return []
 
 
 def _txt(v) -> str:
@@ -1167,8 +1252,7 @@ def refresh_report(campaign: str = "pao") -> dict:
                 link_url = ln["url"]
                 # unique per (campaign, platform, KOL, link) — avoids collisions
                 # when a post has no real id (e.g. FB posts fall back to a hash)
-                vkey = hashlib.md5((uname + "|" + (link_url or post.get("video_id") or "")).encode()).hexdigest()
-                vid = f"{campaign}_{plat}_{vkey}"[:64]
+                vid = link_vid(campaign, uname, plat, link_url or post.get("video_id") or "")
                 if vid in seen_vids:  # same KOL pasted the same link twice — skip dup
                     continue
                 seen_vids.add(vid)

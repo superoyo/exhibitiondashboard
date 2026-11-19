@@ -57,6 +57,24 @@ export interface RosterKol {
   /** "Quota"/"Package" money cells — a word shown where the amount would be. */
   cost_note?: string | null;
   boost_note?: string | null;
+  /** Present (2+ entries) only for an account the sheet lists on several rows.
+   *  The fields above are then the SUM across these. */
+  postings?: KolPosting[];
+}
+
+/**
+ * One sold posting of an account that is listed on several sheet rows — a
+ * promotion page bought for several posts. `slot` matches `ReportRecord.slot`.
+ */
+export interface KolPosting {
+  slot: number;
+  /** As the sheet names it ("โพสต์ที่ 7 · Falles"); '' when it does not. */
+  label: string;
+  cost_thb?: number | null;
+  boost_thb?: number | null;
+  cost_note?: string | null;
+  boost_note?: string | null;
+  kpis?: KolKpi[];
 }
 
 export interface RosterListResponse {
@@ -110,6 +128,9 @@ export interface BulkKol {
   /** "Quota"/"Package" money cells from the sheet. */
   cost_note?: string;
   boost_note?: string;
+  /** What the sheet calls this row's posting; the server uses it only when
+   *  the same account appears on several rows. */
+  post_label?: string;
 }
 
 // ---- Group-level KPIs -------------------------------------------------------

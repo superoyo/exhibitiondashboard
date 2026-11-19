@@ -449,4 +449,52 @@ const parse = (wb) => parseWorkbook(XLSX, wb);
   console.log('✅ Proof-sheet banner row no longer eats the header');
 }
 
+// ---- 2026-11-19: one page, several sold postings --------------------------
+// Lion Beauty promotion pages: the same page sits on several rows, one per
+// bought post, and the Quota/Brand columns say which posting a row is. Every
+// row must come out as its own entry carrying that label — the server turns
+// same-account rows into separate blocks and needs to tell them apart.
+{
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([
+    ['Lot', 'Page', 'Link', 'Quota', 'Brand', 'Post', 'ค่าบูส'],
+    ['Lot 1', 'Pun Pro', 'https://www.facebook.com/punpromotion', 'โพสต์ที่ 7', 'Falles', 'https://www.facebook.com/788494752840719/posts/1721833052840213', 10000],
+    ['', 'Sale Here', 'https://www.facebook.com/salehere', 'โพสต์ที่ 6', 'Falles', 'https://www.facebook.com/salehere/posts/100200300', 10000],
+    ['Lot 2', 'Pun Pro', 'https://www.facebook.com/punpromotion', 'โพสต์ที่ 8', "Q'Lean", 'https://www.facebook.com/788494752840719/posts/1742038520819666', 10000],
+    ['Lot 3', 'Pun Pro', 'https://www.facebook.com/punpromotion', 'โพสต์ที่ 9', 'Falles Herbal\nShampoo', '', ''],
+  ]);
+  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+  const kols = parse(wb).kols;
+  assert.deepEqual(
+    kols.map((k) => [k.username, k.post_label]),
+    [
+      ['punpromotion', 'โพสต์ที่ 7 · Falles'],
+      ['salehere', 'โพสต์ที่ 6 · Falles'],
+      ['punpromotion', "โพสต์ที่ 8 · Q'Lean"],
+      ['punpromotion', 'โพสต์ที่ 9 · Falles Herbal Shampoo'],
+    ],
+    'one entry per row, labelled from the Quota + Brand columns',
+  );
+  assert.deepEqual(
+    kols.map((k) => k.boost_thb),
+    [10000, 10000, 10000, null],
+    'each posting keeps its own boost budget',
+  );
+  console.log('✅ repeat rows of one page keep their posting label');
+}
+{
+  // A sheet with no such columns must not invent a label.
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.aoa_to_sheet([
+      ['username', 'ลิงก์'],
+      ['plainkol', 'https://www.tiktok.com/@plainkol/video/7300000000000000009'],
+    ]),
+    'Plain',
+  );
+  assert.equal(parse(wb).kols[0].post_label, undefined, 'no label columns, no label');
+  console.log('✅ sheets without posting columns stay unlabelled');
+}
+
 console.log('\n✅ all import-behaviour checks passed');

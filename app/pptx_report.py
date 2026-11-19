@@ -32,7 +32,7 @@ from sqlalchemy import select
 
 from app.db import session_scope
 from app.models import Campaign, ImageCache, ReportKol, ReportPost
-from app.report_refresh import kol_links
+from app.report_refresh import PostMatcher, kol_links
 
 log = logging.getLogger("pptx_report")
 
@@ -601,12 +601,8 @@ def build_pptx(campaign_key: str) -> tuple[io.BytesIO, str]:
             .where(ReportKol.active.is_(True), ReportKol.campaign == campaign_key)
             .order_by(ReportKol.sort_order, ReportKol.id)  # source-file order
         ).all()
-        posts_by = {}
-        for p in session.scalars(select(ReportPost).where(
-                ReportPost.campaign == campaign_key)).all():
-            key = (p.username.lower(), p.platform or "tiktok")
-            if key not in posts_by or p.views > posts_by[key].views:
-                posts_by[key] = p
+        posts = PostMatcher(campaign_key, session.scalars(select(ReportPost).where(
+            ReportPost.campaign == campaign_key)).all())
 
         prs = Presentation(str(TEMPLATE))
         lay_dark = _layout(prs, 1)   # cover / divider / thank-you artwork
@@ -638,9 +634,14 @@ def build_pptx(campaign_key: str) -> tuple[io.BytesIO, str]:
                                           "handle": k.username.lower()}]
                 links = sorted(links, key=lambda l: PLAT_ORDER.get(l["platform"], 9))
                 avatar = _image_bytes(session, k.avatar_url)
+                on_platform: dict = {}
+                for ln in links:
+                    on_platform[ln["platform"]] = on_platform.get(ln["platform"], 0) + 1
                 for ln in links:
                     plat = ln["platform"]
-                    p = posts_by.get((k.username.lower(), plat))
+                    # the slide of each link shows THAT link's post — a page
+                    # that posted twice gets two different slides, not one twice
+                    p = posts.for_link(k.username, ln, on_platform[plat])
                     s = _add(prs, lay_stat)
 
                     # platform logo top-left (as in the original deck)

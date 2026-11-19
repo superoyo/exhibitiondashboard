@@ -1,5 +1,5 @@
 import type { Platform } from './platform.js';
-import type { KolKpi } from './roster.js';
+import type { KolKpi, KolPosting } from './roster.js';
 
 /**
  * One row of `GET /api/report/data` — a single KOL on a single platform, showing
@@ -37,6 +37,16 @@ export interface ReportRecord {
   thumb: string;
   avatar: string;
   has_data: boolean;
+  /**
+   * Which sold posting of this account the row belongs to. 1 of 1 for nearly
+   * everyone; an account the sheet lists on several rows (a promotion page
+   * bought for several posts) has one block per posting. Optional only so a
+   * response cached from before this field still renders.
+   */
+  slot?: number;
+  /** As the sheet names the posting ("โพสต์ที่ 7 · Falles"), or ''. */
+  slot_label?: string;
+  slot_count?: number;
 }
 
 export interface ReportDataResponse {
@@ -278,6 +288,8 @@ export interface ViewCommercialResponse {
       cost_note?: string | null;
       boost_note?: string | null;
       kpis: KolKpi[];
+      /** Per-posting figures for an account listed on several sheet rows. */
+      postings?: KolPosting[];
     }
   >;
   group_kpis: Record<string, KolKpi[]>;

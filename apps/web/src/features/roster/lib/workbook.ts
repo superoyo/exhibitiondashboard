@@ -83,6 +83,21 @@ const COL_FOLLOWERS = ['follow', 'ติดตาม', 'fan'];
 const COL_BOOST = ['boost', 'บูส'];
 const COL_COST = ['cost', 'ค่าตัว', 'ราคา', 'rate', 'budget', 'งบ'];
 const COL_KPI = ['kpi', 'การันตี', 'เป้า', 'target', 'guarantee'];
+// What the sheet calls a row's POSTING — read only to tell apart the rows of an
+// account that is listed several times (a promotion page bought for several
+// posts: "โพสต์ที่ 7" for Falles, "โพสต์ที่ 8" for Q'Lean). Free text, shown as
+// written; a sheet without these columns just gets "ครั้งที่ 1, 2, …".
+const COL_POST_NO = [
+  'quota',
+  'โควต้า',
+  'โควตา',
+  'ครั้งที่',
+  'โพสต์ที่',
+  'โพสที่',
+  'no. post',
+  'episode',
+];
+const COL_POST_BRAND = ['brand', 'แบรนด์', 'product', 'สินค้า'];
 
 /**
  * "12,500", "฿12,500.50", "100K", "1.2m" → number. null when no digits.
@@ -400,6 +415,12 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
     );
     // every KPI-ish column — sheets that split unit and number use two
     const kpiCols = headers.flatMap((h, i) => (h && COL_KPI.some((k) => h.includes(k)) ? [i] : []));
+    // posting-label columns, among the headers nothing above has claimed
+    const claimed = new Set([cUser, cGroup, cSub, cFollowers, cBoost, cCost, ...kpiCols]);
+    const pickFree = (keys: string[]) =>
+      headers.findIndex((h, i) => !claimed.has(i) && Boolean(h) && keys.some((k) => h.includes(k)));
+    const cPostNo = pickFree(COL_POST_NO);
+    const cPostBrand = pickFree(COL_POST_BRAND);
 
     // A "header" row that already contains links/@handles IS data.
     const headerIsData = headerRow.some((c) => looksUrl(cellText(c)) || /^@[\w.]+$/.test(text(c)));
@@ -536,6 +557,12 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
         cost_note: costNote ?? undefined,
         boost_note: boostNote ?? undefined,
         kpis,
+        post_label:
+          [cPostNo, cPostBrand]
+            .map((c) => (c >= 0 ? text(row[c]).replace(/\s+/g, ' ') : ''))
+            .filter(Boolean)
+            .join(' · ')
+            .slice(0, 80) || undefined,
       });
       const pool = sharedKey ? shared[sharedKey] : undefined;
       if (pool) pool.kolIdx.push(kols.length - 1);

@@ -239,7 +239,8 @@ j = r.json()
 check(r.status_code == 200
       and j["kols"]["vidkol"] == {"cost_thb": 30000.0, "boost_thb": 5000.0,
                                   "cost_note": None, "boost_note": None,
-                                  "kpis": [{"metric": "views", "target": 100000}]}
+                                  "kpis": [{"metric": "views", "target": 100000}],
+                                  "postings": []}
       and j["kols"]["waitkol"]["cost_note"] == "Quota"
       and j["kols"]["waitkol"]["cost_thb"] is None
       and j["group_kpis"] == {"Influ": [{"metric": "views", "target": 500000}]},

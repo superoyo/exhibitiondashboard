@@ -107,7 +107,12 @@ export function TopPostsBar({ rows, colors }: ChartProps) {
   const option = useMemo<EChartsOption>(() => {
     // Ascending then take the last 10, so the largest ends up at the top of the
     // bottom-up category axis.
-    const top = [...rows].sort((a, b) => a.views - b.views).slice(-10);
+    // Posts that exist only — a row without a link is someone (or one posting
+    // of a page bought for several) still to post, not a post with zero views.
+    const top = [...rows]
+      .filter((r) => r.url)
+      .sort((a, b) => a.views - b.views)
+      .slice(-10);
     return {
       tooltip: { trigger: 'axis', valueFormatter: (v) => fmt(v as number) },
       grid: { left: 110, right: 30, top: 10, bottom: 25 },

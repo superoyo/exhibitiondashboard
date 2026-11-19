@@ -89,6 +89,15 @@ class ReportKol(Base):
     # two KPIs at once (Views AND Engagement). Group-total KPIs live in
     # ReportGroupKpi, not here.
     kpi_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Set only when the sheet lists this account on SEVERAL rows — a promotion
+    # page posting three times is three sold postings, each with its own
+    # links, boost and KPI. JSON list of {"slot","label","cost_thb",
+    # "boost_thb","cost_note","boost_note","kpis"}; each link in links_json
+    # carries the matching "slot". The row-level money/KPI columns above then
+    # hold the SUM across postings, so person-level readers stay correct.
+    # Same exposure rule as the other commercial fields (the label alone is
+    # not money and does ride on the open report data).
+    postings_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

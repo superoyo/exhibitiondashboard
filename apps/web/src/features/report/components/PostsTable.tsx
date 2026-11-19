@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState } from 'react';
-import type { KolKpi, ReportRecordDerived } from '@kol/shared';
+import type { KolKpi, KolPosting, ReportRecordDerived } from '@kol/shared';
 
 import { CachedImage } from '@/components/common/CachedImage';
 import { PlatformIcon } from '@/components/common/PlatformBadge';
@@ -50,8 +50,16 @@ export interface CommercialByUser {
     cost_note?: string | null;
     boost_note?: string | null;
     kpis?: KolKpi[];
+    /** An account listed on several sheet rows: each posting's own figures.
+     *  The fields above are then the sum across them. */
+    postings?: KolPosting[];
   };
 }
+
+/** A block of the table is one sold posting: the account, and which of its
+ *  postings (1 of 1 for nearly everyone). */
+const blockKey = (r: { username: string; slot?: number }) =>
+  `${r.username.toLowerCase()}#${r.slot ?? 1}`;
 
 /** A money cell: the amount, or the sheet's word ("Quota"/"Package") when no
  *  amount was sold — the team reads the word, not a blank. */
@@ -156,25 +164,32 @@ export function PostsTable({
   const columns = hideMetrics ? COLUMNS.filter((c) => !c.metric) : COLUMNS;
   const showMoney = Boolean(commercial);
 
-  // A KPI target is sold per PERSON, but rows are per platform — so achievement
-  // compares the target against the SUM of that person's rows, shown the same
-  // on each of their rows. views→views, interaction→engagement; impressions
+  // A KPI target is sold per POSTING, but rows are per platform — so
+  // achievement compares the target against the SUM of that posting's rows,
+  // shown once for the block. views→views, interaction→engagement; impressions
   // have no public counterpart and show the target with no achieved figure.
-  const personTotals = useMemo(() => {
+  const blockTotals = useMemo(() => {
     const t: Record<string, { views: number; engagement: number }> = {};
     if (!commercial) return t;
     for (const r of rows) {
-      const k = (t[r.username.toLowerCase()] ??= { views: 0, engagement: 0 });
+      const k = (t[blockKey(r)] ??= { views: 0, engagement: 0 });
       k.views += r.views;
       k.engagement += r.engagement;
     }
     return t;
   }, [rows, commercial]);
 
-  function kpiCell(username: string) {
-    const kpis = commercial?.[username.toLowerCase()]?.kpis ?? [];
+  /** The money/KPI of the block a row opens: the posting's own figures when
+   *  the account has several postings, else the account's. */
+  function commercialOf(row: ReportRecordDerived) {
+    const person = commercial?.[row.username.toLowerCase()];
+    return person?.postings?.find((p) => p.slot === (row.slot ?? 1)) ?? person;
+  }
+
+  function kpiCell(row: ReportRecordDerived) {
+    const kpis = commercialOf(row)?.kpis ?? [];
     if (!kpis.length) return <span className="text-muted-foreground">—</span>;
-    const totals = personTotals[username.toLowerCase()];
+    const totals = blockTotals[blockKey(row)];
     // One line per sold KPI — a KOL can carry Views AND Engagement at once.
     return (
       <span className="inline-flex flex-col gap-0.5">
@@ -191,11 +206,15 @@ export function PostsTable({
   // zero-views bottom, and the money/KPI columns repeated on each row as if
   // billed per platform. Rows are grouped by person; name, หมวด, ค่าตัว, บูส
   // and KPI render once per group, stats stay one line per platform.
+  //
+  // A person the sheet lists on several rows is several blocks — one per sold
+  // posting (team, Lion Beauty 2026-11-19: a promotion page bought for three
+  // posts was one lump, its postings' stats and boost budgets run together).
   const groups = useMemo(() => {
     const order: string[] = [];
     const by = new Map<string, ReportRecordDerived[]>();
     for (const r of rows) {
-      const k = r.username.toLowerCase();
+      const k = blockKey(r);
       const list = by.get(k);
       if (list) list.push(r);
       else {
@@ -305,7 +324,7 @@ export function PostsTable({
               const profileUrl = g.rows.find((r) => r.profile_url)?.profile_url ?? '';
               return (
                 <tr
-                  key={`${row.username}-${row.platform}-${row.url}`}
+                  key={`${blockKey(row)}-${row.platform}-${row.url}`}
                   className={cn(
                     'hover:bg-black/5',
                     // Lighter line between a person's own platforms, full line
@@ -316,7 +335,7 @@ export function PostsTable({
                   {showMoney &&
                     first &&
                     (() => {
-                      const c = commercial?.[row.username.toLowerCase()];
+                      const c = commercialOf(row);
                       return (
                         <>
                           <td
@@ -400,6 +419,13 @@ export function PostsTable({
                                   @{row.username}
                                 </span>
                               ) : null}
+                              {/* Which of the account's postings this block
+                                  is, in the sheet's own words. */}
+                              {(row.slot_count ?? 1) > 1 ? (
+                                <span className="mt-0.5 w-fit rounded bg-indigo-50 px-1.5 py-0.5 text-[11px] font-semibold text-indigo-700">
+                                  {row.slot_label || `ครั้งที่ ${row.slot ?? 1}`}
+                                </span>
+                              ) : null}
                             </span>
                           );
                         })()}
@@ -456,7 +482,7 @@ export function PostsTable({
                   <td className="pr-3 text-muted-foreground">{row.posted || ''}</td>
                   {showMoney && first && (
                     <td rowSpan={span} className="pr-3 text-xs">
-                      {kpiCell(row.username)}
+                      {kpiCell(row)}
                     </td>
                   )}
                 </tr>

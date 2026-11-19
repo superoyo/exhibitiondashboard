@@ -154,7 +154,7 @@ export function PostedContentCarousel({
       >
         {rows.map((row) => (
           <ContentCard
-            key={`${row.username}-${row.platform}`}
+            key={`${row.username}-${row.slot ?? 1}-${row.platform}-${row.url}`}
             row={row}
             color={colors.colorOf(row.category)}
           />
