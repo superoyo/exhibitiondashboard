@@ -28,6 +28,7 @@ from app.report_refresh import (
     is_profile_link,
     kol_links,
     kol_postings,
+    platform_of,
     posting_blocks,
     refresh_report,
     state_for,
@@ -501,6 +502,24 @@ def bulk_replace_report(body: BulkRosterIn, campaign: str = "pao",
             postings_json=json.dumps(postings, ensure_ascii=False) if multi else None,
             active=True,
         ))
+    # An account the sheet now gives no post link has not posted, so stats
+    # stored for it from EARLIER links must go — otherwise the report keeps
+    # showing them as "its best post". (Reference clips on an address tab were
+    # once imported as posts; skipping the tab does not un-store their stats.)
+    # Only link-derived rows, which a refresh keys "<campaign>_…": posts a
+    # legacy profile scrape stored under the platform's own id are left alone.
+    for u, rows in grouped.items():
+        has_post_link = any(
+            ln.url and ln.url.strip() and not is_profile_link(
+                ln.platform or platform_of(ln.url), ln.url.strip())
+            for row in rows for ln in (row.links or []))
+        if has_post_link:
+            continue
+        for stale in session.scalars(select(ReportPost).where(
+                ReportPost.campaign == campaign, func.lower(ReportPost.username) == u)).all():
+            if stale.video_id.startswith(f"{campaign}_"):
+                session.delete(stale)
+
     # Group-total KPIs from merged cells — upsert per group.
     if body.group_kpis:
         from app.models import ReportGroupKpi

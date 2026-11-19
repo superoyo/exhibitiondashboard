@@ -279,6 +279,43 @@ check("postings stored WITHOUT numbers are read as one job",
       len(v134) == 2 and all(x["slot"] == 1 and x["slot_count"] == 1 for x in v134)
       and [x["likes"] for x in v134] == [2500, 2500], str([(x["slot"], x["likes"]) for x in v134]))
 
+print("an account the sheet no longer gives a post link")
+REF = "https://www.tiktok.com/@someoneelse/video/7300000000000000099"
+KEEP = "https://www.tiktok.com/@keeper/video/7300000000000000088"
+with eng.begin() as conn:
+    conn.execute(sa.text(
+        "insert into campaigns (key, name, emoji, active) values ('ad','Addr','🥗',true)"))
+# first import: a reference clip from the address tab was read as this KOL's post
+client.post("/api/roster/report/bulk?campaign=ad", headers=H, json={"kols": [
+    {"username": "planned", "display": "Planned", "group": "Review", "cost_thb": 45000,
+     "links": [link("tiktok", REF, "someoneelse")]},
+    {"username": "keeper", "display": "Keeper", "group": "Review",
+     "links": [link("tiktok", KEEP, "keeper")]},
+    {"username": "legacy", "display": "Legacy", "group": "Review", "links": []}]})
+with session_scope() as session:
+    for user, vid, url, views in (
+            ("planned", link_vid("ad", "planned", "tiktok", REF), REF, 5700000),
+            ("keeper", link_vid("ad", "keeper", "tiktok", KEEP), KEEP, 4321),
+            # stored by a profile scrape under TikTok's own id, not from a link
+            ("legacy", "7300000000000000077", "https://www.tiktok.com/@legacy/video/7300000000000000077", 999)):
+        session.add(ReportPost(campaign="ad", username=user, platform="tiktok", video_id=vid,
+                               url=url, views=views, likes=1, comments=0, shares=0, saves=0))
+views = {x["username"]: x["views"] for x in client.get("/api/report/data?campaign=ad").json()["records"]}
+check("(before) the reference clip shows as the KOL's post", views["planned"] == 5700000)
+# the sheet is read again, this time without the address tab's links
+client.post("/api/roster/report/bulk?campaign=ad", headers=H, json={"kols": [
+    {"username": "planned", "display": "Planned", "group": "Review", "cost_thb": 45000,
+     "links": [link("tiktok", "https://www.tiktok.com/@planned", "planned")]},  # profile only
+    {"username": "keeper", "display": "Keeper", "group": "Review",
+     "links": [link("tiktok", KEEP, "keeper")]},
+    {"username": "legacy", "display": "Legacy", "group": "Review", "links": []}]})
+recs = client.get("/api/report/data?campaign=ad").json()["records"]
+views = {x["username"]: x["views"] for x in recs}
+check("its stale stats are gone once it has no post link", views["planned"] == 0
+      and not next(x for x in recs if x["username"] == "planned")["has_data"], str(views))
+check("a KOL that still has its link keeps its stats", views["keeper"] == 4321)
+check("posts from a profile scrape are not touched", views["legacy"] == 999)
+
 print()
 if FAILS:
     print(f"FAIL: {len(FAILS)} check(s) failed")

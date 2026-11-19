@@ -212,6 +212,16 @@ const HEADER_HINTS = [
 
 const SOCIAL = /(tiktok\.com|facebook\.com|fb\.watch|instagram\.com|youtu|x\.com|twitter\.com)/i;
 
+/**
+ * Sheet NAMES that mean "the team's shipping notes" whatever the tab holds. The
+ * address tab is where the team keeps delivery details and, often, reference
+ * clips to show the KOL — and those reference links were being imported as
+ * the KOL's posts, other creators' stats and all (Kewpie, 2026-11-19). A tab
+ * named like this is skipped outright. Narrower than ADDRESS_WORDS on purpose:
+ * "tracking" in a NAME is as likely to be the post-tracking sheet.
+ */
+const ADDRESS_SHEET_NAMES = ['address', 'addr', 'ที่อยู่', 'จัดส่ง', 'ส่งของ'];
+
 /** Sheet/column words that mark a shipping-address tab rather than campaign work. */
 const ADDRESS_WORDS = [
   'address',
@@ -397,10 +407,12 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
     const headers = headerRow.map(lower);
     debug.push(`“${sheetName}” [${headers.filter(Boolean).join(', ')}]`);
 
-    // Skip address-style sheets: no social link anywhere AND an address-ish name.
+    // Skip address-style sheets: a tab NAMED as the address list, always; and
+    // a tab with an address-ish name or header that has no social link at all.
     const hasSocial = rows.some((r) => (r ?? []).some((c) => SOCIAL.test(text(c))));
     const meta = `${lower(sheetName)} ${headers.join(' ')}`;
-    if (!hasSocial && ADDRESS_WORDS.some((k) => meta.includes(k))) {
+    const namedAddress = ADDRESS_SHEET_NAMES.some((k) => lower(sheetName).includes(k));
+    if (namedAddress || (!hasSocial && ADDRESS_WORDS.some((k) => meta.includes(k)))) {
       skipped.push(sheetName);
       continue;
     }

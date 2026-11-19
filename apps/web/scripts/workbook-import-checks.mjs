@@ -521,4 +521,53 @@ const parse = (wb) => parseWorkbook(XLSX, wb);
   console.log('✅ a brand column alone never marks separate postings');
 }
 
+// ---- 2026-11-19: the address tab is the team's notes, links and all ---------
+// Kewpie: the "Address" tab holds delivery details plus reference clips for
+// the KOL (other creators' TikToks). It has social links, so the old rule —
+// skip an address tab only when it has NO social link — imported those clips
+// as the KOL's posts.
+{
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.aoa_to_sheet([
+      ['Influencer', 'Group', 'Link', 'ค่าตัว'],
+      ['pimsook.s', 'Review', 'https://www.tiktok.com/@pimsook.s', 116000],
+    ]),
+    'TimelinePost Link',
+  );
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.aoa_to_sheet([
+      ['Influencer', 'สูตร', 'ที่อยู่', 'Menu', 'ส่งของ'],
+      ['pimsook.s', 'Review', '99/9 กรุงเทพฯ', 'เมนูตัวอย่าง https://www.tiktok.com/@myhealthydish/video/7325259491908308255', true],
+    ]),
+    'Address',
+  );
+  const out = parse(wb);
+  assert.deepEqual(out.skipped, ['Address'], 'the address tab is skipped and reported');
+  assert.deepEqual(
+    out.kols.map((k) => [k.username, k.group, k.links.map((l) => l.url)]),
+    [['pimsook.s', 'Review', ['https://www.tiktok.com/@pimsook.s']]],
+    'only the work sheet is imported — no reference clip',
+  );
+  console.log('✅ a tab named Address is skipped even when it holds social links');
+}
+{
+  // An address COLUMN on the work sheet must not make the work sheet vanish.
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.aoa_to_sheet([
+      ['username', 'ที่อยู่', 'ลิงก์'],
+      ['shipkol', '1/1 เชียงใหม่', 'https://www.tiktok.com/@shipkol/video/7300000000000000011'],
+    ]),
+    'KOL List',
+  );
+  const out = parse(wb);
+  assert.deepEqual(out.skipped, [], 'nothing skipped');
+  assert.equal(out.kols[0].username, 'shipkol', 'a sheet with an address column still imports');
+  console.log('✅ an address column alone does not hide the work sheet');
+}
+
 console.log('\n✅ all import-behaviour checks passed');
