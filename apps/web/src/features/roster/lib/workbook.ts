@@ -83,10 +83,12 @@ const COL_FOLLOWERS = ['follow', 'ติดตาม', 'fan'];
 const COL_BOOST = ['boost', 'บูส'];
 const COL_COST = ['cost', 'ค่าตัว', 'ราคา', 'rate', 'budget', 'งบ'];
 const COL_KPI = ['kpi', 'การันตี', 'เป้า', 'target', 'guarantee'];
-// What the sheet calls a row's POSTING — read only to tell apart the rows of an
-// account that is listed several times (a promotion page bought for several
-// posts: "โพสต์ที่ 7" for Falles, "โพสต์ที่ 8" for Q'Lean). Free text, shown as
-// written; a sheet without these columns just gets "ครั้งที่ 1, 2, …".
+// What the sheet calls a row's POSTING — "โพสต์ที่ 7" for Falles, "โพสต์ที่ 8"
+// for Q'Lean, for a promotion page bought for several posts. The NUMBER column
+// is the only thing that makes rows of one account separate postings: most
+// sheets that list a KOL twice do it for other reasons (a plan row and a links
+// row), and treating those as two postings tore every such report apart
+// (Kewpie, 2026-11-19). The brand column only decorates the label.
 const COL_POST_NO = [
   'quota',
   'โควต้า',
@@ -541,6 +543,9 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
         }
       }
 
+      const postNo = cPostNo >= 0 ? text(row[cPostNo]).replace(/\s+/g, ' ').slice(0, 40) : '';
+      const postBrand = cPostBrand >= 0 ? text(row[cPostBrand]).replace(/\s+/g, ' ') : '';
+
       kols.push({
         username: username.toLowerCase(),
         display: (colIsIndex ? '' : colRaw) || username,
@@ -557,12 +562,10 @@ export function parseWorkbook(xlsx: XlsxModule, wb: XLSX.WorkBook): ParsedWorkbo
         cost_note: costNote ?? undefined,
         boost_note: boostNote ?? undefined,
         kpis,
-        post_label:
-          [cPostNo, cPostBrand]
-            .map((c) => (c >= 0 ? text(row[c]).replace(/\s+/g, ' ') : ''))
-            .filter(Boolean)
-            .join(' · ')
-            .slice(0, 80) || undefined,
+        post_no: postNo || undefined,
+        post_label: postNo
+          ? [postNo, postBrand].filter(Boolean).join(' · ').slice(0, 80)
+          : undefined,
       });
       const pool = sharedKey ? shared[sharedKey] : undefined;
       if (pool) pool.kolIdx.push(kols.length - 1);

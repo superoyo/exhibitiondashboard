@@ -108,34 +108,24 @@ function CostBreakdown({
 /**
  * "ลงงานแล้ว X/Y คน" chip beside the posts-table heading.
  *
- * Counts BLOCKS, not rows: the table has one row per KOL-platform, so a KOL on
- * TikTok+Instagram is two rows but one person. "Posted" = at least one of the
- * block's rows carries a post link — the same split the influencer view uses
- * for its Active/Waiting sections. Counted from the rows currently shown, so
- * filtering to one big group makes the chip answer for that group.
- *
- * A block is a sold posting, so when some account was bought for several posts
- * the unit is "งาน" — "5/5 คน" would call a page done while two of its three
- * postings are still to come.
+ * Counts PEOPLE, not rows: the table has one row per KOL-platform, so a KOL on
+ * TikTok+Instagram is two rows but one person. "Posted" = at least one of their
+ * rows carries a post link — the same split the influencer view uses for its
+ * Active/Waiting sections. Counted from the rows currently shown, so filtering
+ * to one big group makes the chip answer for that group.
  */
-function PostedCount({
-  rows,
-}: {
-  rows: { username: string; url: string; slot?: number; slot_count?: number }[];
-}) {
-  const key = (r: { username: string; slot?: number }) => `${r.username}#${r.slot ?? 1}`;
-  const everyone = new Set(rows.map(key));
-  const posted = new Set(rows.filter((r) => r.url).map(key));
+function PostedCount({ rows }: { rows: { username: string; url: string }[] }) {
+  const everyone = new Set(rows.map((r) => r.username));
+  const posted = new Set(rows.filter((r) => r.url).map((r) => r.username));
   if (everyone.size === 0) return null;
   const done = posted.size === everyone.size;
-  const unit = rows.some((r) => (r.slot_count ?? 1) > 1) ? 'งาน' : 'คน';
   return (
     <span
       className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
         done ? 'bg-emerald-50 text-state-ok' : 'bg-brand-200 text-[#8a6a00]'
       }`}
     >
-      {done ? '✅' : '⏳'} ลงงานแล้ว {posted.size}/{everyone.size} {unit}
+      {done ? '✅' : '⏳'} ลงงานแล้ว {posted.size}/{everyone.size} คน
     </span>
   );
 }

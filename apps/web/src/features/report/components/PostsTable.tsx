@@ -180,10 +180,11 @@ export function PostsTable({
   }, [rows, commercial]);
 
   /** The money/KPI of the block a row opens: the posting's own figures when
-   *  the account has several postings, else the account's. */
+   *  the account is shown as several postings, else the account's. */
   function commercialOf(row: ReportRecordDerived) {
     const person = commercial?.[row.username.toLowerCase()];
-    return person?.postings?.find((p) => p.slot === (row.slot ?? 1)) ?? person;
+    if ((row.slot_count ?? 1) <= 1) return person;
+    return person?.postings?.find((p) => p.slot === row.slot) ?? person;
   }
 
   function kpiCell(row: ReportRecordDerived) {
@@ -207,9 +208,12 @@ export function PostsTable({
   // billed per platform. Rows are grouped by person; name, หมวด, ค่าตัว, บูส
   // and KPI render once per group, stats stay one line per platform.
   //
-  // A person the sheet lists on several rows is several blocks — one per sold
-  // posting (team, Lion Beauty 2026-11-19: a promotion page bought for three
-  // posts was one lump, its postings' stats and boost budgets run together).
+  // A page the sheet NUMBERS as several postings ("โพสต์ที่ 7", "โพสต์ที่ 8")
+  // and that has posted two or more of them is one block per posting (team,
+  // Lion Beauty 2026-11-19). Only then: the server marks those rows with a
+  // slot, and everyone else is slot 1 of 1 — one block per person, as above.
+  // The blocks carry no "posting N" label: the team asked for the stats to be
+  // split and nothing else.
   const groups = useMemo(() => {
     const order: string[] = [];
     const by = new Map<string, ReportRecordDerived[]>();
@@ -417,13 +421,6 @@ export function PostsTable({
                               {showHandle ? (
                                 <span className="text-[11px] font-normal text-muted-foreground">
                                   @{row.username}
-                                </span>
-                              ) : null}
-                              {/* Which of the account's postings this block
-                                  is, in the sheet's own words. */}
-                              {(row.slot_count ?? 1) > 1 ? (
-                                <span className="mt-0.5 w-fit rounded bg-indigo-50 px-1.5 py-0.5 text-[11px] font-semibold text-indigo-700">
-                                  {row.slot_label || `ครั้งที่ ${row.slot ?? 1}`}
                                 </span>
                               ) : null}
                             </span>

@@ -28,6 +28,7 @@ from app.report_refresh import (
     is_profile_link,
     kol_links,
     kol_postings,
+    posting_blocks,
     refresh_report,
     state_for,
 )
@@ -371,8 +372,10 @@ class BulkKolIn(BaseModel):
     cost_note: Optional[str] = None
     boost_note: Optional[str] = None
     kpis: Optional[list[dict]] = None  # [{metric, target}]
-    # What the sheet calls this row's posting ("โพสต์ที่ 7 · Falles") — used
-    # only when the same account is listed on several rows (0024).
+    # The row's posting number as the sheet writes it ("โพสต์ที่ 7") and its
+    # display label ("โพสต์ที่ 7 · Falles"). Rows of one account are separate
+    # postings only when their numbers differ — see _separate_postings (0024).
+    post_no: Optional[str] = None
     post_label: Optional[str] = None
 
 
@@ -390,17 +393,33 @@ class BulkRosterIn(BaseModel):
     sheet_url: Optional[str] = None  # remember the source Google Sheet for re-sync
 
 
+def _separate_postings(rows: list) -> bool:
+    """Are these sheet rows of ONE account separate sold postings?
+
+    Only when the sheet says so: at least two of the rows carry a posting
+    number and no two carry the same one ("โพสต์ที่ 7", "โพสต์ที่ 8"). A KOL
+    listed twice for any other reason — a plan row and a links row, a row per
+    sheet tab — is one job and is merged as it always was. Guessing from the
+    mere repetition split every such report into "ครั้งที่ 1 / ครั้งที่ 2"
+    (Kewpie, 2026-11-19).
+    """
+    numbers = [re.sub(r"\s+", " ", r.post_no or "").strip().lower() for r in rows]
+    named = [n for n in numbers if n]
+    return len(named) >= 2 and len(set(named)) == len(named)
+
+
 @router.post("/roster/report/bulk")
 def bulk_replace_report(body: BulkRosterIn, campaign: str = "pao",
                         session: Session = Depends(db_dependency)):
-    """Replace ALL KOLs of one campaign with the given list.
+    """Replace ALL KOLs of one campaign with the given list (dedup by username).
+    Each KOL may carry multiple platform links (links_json). report_posts are
+    left for the next Refresh to re-match.
 
-    One roster row per account. An account listed on several sheet rows — a
-    promotion page bought for several posts — stays one row, but each sheet row
-    becomes a POSTING inside it: its links are tagged with the posting's slot
-    and its label/money/KPI are kept per posting (postings_json), so the report
-    can show every posting as its own block. report_posts are left for the next
-    Refresh to re-match."""
+    The same account on several rows is merged into one KOL: links are pooled,
+    the first row keeps name/group/order. The one exception is a sheet that
+    numbers the rows as separate postings (_separate_postings) — then each
+    row's links are tagged with its slot and its label/money/KPI are kept per
+    posting, so the report can show one block per posting."""
     grouped: dict = {}
     for k in body.kols:
         u = (k.username or "").strip().lstrip("@").lower()
@@ -416,10 +435,13 @@ def bulk_replace_report(body: BulkRosterIn, campaign: str = "pao",
         got = [v for v in values if v is not None]
         return round(sum(got), 2) if got else None
 
+    def first(values):
+        return next((v for v in values if v), None)
+
     session.execute(delete(ReportKol).where(ReportKol.campaign == campaign))
     for i, (u, rows) in enumerate(grouped.items()):
         k = rows[0]  # the first row names the account: display, group, order
-        multi = len(rows) > 1
+        multi = _separate_postings(rows)
         links, dedup, postings = [], set(), []
         for slot, row in enumerate(rows, 1):
             for ln in (row.links or []):
@@ -437,20 +459,29 @@ def bulk_replace_report(body: BulkRosterIn, campaign: str = "pao",
                 links.append(link)
             postings.append({
                 "slot": slot,
-                "label": re.sub(r"\s+", " ", row.post_label or "").strip()[:80],
+                "label": re.sub(r"\s+", " ", row.post_label or row.post_no or "").strip()[:80],
                 "cost_thb": amount(row.cost_thb),
                 "boost_thb": amount(row.boost_thb),
                 "cost_note": (row.cost_note or "").strip()[:32] or None,
                 "boost_note": (row.boost_note or "").strip()[:32] or None,
                 "kpis": json.loads(_clean_kpis(row.kpis) or "[]"),
             })
-        # Person-level figures are the SUM of the postings: two posts boosted
-        # 10,000 each is 20,000 spent on this page. (They used to be the first
-        # row's alone, which under-reported every repeat posting.)
-        kpi_total: dict = {}
-        for posting in postings:
-            for kpi in posting["kpis"]:
-                kpi_total[kpi["metric"]] = kpi_total.get(kpi["metric"], 0) + kpi["target"]
+        if multi:
+            # Account-level figures are the SUM of its postings: two posts
+            # boosted 10,000 each is 20,000 spent on this page.
+            kpi_total: dict = {}
+            for posting in postings:
+                for kpi in posting["kpis"]:
+                    kpi_total[kpi["metric"]] = kpi_total.get(kpi["metric"], 0) + kpi["target"]
+            cost = total(pp["cost_thb"] for pp in postings)
+            boost = total(pp["boost_thb"] for pp in postings)
+            kpi_json = _clean_kpis([{"metric": m, "target": t} for m, t in kpi_total.items()])
+        else:
+            # One job: the first row wins, later rows only fill what it left
+            # blank — unchanged from before postings existed.
+            cost = first(pp["cost_thb"] for pp in postings)
+            boost = first(pp["boost_thb"] for pp in postings)
+            kpi_json = _clean_kpis(first(pp["kpis"] for pp in postings))
         primary = (k.url.strip() if k.url else "") or (links[0]["url"] if links else "")
         session.add(ReportKol(
             sort_order=i,  # keep the source file's row order
@@ -462,11 +493,11 @@ def bulk_replace_report(body: BulkRosterIn, campaign: str = "pao",
             url=primary or None,
             links_json=json.dumps(links, ensure_ascii=False) if links else None,
             followers=next((int(r.followers) for r in rows if r.followers), 0),
-            cost_thb=total(pp["cost_thb"] for pp in postings),
-            boost_thb=total(pp["boost_thb"] for pp in postings),
-            cost_note=next((pp["cost_note"] for pp in postings if pp["cost_note"]), None),
-            boost_note=next((pp["boost_note"] for pp in postings if pp["boost_note"]), None),
-            kpi_json=_clean_kpis([{"metric": m, "target": t} for m, t in kpi_total.items()]),
+            cost_thb=cost,
+            boost_thb=boost,
+            cost_note=first(pp["cost_note"] for pp in postings),
+            boost_note=first(pp["boost_note"] for pp in postings),
+            kpi_json=kpi_json,
             postings_json=json.dumps(postings, ensure_ascii=False) if multi else None,
             active=True,
         ))
@@ -743,48 +774,29 @@ def report_data(campaign: str = "pao", session: Session = Depends(db_dependency)
         # (correct badge, zero stats) with the profile reachable via profile_url.
         links = [ln for ln in links
                  if not (ln.get("url") and is_profile_link(ln["platform"], ln["url"]))]
-        on_platform: dict = {}
-        for ln in links:
-            on_platform[ln["platform"]] = on_platform.get(ln["platform"], 0) + 1
 
-        # (slot, label, links, post-for-link) per sold posting. An account on
-        # one sheet row — almost every KOL — is a single unlabelled posting.
-        postings = kol_postings(k)
-        blocks = []
-        if postings:
-            known = {pp["slot"] for pp in postings}
-            for pp in postings:
-                mine = [ln for ln in links
-                        if (ln.get("slot") if ln.get("slot") in known else postings[0]["slot"])
-                        == pp["slot"]]
-                if not mine:
-                    # sold but not posted yet: a waiting row, never a borrowed
-                    # post — its stats belong to the page's OTHER postings.
-                    # Badged with the platform the account posts on.
-                    plat = (next(iter(profile_by_plat), "")
-                            or (links[0]["platform"] if links else "other"))
-                    mine = [{"platform": plat, "url": "", "handle": user}]
-                    blocks.append((pp["slot"], pp["label"], mine, lambda ln: None))
-                else:
-                    blocks.append((pp["slot"], pp["label"], mine,
-                                   lambda ln: posts.for_link(user, ln, on_platform[ln["platform"]])))
-        else:
+        # A page the sheet numbers as several postings, two or more of them
+        # posted: one block per posting, every link showing ITS OWN post.
+        blocks = [(slot, label, mine, True) for slot, label, mine in posting_blocks(k, links)]
+        if not blocks:
+            # Everyone else — one block, the best post per platform, exactly as
+            # this report has always worked.
             if not links and profile_by_plat:
                 links = [{"platform": plat, "url": "", "handle": user}
                          for plat in profile_by_plat]
             if not links:
                 # linkless KOL: surface its best existing post on ANY platform, so
                 # legacy/scraped data still shows instead of a permanent zero row
-                best = posts.best_any(user)
+                cands = [p for (u, _pl), p in posts.best.items() if u == user]
+                best = max(cands, key=lambda p: p.views) if cands else None
                 links = [{"platform": (best.platform if best else "other"),
                           "url": k.url or "", "handle": user}]
-            blocks.append((1, "", links,
-                           lambda ln: posts.for_link(user, ln, on_platform.get(ln["platform"], 1))))
+            blocks = [(1, "", links, False)]
 
-        for slot, label, block_links, post_of in blocks:
+        for slot, _label, block_links, exact in blocks:
             for ln in block_links:
                 plat = ln["platform"]
-                p = post_of(ln)
+                p = posts.for_link(user, ln) if exact else posts.best_of(user, plat)
                 if p:
                     with_data += 1
                 records.append({
@@ -808,10 +820,9 @@ def report_data(campaign: str = "pao", session: Session = Depends(db_dependency)
                     "thumb": (p.cover_url if p else "") or "",
                     "avatar": (p.avatar_url if p else "") or k.avatar_url or "",
                     "has_data": bool(p),
-                    # which sold posting of this account the row belongs to —
-                    # 1 of 1 for nearly everyone; see ReportKol.postings_json
+                    # which posting of the account the row belongs to — 1 of 1
+                    # for everyone but a page with several posted postings
                     "slot": slot,
-                    "slot_label": label,
                     "slot_count": len(blocks),
                 })
     last = session.scalar(

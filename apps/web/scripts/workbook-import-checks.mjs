@@ -451,9 +451,9 @@ const parse = (wb) => parseWorkbook(XLSX, wb);
 
 // ---- 2026-11-19: one page, several sold postings --------------------------
 // Lion Beauty promotion pages: the same page sits on several rows, one per
-// bought post, and the Quota/Brand columns say which posting a row is. Every
-// row must come out as its own entry carrying that label — the server turns
-// same-account rows into separate blocks and needs to tell them apart.
+// bought post, and the Quota column numbers them. Every row must come out as
+// its own entry carrying that number — it is the ONLY thing that lets the
+// server treat same-account rows as separate postings.
 {
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet([
@@ -466,14 +466,14 @@ const parse = (wb) => parseWorkbook(XLSX, wb);
   XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
   const kols = parse(wb).kols;
   assert.deepEqual(
-    kols.map((k) => [k.username, k.post_label]),
+    kols.map((k) => [k.username, k.post_no]),
     [
-      ['punpromotion', 'โพสต์ที่ 7 · Falles'],
-      ['salehere', 'โพสต์ที่ 6 · Falles'],
-      ['punpromotion', "โพสต์ที่ 8 · Q'Lean"],
-      ['punpromotion', 'โพสต์ที่ 9 · Falles Herbal Shampoo'],
+      ['punpromotion', 'โพสต์ที่ 7'],
+      ['salehere', 'โพสต์ที่ 6'],
+      ['punpromotion', 'โพสต์ที่ 8'],
+      ['punpromotion', 'โพสต์ที่ 9'],
     ],
-    'one entry per row, labelled from the Quota + Brand columns',
+    'one entry per row, numbered from the Quota column',
   );
   assert.deepEqual(
     kols.map((k) => k.boost_thb),
@@ -493,8 +493,32 @@ const parse = (wb) => parseWorkbook(XLSX, wb);
     ]),
     'Plain',
   );
-  assert.equal(parse(wb).kols[0].post_label, undefined, 'no label columns, no label');
-  console.log('✅ sheets without posting columns stay unlabelled');
+  assert.equal(parse(wb).kols[0].post_no, undefined, 'no number column, no posting number');
+  console.log('✅ sheets without a posting-number column carry none');
+}
+{
+  // A Brand/Product column alone must never number the rows: plenty of sheets
+  // list a KOL on two rows with a brand beside each, and those are ONE job.
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.aoa_to_sheet([
+      ['username', 'Brand', 'ค่าตัว', 'ลิงก์'],
+      ['twice', 'Kewpie', 45000, ''],
+      ['twice', 'Kewpie', '', 'https://www.tiktok.com/@twice/video/7300000000000000010'],
+    ]),
+    'Plan',
+  );
+  const kols = parse(wb).kols;
+  assert.deepEqual(
+    kols.map((k) => [k.username, k.post_no, k.post_label]),
+    [
+      ['twice', undefined, undefined],
+      ['twice', undefined, undefined],
+    ],
+    'a brand column is not a posting number',
+  );
+  console.log('✅ a brand column alone never marks separate postings');
 }
 
 console.log('\n✅ all import-behaviour checks passed');

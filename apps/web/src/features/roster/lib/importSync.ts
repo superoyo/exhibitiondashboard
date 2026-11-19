@@ -126,12 +126,8 @@ export function buildImportConfirmMessage(
     ? `\nข้ามชีตที่ไม่ใช่งานโพสต์: ${skippedSheets.join(', ')}`
     : '';
   const extra = dropped ? `\n(ระบุ KOL ไม่ได้ ${dropped} แถว — จะข้าม)` : '';
-  // Rows of the same account are one KOL with several postings — say so,
-  // or "พบ 11 KOL" followed by "นำเข้าแล้ว 5 รายชื่อ" reads like six were lost.
-  const accounts = new Set(kols.map((k) => k.username.toLowerCase())).size;
-  const found = accounts < kolCount ? `${accounts} KOL · ${kolCount} งานที่ลง` : `${kolCount} KOL`;
   return (
-    `พบ ${found} · ${linkCount} ลิงก์ (หลายแพลตฟอร์ม)\n` +
+    `พบ ${kolCount} KOL · ${linkCount} ลิงก์ (หลายแพลตฟอร์ม)\n` +
     `กลุ่ม: ${groups.join(', ')}${skip}${extra}\n\n` +
     '⚠️ การนำเข้าจะ "ลบรายชื่อเดิมทั้งหมด" ของแคมเปญนี้แล้วแทนที่ด้วยรายการใหม่ ยืนยันหรือไม่?'
   );

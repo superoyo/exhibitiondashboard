@@ -267,16 +267,14 @@ def _url_key(url: Optional[str]) -> str:
 
 
 class PostMatcher:
-    """Find the stored post of each roster LINK.
+    """The stored posts of a campaign, looked up for a roster link.
 
-    The report used to take the best post per (account, platform). That is the
-    right answer for one link per platform and the wrong one as soon as an
-    account has two — a page that posted twice on Facebook showed its better
-    post on both rows and the other post's numbers nowhere. Every link gets its
-    own post here: by the id a refresh stored it under, then by the post's own
-    id, then by URL (a re-import brings back the sheet's spelling of the URL
-    until the next refresh). The old best-of-platform pick remains only where
-    it is unambiguous: the account has exactly one link on that platform.
+    `best` is the rule the report has always used: the best post per (account,
+    platform), shown on that account's link for the platform. `for_link` is
+    exact — the post of THAT link — and is used only inside an account whose
+    sheet rows are separate postings (see posting_blocks): there the page
+    really has two Facebook posts, and best-of-platform would repeat one of
+    them on both.
     """
 
     def __init__(self, campaign: str, posts) -> None:
@@ -297,7 +295,13 @@ class PostMatcher:
             if (user, plat) not in self.best or p.views > self.best[(user, plat)].views:
                 self.best[(user, plat)] = p
 
-    def for_link(self, username: str, link: dict, links_on_platform: int = 1):
+    def best_of(self, username: str, plat: str):
+        return self.best.get(((username or "").lower(), plat))
+
+    def for_link(self, username: str, link: dict):
+        """By the key a refresh stored the link under, then the post's own id,
+        then URL — a re-import brings back the sheet's spelling of the URL
+        until the next refresh."""
         user = (username or "").lower()
         plat = link.get("platform") or "other"
         url = link.get("url") or ""
@@ -307,20 +311,17 @@ class PostMatcher:
             found = self.by_id.get((user, plat, pid)) if pid else None
         if not found and url:
             found = self.by_url.get((user, plat, _url_key(url)))
-        if not found and links_on_platform <= 1:
-            found = self.best.get((user, plat))
         return found
-
-    def best_any(self, username: str):
-        """Best post on ANY platform — for a roster row with no link at all."""
-        user = (username or "").lower()
-        cands = [p for (u, _plat), p in self.best.items() if u == user]
-        return max(cands, key=lambda p: p.views) if cands else None
 
 
 def kol_postings(k) -> list:
-    """The sold postings of an account listed on several sheet rows, in sheet
-    order — [] for the usual one-row account."""
+    """The sold postings of an account, in sheet order — [] for almost every
+    account.
+
+    Only a sheet that NUMBERS the postings makes them ("โพสต์ที่ 7",
+    "โพสต์ที่ 8"): at least two labelled, all labels different. A KOL listed
+    twice for any other reason — a plan row and a links row — is one job.
+    """
     raw = getattr(k, "postings_json", None)
     if not raw:
         return []
@@ -329,10 +330,30 @@ def kol_postings(k) -> list:
         for item in json.loads(raw):
             slot = _to_int(item.get("slot"))
             if slot:
-                out.append({**item, "slot": slot, "label": str(item.get("label") or "")})
-        return out if len(out) > 1 else []
-    except Exception:  # noqa: BLE001 — malformed json = an ordinary one-row account
+                out.append({**item, "slot": slot,
+                            "label": str(item.get("label") or "").strip()})
+    except Exception:  # noqa: BLE001 — malformed json = an ordinary account
         return []
+    named = [p["label"].lower() for p in out if p["label"]]
+    return out if len(named) >= 2 and len(set(named)) == len(named) else []
+
+
+def posting_blocks(k, links: list) -> list:
+    """[(slot, label, links)] for the postings of an account that have a post
+    link — but only when there are two or more. Anything less (the usual
+    account; a page whose second posting is still to come) is [] and the
+    caller treats the account exactly as it always has."""
+    postings = kol_postings(k)
+    if not postings:
+        return []
+    known = {p["slot"] for p in postings}
+    blocks = []
+    for p in postings:
+        mine = [ln for ln in links
+                if (ln.get("slot") if ln.get("slot") in known else postings[0]["slot"]) == p["slot"]]
+        if mine:
+            blocks.append((p["slot"], p["label"], mine))
+    return blocks if len(blocks) >= 2 else []
 
 
 def _txt(v) -> str:

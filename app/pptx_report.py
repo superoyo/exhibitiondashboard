@@ -32,7 +32,7 @@ from sqlalchemy import select
 
 from app.db import session_scope
 from app.models import Campaign, ImageCache, ReportKol, ReportPost
-from app.report_refresh import PostMatcher, kol_links
+from app.report_refresh import PostMatcher, kol_links, posting_blocks
 
 log = logging.getLogger("pptx_report")
 
@@ -634,14 +634,13 @@ def build_pptx(campaign_key: str) -> tuple[io.BytesIO, str]:
                                           "handle": k.username.lower()}]
                 links = sorted(links, key=lambda l: PLAT_ORDER.get(l["platform"], 9))
                 avatar = _image_bytes(session, k.avatar_url)
-                on_platform: dict = {}
-                for ln in links:
-                    on_platform[ln["platform"]] = on_platform.get(ln["platform"], 0) + 1
+                # A page with several posted postings: each link's slide shows
+                # THAT link's post. Everyone else: best post per platform, as ever.
+                exact = bool(posting_blocks(k, links))
                 for ln in links:
                     plat = ln["platform"]
-                    # the slide of each link shows THAT link's post — a page
-                    # that posted twice gets two different slides, not one twice
-                    p = posts.for_link(k.username, ln, on_platform[plat])
+                    p = (posts.for_link(k.username, ln) if exact
+                         else posts.best_of(k.username, plat))
                     s = _add(prs, lay_stat)
 
                     # platform logo top-left (as in the original deck)

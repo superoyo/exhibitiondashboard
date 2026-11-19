@@ -90,10 +90,7 @@ export function computeTotals(rows: ReportRecordDerived[]): ReportTotals {
     totalViews,
     totalEngagement,
     avgEr: totalViews ? (totalEngagement / totalViews) * 100 : 0,
-    // Posts that exist. A row without a link is a KOL (or one posting of a
-    // page bought for several) that has not posted yet — it used to be counted
-    // too, which a report full of upcoming postings made obviously wrong.
-    postCount: rows.filter((r) => r.url).length,
+    postCount: rows.length,
     kolCount: new Set(rows.map((r) => r.username)).size,
     reach: [...largestPerKol.values()].reduce((a, b) => a + b, 0),
   };

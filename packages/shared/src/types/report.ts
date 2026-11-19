@@ -38,14 +38,12 @@ export interface ReportRecord {
   avatar: string;
   has_data: boolean;
   /**
-   * Which sold posting of this account the row belongs to. 1 of 1 for nearly
-   * everyone; an account the sheet lists on several rows (a promotion page
-   * bought for several posts) has one block per posting. Optional only so a
-   * response cached from before this field still renders.
+   * Which posting of this account the row belongs to. 1 of 1 for everyone
+   * except a page the sheet numbers as several postings with two or more of
+   * them posted — that page gets one table block per posting. Optional only
+   * so a response cached from before this field still renders.
    */
   slot?: number;
-  /** As the sheet names the posting ("โพสต์ที่ 7 · Falles"), or ''. */
-  slot_label?: string;
   slot_count?: number;
 }
 

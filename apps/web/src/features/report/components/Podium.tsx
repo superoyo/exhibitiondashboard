@@ -95,12 +95,6 @@ function PodiumCard({
           <div className="min-w-0">
             <div className="truncate text-lg font-bold leading-tight">@{row.username}</div>
             <div className="truncate text-xs text-muted-foreground">{row.nickname || ''}</div>
-            {/* which of the page's postings this post is, when it has several */}
-            {(row.slot_count ?? 1) > 1 ? (
-              <div className="truncate text-[11px] font-semibold text-indigo-700">
-                {row.slot_label || `ครั้งที่ ${row.slot ?? 1}`}
-              </div>
-            ) : null}
             <div className="mt-1">
               <PlatformBadge platform={row.platform} label={row.platform_label} />
             </div>

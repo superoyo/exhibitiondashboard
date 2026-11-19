@@ -128,8 +128,13 @@ export interface BulkKol {
   /** "Quota"/"Package" money cells from the sheet. */
   cost_note?: string;
   boost_note?: string;
-  /** What the sheet calls this row's posting; the server uses it only when
-   *  the same account appears on several rows. */
+  /**
+   * The row's posting number as the sheet writes it ("โพสต์ที่ 7"). Rows of
+   * one account become separate postings ONLY when they carry different
+   * numbers here; otherwise they are merged into one KOL as always.
+   */
+  post_no?: string;
+  /** The posting's display label: number plus brand ("โพสต์ที่ 7 · Falles"). */
   post_label?: string;
 }
 

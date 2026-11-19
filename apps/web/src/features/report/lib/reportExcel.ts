@@ -13,7 +13,6 @@ const COLUMNS: { header: string; width: number }[] = [
   { header: 'หมวด', width: 18 },
   { header: 'KOL', width: 22 },
   { header: 'ชื่อ', width: 22 },
-  { header: 'งานที่ลง', width: 22 },
   { header: 'แพลตฟอร์ม', width: 12 },
   { header: 'Followers', width: 12 },
   { header: 'ระดับ', width: 8 },
@@ -50,8 +49,6 @@ export async function downloadReportExcel(
       r.category,
       `@${r.username}`,
       r.nickname,
-      // which posting, for an account bought for several posts; blank otherwise
-      (r.slot_count ?? 1) > 1 ? r.slot_label || `ครั้งที่ ${r.slot ?? 1}` : '',
       r.platform_label,
       r.followers,
       tierOf(r.followers)?.label ?? '',
